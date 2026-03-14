@@ -164,6 +164,21 @@ export async function addTarget(target: Address): Promise<Hex> {
 }
 
 /**
+ * Remove a target from the vault's allowlist (owner only).
+ */
+export async function removeTarget(target: Address): Promise<Hex> {
+  const client = getWalletClient();
+  return client.writeContract({
+    account: getAccount(),
+    chain: base,
+    address: getVaultAddress(),
+    abi: SYNDICATE_VAULT_ABI,
+    functionName: "removeTarget",
+    args: [target],
+  });
+}
+
+/**
  * Add multiple targets to the vault's allowlist (owner only).
  */
 export async function addTargets(targets: Address[]): Promise<Hex> {

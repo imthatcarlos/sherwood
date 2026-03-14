@@ -10,6 +10,7 @@ import { UniswapProvider } from "./providers/uniswap.js";
 import { runLeveredSwap } from "./commands/strategy-run.js";
 import * as vaultLib from "./lib/vault.js";
 import * as factoryLib from "./lib/factory.js";
+import * as subgraphLib from "./lib/subgraph.js";
 import { TOKENS } from "./lib/addresses.js";
 
 const program = new Command();
@@ -63,11 +64,28 @@ syndicate
 
 syndicate
   .command("list")
-  .description("List active syndicates")
-  .action(async () => {
+  .description("List active syndicates (queries subgraph, falls back to on-chain)")
+  .option("--creator <address>", "Filter by creator address")
+  .action(async (opts) => {
     const spinner = ora("Loading syndicates...").start();
     try {
-      const syndicates = await factoryLib.getActiveSyndicates();
+      // Try subgraph first (fast, indexed), fall back to on-chain
+      let syndicates: { id: string | bigint; vault: string; creator: string; metadataURI: string; createdAt: string | bigint; totalDeposits?: string; totalWithdrawals?: string }[];
+
+      if (process.env.SUBGRAPH_URL) {
+        const result = await subgraphLib.getActiveSyndicates(opts.creator);
+        syndicates = result;
+      } else {
+        const result = await factoryLib.getActiveSyndicates();
+        syndicates = result.map((s) => ({
+          id: s.id.toString(),
+          vault: s.vault,
+          creator: s.creator,
+          metadataURI: s.metadataURI,
+          createdAt: s.createdAt.toString(),
+        }));
+      }
+
       spinner.stop();
 
       if (syndicates.length === 0) {
@@ -77,13 +95,20 @@ syndicate
 
       console.log();
       console.log(chalk.bold(`Active Syndicates (${syndicates.length})`));
+      if (!process.env.SUBGRAPH_URL) {
+        console.log(chalk.dim("  (Set SUBGRAPH_URL for faster indexed queries)"));
+      }
       console.log(chalk.dim("─".repeat(70)));
 
       for (const s of syndicates) {
-        const date = new Date(Number(s.createdAt) * 1000).toLocaleDateString();
-        console.log(`  #${s.id}  ${chalk.cyan(s.vault)}`);
+        const ts = typeof s.createdAt === "string" ? Number(s.createdAt) : Number(s.createdAt);
+        const date = new Date(ts * 1000).toLocaleDateString();
+        console.log(`  #${s.id}  ${chalk.cyan(String(s.vault))}`);
         console.log(`    Creator: ${s.creator}`);
         console.log(`    Created: ${date}`);
+        if (s.totalDeposits) {
+          console.log(`    Deposits: ${s.totalDeposits} USDC`);
+        }
         if (s.metadataURI) {
           console.log(`    Metadata: ${chalk.dim(s.metadataURI)}`);
         }
@@ -332,7 +357,7 @@ vaultCmd
     process.env.VAULT_ADDRESS = opts.vault;
     const spinner = ora("Removing target...").start();
     try {
-      const hash = await vaultLib.addTarget(opts.target as Address);
+      const hash = await vaultLib.removeTarget(opts.target as Address);
       spinner.succeed(`Target removed: ${hash}`);
     } catch (err) {
       spinner.fail("Failed to remove target");
