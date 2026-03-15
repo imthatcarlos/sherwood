@@ -13,7 +13,6 @@ beforeAll(() => {
 
   const required = [
     "BASE_SEPOLIA_RPC_URL",
-    "VAULT_ADDRESS_TESTNET",
     "FACTORY_ADDRESS_TESTNET",
   ];
 
