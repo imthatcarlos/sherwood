@@ -9,7 +9,7 @@ import type { Address, Hex } from "viem";
 import { getChain, getNetwork } from "./network.js";
 import { getPublicClient, getWalletClient, getAccount } from "./client.js";
 import { STRATEGY_REGISTRY_ABI } from "./abis.js";
-import { getChainContracts } from "./config.js";
+import { SHERWOOD } from "./addresses.js";
 
 export interface StrategyRecord {
   id: bigint;
@@ -22,19 +22,7 @@ export interface StrategyRecord {
 }
 
 function getRegistryAddress(): Address {
-  // 1. Config (~/.sherwood/config.json)
-  const chainId = getChain().id;
-  const fromConfig = getChainContracts(chainId).registry;
-  if (fromConfig) return fromConfig as Address;
-
-  // 2. Env var fallback
-  const envKey = getNetwork() === "base-sepolia" ? "REGISTRY_ADDRESS_TESTNET" : "REGISTRY_ADDRESS";
-  const addr = process.env[envKey];
-  if (addr) return addr as Address;
-
-  throw new Error(
-    `Registry address not found. Run 'sherwood config set --registry <addr>' or set ${envKey}.`,
-  );
+  return SHERWOOD().STRATEGY_REGISTRY;
 }
 
 /**

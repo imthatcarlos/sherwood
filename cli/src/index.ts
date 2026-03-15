@@ -6,7 +6,7 @@ import type { Address } from "viem";
 import chalk from "chalk";
 import ora from "ora";
 import { setNetwork } from "./lib/network.js";
-import { getExplorerUrl, isTestnet, getChain } from "./lib/network.js";
+import { getExplorerUrl, getChain } from "./lib/network.js";
 import { TOKENS } from "./lib/addresses.js";
 import { getPublicClient, getAccount } from "./lib/client.js";
 import { ERC20_ABI } from "./lib/abis.js";
@@ -23,7 +23,7 @@ import { registerAllowanceCommands } from "./commands/allowance.js";
 import { registerIdentityCommands } from "./commands/identity.js";
 import { getXmtpClient, createSyndicateGroup, getGroup, addMember, sendEnvelope, removeMember } from "./lib/xmtp.js";
 import { setTextRecord, resolveVaultSyndicate } from "./lib/ens.js";
-import { cacheGroupId, setChainContract, setChainContracts, getChainContracts, loadConfig } from "./lib/config.js";
+import { cacheGroupId, setChainContract, getChainContracts, loadConfig, setPrivateKey } from "./lib/config.js";
 
 const program = new Command();
 
@@ -230,8 +230,7 @@ syndicate
       }
 
       // Also show vault info
-      const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-      process.env[envKey] = info.vault;
+      vaultLib.setVaultAddress(info.vault);
       const vaultInfo = await vaultLib.getVaultInfo();
       console.log();
       console.log(chalk.bold("  Vault Stats"));
@@ -255,8 +254,7 @@ syndicate
   .requiredOption("--vault <address>", "Vault address")
   .requiredOption("--depositor <address>", "Address to approve")
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     const spinner = ora("Approving depositor...").start();
     try {
       const hash = await vaultLib.approveDepositor(opts.depositor as Address);
@@ -275,8 +273,7 @@ syndicate
   .requiredOption("--vault <address>", "Vault address")
   .requiredOption("--depositor <address>", "Address to remove")
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     const spinner = ora("Removing depositor...").start();
     try {
       const hash = await vaultLib.removeDepositor(opts.depositor as Address);
@@ -309,8 +306,7 @@ syndicate
         process.exit(1);
       }
 
-      const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-      process.env[envKey] = opts.vault;
+      vaultLib.setVaultAddress(opts.vault as Address);
       const decimals = await vaultLib.getAssetDecimals();
       const maxPerTx = parseUnits(opts.maxPerTx, decimals);
       const dailyLimit = parseUnits(opts.dailyLimit, decimals);
@@ -394,8 +390,7 @@ vaultCmd
   .requiredOption("--vault <address>", "Vault address")
   .requiredOption("--amount <amount>", "Amount to deposit (in asset units)")
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     const decimals = await vaultLib.getAssetDecimals();
     const amount = parseUnits(opts.amount, decimals);
     const spinner = ora(`Depositing ${opts.amount}...`).start();
@@ -415,8 +410,7 @@ vaultCmd
   .description("Withdraw all shares from a vault")
   .requiredOption("--vault <address>", "Vault address")
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     const spinner = ora("Ragequitting...").start();
     try {
       const hash = await vaultLib.ragequit();
@@ -434,8 +428,7 @@ vaultCmd
   .description("Display vault state")
   .requiredOption("--vault <address>", "Vault address")
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     const spinner = ora("Loading vault info...").start();
     try {
       const info = await vaultLib.getVaultInfo();
@@ -466,8 +459,7 @@ vaultCmd
   .requiredOption("--vault <address>", "Vault address")
   .option("--address <address>", "Address to check (default: your wallet)")
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     const spinner = ora("Loading balance...").start();
     try {
       const balance = await vaultLib.getBalance(opts.address as Address | undefined);
@@ -494,8 +486,7 @@ vaultCmd
   .requiredOption("--vault <address>", "Vault address")
   .requiredOption("--target <address>", "Target address to allow")
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     const spinner = ora("Adding target...").start();
     try {
       const hash = await vaultLib.addTarget(opts.target as Address);
@@ -514,8 +505,7 @@ vaultCmd
   .requiredOption("--vault <address>", "Vault address")
   .requiredOption("--target <address>", "Target address to remove")
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     const spinner = ora("Removing target...").start();
     try {
       const hash = await vaultLib.removeTarget(opts.target as Address);
@@ -533,8 +523,7 @@ vaultCmd
   .description("List allowed targets for a vault")
   .requiredOption("--vault <address>", "Vault address")
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     const spinner = ora("Loading targets...").start();
     try {
       const targets = await vaultLib.getAllowedTargets();
@@ -658,8 +647,7 @@ strategy
   .option("--slippage <bps>", "Slippage tolerance in bps", "100")
   .option("--execute", "Actually execute on-chain (default: simulate only)", false)
   .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
+    vaultLib.setVaultAddress(opts.vault as Address);
     await runLeveredSwap(opts);
   });
 
@@ -694,27 +682,31 @@ const configCmd = program.command("config");
 
 configCmd
   .command("set")
-  .description("Save contract addresses to ~/.sherwood/config.json (persists across sessions)")
-  .option("--factory <address>", "SyndicateFactory address")
-  .option("--registry <address>", "StrategyRegistry address")
+  .description("Save settings to ~/.sherwood/config.json (persists across sessions)")
+  .option("--private-key <key>", "Wallet private key (0x-prefixed)")
   .option("--vault <address>", "Default SyndicateVault address")
   .action((opts) => {
-    const chainId = getChain().id;
-    const updates: Record<string, string> = {};
+    let saved = false;
 
-    if (opts.factory) updates.factory = opts.factory;
-    if (opts.registry) updates.registry = opts.registry;
-    if (opts.vault) updates.vault = opts.vault;
-
-    if (Object.keys(updates).length === 0) {
-      console.log(chalk.red("Provide at least one of: --factory, --registry, --vault"));
-      process.exit(1);
+    if (opts.privateKey) {
+      setPrivateKey(opts.privateKey);
+      const account = getAccount();
+      console.log(chalk.green("Private key saved to ~/.sherwood/config.json"));
+      console.log(chalk.dim(`  Wallet: ${account.address}`));
+      saved = true;
     }
 
-    setChainContracts(chainId, updates);
-    console.log(chalk.green(`Saved to ~/.sherwood/config.json (chain ${chainId}):`));
-    for (const [key, value] of Object.entries(updates)) {
-      console.log(chalk.dim(`  ${key}: ${value}`));
+    if (opts.vault) {
+      const chainId = getChain().id;
+      setChainContract(chainId, "vault", opts.vault);
+      console.log(chalk.green(`Vault saved to ~/.sherwood/config.json (chain ${chainId})`));
+      console.log(chalk.dim(`  Vault: ${opts.vault}`));
+      saved = true;
+    }
+
+    if (!saved) {
+      console.log(chalk.red("Provide at least one of: --private-key, --vault"));
+      process.exit(1);
     }
   });
 
@@ -729,9 +721,8 @@ configCmd
     console.log();
     console.log(chalk.bold(`Sherwood Config (chain ${chainId})`));
     console.log(chalk.dim("─".repeat(50)));
+    console.log(`  Wallet:     ${config.privateKey ? chalk.green("configured") : chalk.dim("not set")}`);
     console.log(`  Agent ID:   ${config.agentId ?? chalk.dim("not set")}`);
-    console.log(`  Factory:    ${contracts.factory ?? chalk.dim("not set")}`);
-    console.log(`  Registry:   ${contracts.registry ?? chalk.dim("not set")}`);
     console.log(`  Vault:      ${contracts.vault ?? chalk.dim("not set")}`);
     console.log();
     console.log(chalk.dim("  Config file: ~/.sherwood/config.json"));

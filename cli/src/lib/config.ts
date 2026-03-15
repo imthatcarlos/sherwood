@@ -12,20 +12,19 @@ import { getRandomValues } from "node:crypto";
 const CONFIG_DIR = path.join(process.env.HOME || "~", ".sherwood");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
 
-/** Per-chain contract addresses (stored by chainId). */
+/** Per-chain user-specific addresses (stored by chainId). */
 export interface ChainContracts {
-  factory?: string;
-  registry?: string;
-  vault?: string;
+  vault?: string; // user's default vault address
 }
 
 export interface SherwoodConfig {
   dbEncryptionKey: string; // hex-encoded 32 bytes
+  privateKey?: string; // wallet private key (0x-prefixed)
   xmtpInboxId?: string;
   groupCache: Record<string, string>; // subdomain → XMTP group ID
   veniceApiKey?: string; // Venice AI inference API key
   agentId?: number; // ERC-8004 identity token ID
-  contracts?: Record<string, ChainContracts>; // chainId → addresses
+  contracts?: Record<string, ChainContracts>; // chainId → user addresses
 }
 
 export function loadConfig(): SherwoodConfig {
@@ -77,6 +76,16 @@ export function getAgentId(): number | undefined {
   return loadConfig().agentId;
 }
 
+export function setPrivateKey(key: string): void {
+  const config = loadConfig();
+  config.privateKey = key.startsWith("0x") ? key : `0x${key}`;
+  saveConfig(config);
+}
+
+export function getPrivateKey(): string | undefined {
+  return loadConfig().privateKey;
+}
+
 // ── Per-chain contract addresses ──
 
 export function getChainContracts(chainId: number): ChainContracts {
@@ -94,16 +103,5 @@ export function setChainContract(
   const cid = String(chainId);
   if (!config.contracts[cid]) config.contracts[cid] = {};
   config.contracts[cid][key] = value;
-  saveConfig(config);
-}
-
-export function setChainContracts(
-  chainId: number,
-  contracts: Partial<ChainContracts>,
-): void {
-  const config = loadConfig();
-  if (!config.contracts) config.contracts = {};
-  const cid = String(chainId);
-  config.contracts[cid] = { ...config.contracts[cid], ...contracts };
   saveConfig(config);
 }

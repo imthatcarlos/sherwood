@@ -14,7 +14,7 @@ import { SDK } from "agent0-sdk";
 import { getPublicClient, getAccount } from "../lib/client.js";
 import { getExplorerUrl, getChain, getRpcUrl } from "../lib/network.js";
 import { AGENT_REGISTRY } from "../lib/addresses.js";
-import { setAgentId, getAgentId } from "../lib/config.js";
+import { setAgentId, getAgentId, loadConfig } from "../lib/config.js";
 
 // ── ABI (minimal, for status reads without SDK) ──
 
@@ -39,9 +39,13 @@ const IDENTITY_REGISTRY_ABI = [
  * Initialize the Agent0 SDK with the current network config.
  */
 function getAgent0SDK(): SDK {
-  const key = process.env.PRIVATE_KEY;
+  // Read key from config first, env var as fallback
+  const config = loadConfig();
+  const key = config.privateKey || process.env.PRIVATE_KEY;
   if (!key) {
-    throw new Error("PRIVATE_KEY env var is required for identity operations");
+    throw new Error(
+      "Private key not found. Run 'sherwood config set --private-key <key>' or set PRIVATE_KEY env var.",
+    );
   }
 
   return new SDK({

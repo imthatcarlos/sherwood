@@ -10,8 +10,7 @@ import { parseUnits, formatUnits } from "viem";
 import { getChain, getNetwork } from "./network.js";
 import { getPublicClient, getWalletClient, getAccount } from "./client.js";
 import { SYNDICATE_FACTORY_ABI } from "./abis.js";
-import { TOKENS } from "./addresses.js";
-import { getChainContracts } from "./config.js";
+import { TOKENS, SHERWOOD } from "./addresses.js";
 
 export interface SyndicateInfo {
   id: bigint;
@@ -38,19 +37,7 @@ export interface CreateSyndicateParams {
 }
 
 function getFactoryAddress(): Address {
-  // 1. Config (~/.sherwood/config.json)
-  const chainId = getChain().id;
-  const fromConfig = getChainContracts(chainId).factory;
-  if (fromConfig) return fromConfig as Address;
-
-  // 2. Env var fallback
-  const envKey = getNetwork() === "base-sepolia" ? "FACTORY_ADDRESS_TESTNET" : "FACTORY_ADDRESS";
-  const addr = process.env[envKey];
-  if (addr) return addr as Address;
-
-  throw new Error(
-    `Factory address not found. Run 'sherwood config set --factory <addr>' or set ${envKey}.`,
-  );
+  return SHERWOOD().FACTORY;
 }
 
 export interface CreateSyndicateResult {

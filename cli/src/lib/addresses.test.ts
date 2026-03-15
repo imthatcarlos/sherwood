@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { setNetwork } from "./network.js";
-import { TOKENS, MOONWELL, UNISWAP, VENICE, AGENT_REGISTRY } from "./addresses.js";
+import { TOKENS, MOONWELL, UNISWAP, VENICE, AGENT_REGISTRY, SHERWOOD } from "./addresses.js";
 
 describe("addresses", () => {
   describe("mainnet (base)", () => {
@@ -60,6 +60,11 @@ describe("addresses", () => {
 
     it("returns non-zero ERC-8004 addresses on Sepolia", () => {
       expect(AGENT_REGISTRY().IDENTITY_REGISTRY).toBe("0x8004A818BFB912233c491871b3d84c89A494BD9e");
+    });
+
+    it("returns correct Sherwood protocol addresses on Sepolia", () => {
+      expect(SHERWOOD().FACTORY).toBe("0x997FAcbAB167Afa2e70828Dc8bff5647773eA31D");
+      expect(SHERWOOD().STRATEGY_REGISTRY).toBe("0xfb5d298e13D79aa5960F4c6233348b86b3B23e99");
     });
   });
 });

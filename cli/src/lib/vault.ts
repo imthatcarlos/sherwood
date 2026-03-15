@@ -18,11 +18,16 @@ export interface SimulationResult {
   returnData: Hex;
 }
 
+// Per-command override (set by --vault flag in index.ts)
+let _vaultOverride: Address | null = null;
+
+export function setVaultAddress(addr: Address): void {
+  _vaultOverride = addr;
+}
+
 function getVaultAddress(): Address {
-  // 1. Env var (set per-command via --vault flag in index.ts)
-  const envKey = getNetwork() === "base-sepolia" ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-  const envAddr = process.env[envKey];
-  if (envAddr) return envAddr as Address;
+  // 1. Per-command override (--vault flag)
+  if (_vaultOverride) return _vaultOverride;
 
   // 2. Config (~/.sherwood/config.json) — default vault
   const chainId = getChain().id;
@@ -30,7 +35,7 @@ function getVaultAddress(): Address {
   if (fromConfig) return fromConfig as Address;
 
   throw new Error(
-    `Vault address not found. Pass --vault <addr> or run 'sherwood config set --vault <addr>'.`,
+    "Vault address not found. Pass --vault <addr> or run 'sherwood config set --vault <addr>'.",
   );
 }
 
