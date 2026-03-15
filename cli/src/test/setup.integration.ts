@@ -1,8 +1,9 @@
 /**
  * Integration test setup — runs before all integration tests.
- * Sets network to base-sepolia and validates required env vars.
+ * Loads .env, sets network to base-sepolia, and validates required env vars.
  */
 
+import "dotenv/config";
 import { beforeAll } from "vitest";
 import { setNetwork } from "../lib/network.js";
 import { resetClients } from "../lib/client.js";
@@ -14,6 +15,7 @@ beforeAll(() => {
   const required = [
     "BASE_SEPOLIA_RPC_URL",
     "FACTORY_ADDRESS_TESTNET",
+    "REGISTRY_ADDRESS_TESTNET",
   ];
 
   for (const key of required) {
