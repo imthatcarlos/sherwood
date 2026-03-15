@@ -3,21 +3,24 @@ pragma solidity 0.8.28;
 
 import {Script, console} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SyndicateVault} from "../../src/SyndicateVault.sol";
-import {ISyndicateVault} from "../../src/interfaces/ISyndicateVault.sol";
 import {BatchExecutorLib} from "../../src/BatchExecutorLib.sol";
 import {SyndicateFactory} from "../../src/SyndicateFactory.sol";
 import {StrategyRegistry} from "../../src/StrategyRegistry.sol";
 
 /**
- * @notice Deploy Sherwood infrastructure to Base Sepolia (testnet):
+ * @notice Deploy Sherwood protocol infrastructure to Base Sepolia (testnet).
+ *         This script deploys only the shared infrastructure contracts:
  *         1. BatchExecutorLib (shared, stateless)
  *         2. SyndicateVault implementation
  *         3. SyndicateFactory (registers both)
  *         4. StrategyRegistry (UUPS proxy)
- *         5. First syndicate via factory
- *         6. Register deployer as agent + sample strategy
+ *
+ *         Syndicate creation, agent registration, and strategy registration
+ *         are handled via the CLI after deployment:
+ *           sherwood identity mint
+ *           sherwood syndicate create --agent-id <id> ...
+ *           sherwood syndicate add --vault <addr> ...
  *
  *   Usage:
  *     forge script script/testnet/Deploy.s.sol:DeployTestnet \
@@ -27,12 +30,6 @@ import {StrategyRegistry} from "../../src/StrategyRegistry.sol";
  */
 contract DeployTestnet is Script {
     // ── Base Sepolia addresses ──
-
-    // Circle test USDC on Base Sepolia (6 decimals)
-    address constant USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
-
-    // Canonical WETH (same on all Base networks)
-    address constant WETH = 0x4200000000000000000000000000000000000006;
 
     // Durin L2 Registrar (ENS subnames for sherwoodagent.eth)
     address constant L2_REGISTRAR = 0x1fCbe9dFC25e3fa3F7C55b26c7992684A4758b47;
@@ -68,65 +65,17 @@ contract DeployTestnet is Script {
         address registryProxy = address(new ERC1967Proxy(address(registryImpl), registryInitData));
         console.log("StrategyRegistry:", registryProxy);
 
-        // 5. Create first syndicate via factory
-        // Testnet: only USDC and WETH as targets (protocols may not be on Sepolia)
-        address[] memory targets = new address[](2);
-        targets[0] = USDC;
-        targets[1] = WETH;
-
-        // NOTE: creatorAgentId must be set to the deployer's ERC-8004 agent ID
-        uint256 creatorAgentId = vm.envUint("CREATOR_AGENT_ID");
-
-        (uint256 syndicateId, address vaultProxy) = factory.createSyndicate(
-            creatorAgentId,
-            SyndicateFactory.SyndicateConfig({
-                metadataURI: "",
-                asset: IERC20(USDC),
-                name: "Sherwood Testnet Vault",
-                symbol: "swUSDC",
-                caps: ISyndicateVault.SyndicateCaps({
-                    maxPerTx: 100e6, // 100 USDC
-                    maxDailyTotal: 500e6, // 500 USDC
-                    maxBorrowRatio: 7500 // 75% LTV
-                }),
-                initialTargets: targets,
-                openDeposits: true, // Open for easy testing
-                subdomain: "sherwood-testnet"
-            })
-        );
-        console.log("Syndicate #%d vault:", syndicateId, vaultProxy);
-
-        // 6. Register deployer as agent (dev mode)
-        uint256 agentId = creatorAgentId;
-        SyndicateVault(payable(vaultProxy))
-            .registerAgent(
-                agentId, // ERC-8004 identity
-                deployer, // pkpAddress (dev: deployer acts as agent)
-                deployer, // operatorEOA
-                100e6, // maxPerTx: 100 USDC
-                500e6 // dailyLimit: 500 USDC
-            );
-        console.log("Registered deployer as agent");
-
-        // 7. Register sample strategy
-        StrategyRegistry(registryProxy)
-            .registerStrategy(
-                address(0xdead), // Placeholder implementation
-                1, // Type 1 = lending
-                "levered-swap",
-                "" // No metadata URI yet
-            );
-        console.log("Registered sample strategy");
-
         vm.stopBroadcast();
 
         // Summary
         console.log("\n=== Testnet Deployment Summary ===");
-        console.log("VAULT_ADDRESS_TESTNET=%s", vaultProxy);
         console.log("FACTORY_ADDRESS_TESTNET=%s", address(factory));
         console.log("REGISTRY_ADDRESS_TESTNET=%s", registryProxy);
         console.log("EXECUTOR_LIB_ADDRESS=%s", address(executorLib));
         console.log("\nCopy the above to cli/.env");
+        console.log("\nNext steps:");
+        console.log("  1. sherwood --testnet identity mint");
+        console.log("  2. sherwood --testnet syndicate create --agent-id <id> --subdomain <name> --name <name>");
         console.log("Explorer: https://sepolia.basescan.org/address/%s", address(factory));
     }
 }
