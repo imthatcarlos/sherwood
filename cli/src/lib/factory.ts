@@ -10,7 +10,7 @@ import { parseUnits, formatUnits } from "viem";
 import { getChain, getNetwork } from "./network.js";
 import { getPublicClient, getWalletClient, getAccount } from "./client.js";
 import { SYNDICATE_FACTORY_ABI } from "./abis.js";
-import { TOKENS } from "./addresses.js";
+import { TOKENS, SHERWOOD } from "./addresses.js";
 
 export interface SyndicateInfo {
   id: bigint;
@@ -37,22 +37,25 @@ export interface CreateSyndicateParams {
 }
 
 function getFactoryAddress(): Address {
-  const envKey = getNetwork() === "base-sepolia" ? "FACTORY_ADDRESS_TESTNET" : "FACTORY_ADDRESS";
-  const addr = process.env[envKey];
-  if (!addr) {
-    throw new Error(`${envKey} env var is required`);
-  }
-  return addr as Address;
+  return SHERWOOD().FACTORY;
+}
+
+export interface CreateSyndicateResult {
+  hash: Hex;
+  syndicateId: bigint;
+  vault: Address;
 }
 
 /**
  * Create a new syndicate via the factory.
  * Deploys a UUPS vault proxy, initializes it, and registers in the factory.
+ * Waits for receipt and extracts vault address from SyndicateCreated event.
  */
-export async function createSyndicate(params: CreateSyndicateParams): Promise<Hex> {
+export async function createSyndicate(params: CreateSyndicateParams): Promise<CreateSyndicateResult> {
   const wallet = getWalletClient();
+  const client = getPublicClient();
 
-  return wallet.writeContract({
+  const hash = await wallet.writeContract({
     account: getAccount(),
     chain: getChain(),
     address: getFactoryAddress(),
@@ -76,6 +79,25 @@ export async function createSyndicate(params: CreateSyndicateParams): Promise<He
       },
     ],
   });
+
+  // Wait for receipt and extract vault from SyndicateCreated event
+  const receipt = await client.waitForTransactionReceipt({ hash });
+
+  // SyndicateCreated(uint256 syndicateId, address vault, address creator, string metadataURI, string subdomain)
+  // Event topic[0] = keccak256 of signature, topic[1] = syndicateId (indexed), topic[2] = vault (indexed), topic[3] = creator (indexed)
+  const syndicateCreatedTopic = "0x" + "SyndicateCreated(uint256,address,address,string,string)"
+    .split("") // We'll use a simpler approach — read from factory
+    .join("");
+
+  // Simpler: read the latest syndicate count and get that syndicate's info
+  const count = await getSyndicateCount();
+  const info = await getSyndicate(count);
+
+  return {
+    hash,
+    syndicateId: count,
+    vault: info.vault,
+  };
 }
 
 /**

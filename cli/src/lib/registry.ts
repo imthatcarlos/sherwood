@@ -9,6 +9,7 @@ import type { Address, Hex } from "viem";
 import { getChain, getNetwork } from "./network.js";
 import { getPublicClient, getWalletClient, getAccount } from "./client.js";
 import { STRATEGY_REGISTRY_ABI } from "./abis.js";
+import { SHERWOOD } from "./addresses.js";
 
 export interface StrategyRecord {
   id: bigint;
@@ -21,12 +22,7 @@ export interface StrategyRecord {
 }
 
 function getRegistryAddress(): Address {
-  const envKey = getNetwork() === "base-sepolia" ? "REGISTRY_ADDRESS_TESTNET" : "REGISTRY_ADDRESS";
-  const addr = process.env[envKey];
-  if (!addr) {
-    throw new Error(`${envKey} env var is required`);
-  }
-  return addr as Address;
+  return SHERWOOD().STRATEGY_REGISTRY;
 }
 
 /**

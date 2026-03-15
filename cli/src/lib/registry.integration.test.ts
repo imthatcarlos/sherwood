@@ -1,6 +1,6 @@
 /**
  * Integration tests for StrategyRegistry — read-only RPC calls.
- * Requires BASE_SEPOLIA_RPC_URL + REGISTRY_ADDRESS_TESTNET env vars.
+ * Requires BASE_SEPOLIA_RPC_URL env var. Registry address is hardcoded in addresses.ts.
  */
 
 import { describe, it, expect } from "vitest";

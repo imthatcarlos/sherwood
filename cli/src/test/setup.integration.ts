@@ -1,6 +1,7 @@
 /**
  * Integration test setup — runs before all integration tests.
- * Loads .env, sets network to base-sepolia, and validates required env vars.
+ * Loads .env, sets network to base-sepolia, and validates RPC is available.
+ * Factory/registry addresses are hardcoded in addresses.ts — no env vars needed.
  */
 
 import "dotenv/config";
@@ -12,18 +13,10 @@ beforeAll(() => {
   setNetwork("base-sepolia");
   resetClients();
 
-  const required = [
-    "BASE_SEPOLIA_RPC_URL",
-    "FACTORY_ADDRESS_TESTNET",
-    "REGISTRY_ADDRESS_TESTNET",
-  ];
-
-  for (const key of required) {
-    if (!process.env[key]) {
-      throw new Error(
-        `${key} is required for integration tests. ` +
-        `Set it in cli/.env or as an environment variable.`,
-      );
-    }
+  if (!process.env.BASE_SEPOLIA_RPC_URL) {
+    throw new Error(
+      "BASE_SEPOLIA_RPC_URL is required for integration tests. " +
+      "Set it in cli/.env or as an environment variable.",
+    );
   }
 });

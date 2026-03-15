@@ -99,6 +99,18 @@ const BASE_SEPOLIA_AGENT_REGISTRY = {
   REPUTATION_REGISTRY: "0x8004B663056A597Dffe9eCcC1965A193B7388713" as Address,
 } as const;
 
+// ── Sherwood Protocol (our deployed contracts) ──
+
+const BASE_SHERWOOD = {
+  FACTORY: "0x0000000000000000000000000000000000000000" as Address, // TODO: set after mainnet deploy
+  STRATEGY_REGISTRY: "0x0000000000000000000000000000000000000000" as Address, // TODO: set after mainnet deploy
+} as const;
+
+const BASE_SEPOLIA_SHERWOOD = {
+  FACTORY: "0x997FAcbAB167Afa2e70828Dc8bff5647773eA31D" as Address,
+  STRATEGY_REGISTRY: "0xfb5d298e13D79aa5960F4c6233348b86b3B23e99" as Address,
+} as const;
+
 // ── Venice (VVV governance + sVVV staking + DIEM compute) ──
 
 const BASE_VENICE = {
@@ -141,4 +153,8 @@ export function AGENT_REGISTRY() {
 
 export function VENICE() {
   return getNetwork() === "base" ? BASE_VENICE : BASE_SEPOLIA_VENICE;
+}
+
+export function SHERWOOD() {
+  return getNetwork() === "base" ? BASE_SHERWOOD : BASE_SEPOLIA_SHERWOOD;
 }

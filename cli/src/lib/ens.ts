@@ -11,19 +11,12 @@ import { namehash } from "viem/ens";
 import { getPublicClient, getWalletClient, getAccount } from "./client.js";
 import { getChain, getNetwork } from "./network.js";
 import { SYNDICATE_FACTORY_ABI, L2_REGISTRY_ABI } from "./abis.js";
-import { ENS } from "./addresses.js";
+import { ENS, SHERWOOD } from "./addresses.js";
 
 const ENS_DOMAIN = "sherwoodagent.eth";
 
-// ── Factory address helper (reuse pattern from factory.ts) ──
-
 function getFactoryAddress(): Address {
-  const envKey = getNetwork() === "base-sepolia" ? "FACTORY_ADDRESS_TESTNET" : "FACTORY_ADDRESS";
-  const addr = process.env[envKey];
-  if (!addr) {
-    throw new Error(`${envKey} env var is required`);
-  }
-  return addr as Address;
+  return SHERWOOD().FACTORY;
 }
 
 // ── Syndicate Resolution (via factory) ──
