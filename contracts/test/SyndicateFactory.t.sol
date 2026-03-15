@@ -7,12 +7,14 @@ import {ISyndicateVault} from "../src/interfaces/ISyndicateVault.sol";
 import {BatchExecutorLib} from "../src/BatchExecutorLib.sol";
 import {SyndicateFactory} from "../src/SyndicateFactory.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
+import {MockL2Registrar} from "./mocks/MockL2Registrar.sol";
 
 contract SyndicateFactoryTest is Test {
     SyndicateFactory public factory;
     BatchExecutorLib public executorLib;
     SyndicateVault public vaultImpl;
     ERC20Mock public usdc;
+    MockL2Registrar public ensRegistrar;
 
     address public creator1 = makeAddr("creator1");
     address public creator2 = makeAddr("creator2");
@@ -21,7 +23,8 @@ contract SyndicateFactoryTest is Test {
         usdc = new ERC20Mock("USD Coin", "USDC", 6);
         executorLib = new BatchExecutorLib();
         vaultImpl = new SyndicateVault();
-        factory = new SyndicateFactory(address(executorLib), address(vaultImpl));
+        ensRegistrar = new MockL2Registrar();
+        factory = new SyndicateFactory(address(executorLib), address(vaultImpl), address(ensRegistrar));
     }
 
     function _defaultConfig() internal view returns (SyndicateFactory.SyndicateConfig memory) {
@@ -35,8 +38,19 @@ contract SyndicateFactoryTest is Test {
             symbol: "tVault",
             caps: ISyndicateVault.SyndicateCaps({maxPerTx: 10_000e6, maxDailyTotal: 50_000e6, maxBorrowRatio: 7500}),
             initialTargets: targets,
-            openDeposits: false
+            openDeposits: false,
+            subdomain: "test-syndicate"
         });
+    }
+
+    function _configWithSubdomain(string memory subdomain_)
+        internal
+        view
+        returns (SyndicateFactory.SyndicateConfig memory)
+    {
+        SyndicateFactory.SyndicateConfig memory cfg = _defaultConfig();
+        cfg.subdomain = subdomain_;
+        return cfg;
     }
 
     // ==================== CREATION ====================
@@ -73,19 +87,20 @@ contract SyndicateFactoryTest is Test {
         assertEq(factory.syndicateCount(), 1);
         assertEq(factory.vaultToSyndicate(vault1), id1);
 
-        (uint256 storedId, address storedVault, address storedCreator,,, bool active) = factory.syndicates(id1);
+        (uint256 storedId, address storedVault, address storedCreator,,,, string memory storedSubdomain) =
+            factory.syndicates(id1);
         assertEq(storedId, id1);
         assertEq(storedVault, vault1);
         assertEq(storedCreator, creator1);
-        assertTrue(active);
+        assertEq(storedSubdomain, "test-syndicate");
     }
 
     function test_createMultipleSyndicates() public {
         vm.prank(creator1);
-        (uint256 id1, address vault1) = factory.createSyndicate(_defaultConfig());
+        (uint256 id1, address vault1) = factory.createSyndicate(_configWithSubdomain("syndicate-one"));
 
         vm.prank(creator2);
-        (uint256 id2, address vault2) = factory.createSyndicate(_defaultConfig());
+        (uint256 id2, address vault2) = factory.createSyndicate(_configWithSubdomain("syndicate-two"));
 
         assertEq(id1, 1);
         assertEq(id2, 2);
@@ -136,9 +151,9 @@ contract SyndicateFactoryTest is Test {
     function test_storageIsolation() public {
         // Create two syndicates
         vm.prank(creator1);
-        (, address vault1Addr) = factory.createSyndicate(_defaultConfig());
+        (, address vault1Addr) = factory.createSyndicate(_configWithSubdomain("vault-alpha"));
         vm.prank(creator2);
-        (, address vault2Addr) = factory.createSyndicate(_defaultConfig());
+        (, address vault2Addr) = factory.createSyndicate(_configWithSubdomain("vault-beta"));
 
         SyndicateVault vault1 = SyndicateVault(payable(vault1Addr));
         SyndicateVault vault2 = SyndicateVault(payable(vault2Addr));
@@ -161,6 +176,53 @@ contract SyndicateFactoryTest is Test {
         assertTrue(vault2.isAgent(agent2));
     }
 
+    // ==================== ENS SUBDOMAINS ====================
+
+    function test_createSyndicate_registersENS() public {
+        vm.prank(creator1);
+        (, address vaultAddr) = factory.createSyndicate(_configWithSubdomain("alpha-seekers"));
+
+        // Verify the registrar received the correct label + vault address
+        assertTrue(ensRegistrar.isRegistered("alpha-seekers"));
+        assertEq(ensRegistrar.getOwner("alpha-seekers"), vaultAddr);
+    }
+
+    function test_createSyndicate_duplicateName_reverts() public {
+        vm.prank(creator1);
+        factory.createSyndicate(_configWithSubdomain("taken-name"));
+
+        vm.prank(creator2);
+        vm.expectRevert(SyndicateFactory.SubdomainTaken.selector);
+        factory.createSyndicate(_configWithSubdomain("taken-name"));
+    }
+
+    function test_createSyndicate_nameTooShort_reverts() public {
+        vm.prank(creator1);
+        vm.expectRevert(SyndicateFactory.SubdomainTooShort.selector);
+        factory.createSyndicate(_configWithSubdomain("ab"));
+    }
+
+    function test_subdomainToSyndicate() public {
+        vm.prank(creator1);
+        (uint256 id,) = factory.createSyndicate(_configWithSubdomain("my-fund"));
+
+        assertEq(factory.subdomainToSyndicate("my-fund"), id);
+        assertEq(factory.subdomainToSyndicate("nonexistent"), 0);
+    }
+
+    function test_isSubdomainAvailable() public {
+        assertTrue(factory.isSubdomainAvailable("new-fund"));
+
+        vm.prank(creator1);
+        factory.createSyndicate(_configWithSubdomain("new-fund"));
+
+        assertFalse(factory.isSubdomainAvailable("new-fund"));
+    }
+
+    function test_isSubdomainAvailable_tooShort() public view {
+        assertFalse(factory.isSubdomainAvailable("ab"));
+    }
+
     // ==================== METADATA ====================
 
     function test_updateMetadata() public {
@@ -170,7 +232,7 @@ contract SyndicateFactoryTest is Test {
         vm.prank(creator1);
         factory.updateMetadata(id, "ipfs://QmUpdated");
 
-        (,,, string memory uri,,) = factory.syndicates(id);
+        (,,, string memory uri,,,) = factory.syndicates(id);
         assertEq(uri, "ipfs://QmUpdated");
     }
 
@@ -179,7 +241,7 @@ contract SyndicateFactoryTest is Test {
         (uint256 id,) = factory.createSyndicate(_defaultConfig());
 
         vm.prank(creator2);
-        vm.expectRevert("Not creator");
+        vm.expectRevert(SyndicateFactory.NotCreator.selector);
         factory.updateMetadata(id, "ipfs://QmHack");
     }
 
@@ -192,7 +254,7 @@ contract SyndicateFactoryTest is Test {
         vm.prank(creator1);
         factory.deactivate(id);
 
-        (,,,,, bool active) = factory.syndicates(id);
+        (,,,,, bool active,) = factory.syndicates(id);
         assertFalse(active);
     }
 
@@ -201,15 +263,15 @@ contract SyndicateFactoryTest is Test {
         (uint256 id,) = factory.createSyndicate(_defaultConfig());
 
         vm.prank(creator2);
-        vm.expectRevert("Not creator");
+        vm.expectRevert(SyndicateFactory.NotCreator.selector);
         factory.deactivate(id);
     }
 
     function test_getActiveSyndicates() public {
         vm.startPrank(creator1);
-        factory.createSyndicate(_defaultConfig());
-        (uint256 id2,) = factory.createSyndicate(_defaultConfig());
-        factory.createSyndicate(_defaultConfig());
+        factory.createSyndicate(_configWithSubdomain("fund-aaa"));
+        (uint256 id2,) = factory.createSyndicate(_configWithSubdomain("fund-bbb"));
+        factory.createSyndicate(_configWithSubdomain("fund-ccc"));
 
         // Deactivate #2
         factory.deactivate(id2);

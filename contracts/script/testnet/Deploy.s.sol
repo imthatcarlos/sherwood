@@ -34,6 +34,9 @@ contract DeployTestnet is Script {
     // Canonical WETH (same on all Base networks)
     address constant WETH = 0x4200000000000000000000000000000000000006;
 
+    // Durin L2 Registrar (ENS subnames for sherwoodagent.eth)
+    address constant L2_REGISTRAR = 0x1fCbe9dFC25e3fa3F7C55b26c7992684A4758b47;
+
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
@@ -52,7 +55,7 @@ contract DeployTestnet is Script {
         console.log("Vault implementation:", address(vaultImpl));
 
         // 3. Deploy SyndicateFactory
-        SyndicateFactory factory = new SyndicateFactory(address(executorLib), address(vaultImpl));
+        SyndicateFactory factory = new SyndicateFactory(address(executorLib), address(vaultImpl), L2_REGISTRAR);
         console.log("SyndicateFactory:", address(factory));
 
         // 4. Deploy StrategyRegistry (UUPS proxy)
@@ -79,7 +82,8 @@ contract DeployTestnet is Script {
                     maxBorrowRatio: 7500 // 75% LTV
                 }),
                 initialTargets: targets,
-                openDeposits: true // Open for easy testing
+                openDeposits: true, // Open for easy testing
+                subdomain: "sherwood-testnet"
             })
         );
         console.log("Syndicate #%d vault:", syndicateId, vaultProxy);

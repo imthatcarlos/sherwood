@@ -12,6 +12,16 @@ struct StrategyRecord {
 }
 
 interface IStrategyRegistry {
+    // ── Errors ──
+    error InvalidAdmin();
+    error InvalidGuardian();
+    error InvalidImplementation();
+    error InvalidStrategyType();
+    error EmptyName();
+    error StrategyNotFound();
+    error NotAuthorized();
+    error AlreadyInactive();
+
     // ── Mutators ──
     function registerStrategy(
         address implementation,

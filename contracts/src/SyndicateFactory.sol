@@ -5,6 +5,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SyndicateVault} from "./SyndicateVault.sol";
 import {ISyndicateVault} from "./interfaces/ISyndicateVault.sol";
+import {IL2Registrar} from "./interfaces/IL2Registrar.sol";
 
 /**
  * @title SyndicateFactory
@@ -13,8 +14,19 @@ import {ISyndicateVault} from "./interfaces/ISyndicateVault.sol";
  *   All syndicates share the same executor lib (stateless, called via delegatecall)
  *   and vault implementation. Each vault proxy has its own storage: positions,
  *   agent registry, allowlist, and caps.
+ *
+ *   ENS subnames are registered atomically via Durin L2 Registrar, so each
+ *   syndicate gets a <subdomain>.sherwoodagent.eth name resolving to its vault.
  */
 contract SyndicateFactory {
+    // ── Errors ──
+    error InvalidExecutorImpl();
+    error InvalidVaultImpl();
+    error InvalidENSRegistrar();
+    error SubdomainTooShort();
+    error SubdomainTaken();
+    error NotCreator();
+
     struct SyndicateConfig {
         string metadataURI; // ipfs://Qm... (name, description, strategies)
         IERC20 asset; // Deposit asset (e.g., USDC)
@@ -23,6 +35,7 @@ contract SyndicateFactory {
         ISyndicateVault.SyndicateCaps caps; // Syndicate-wide limits
         address[] initialTargets; // Protocol addresses to allowlist
         bool openDeposits; // If true, anyone can deposit. If false, depositor whitelist enforced.
+        string subdomain; // ENS subdomain label (e.g. "alpha-seekers")
     }
 
     struct Syndicate {
@@ -32,6 +45,7 @@ contract SyndicateFactory {
         string metadataURI; // ipfs://... via Pinata
         uint256 createdAt;
         bool active;
+        string subdomain; // ENS subdomain registered
     }
 
     /// @notice Shared executor lib (deployed once, stateless)
@@ -40,6 +54,9 @@ contract SyndicateFactory {
     /// @notice Shared vault implementation (for UUPS proxies)
     address public immutable vaultImpl;
 
+    /// @notice Durin L2 Registrar for ENS subnames
+    IL2Registrar public immutable ensRegistrar;
+
     /// @notice All syndicates
     mapping(uint256 => Syndicate) public syndicates;
     uint256 public syndicateCount;
@@ -47,22 +64,33 @@ contract SyndicateFactory {
     /// @notice Vault address → syndicate ID
     mapping(address => uint256) public vaultToSyndicate;
 
-    event SyndicateCreated(uint256 indexed id, address indexed vault, address indexed creator, string metadataURI);
+    /// @notice ENS subdomain → syndicate ID
+    mapping(string => uint256) public subdomainToSyndicate;
+
+    event SyndicateCreated(
+        uint256 indexed id, address indexed vault, address indexed creator, string metadataURI, string subdomain
+    );
     event MetadataUpdated(uint256 indexed id, string metadataURI);
     event SyndicateDeactivated(uint256 indexed id);
 
-    constructor(address executorImpl_, address vaultImpl_) {
-        require(executorImpl_ != address(0), "Invalid executor impl");
-        require(vaultImpl_ != address(0), "Invalid vault impl");
+    constructor(address executorImpl_, address vaultImpl_, address ensRegistrar_) {
+        if (executorImpl_ == address(0)) revert InvalidExecutorImpl();
+        if (vaultImpl_ == address(0)) revert InvalidVaultImpl();
+        if (ensRegistrar_ == address(0)) revert InvalidENSRegistrar();
         executorImpl = executorImpl_;
         vaultImpl = vaultImpl_;
+        ensRegistrar = IL2Registrar(ensRegistrar_);
     }
 
-    /// @notice Create a new syndicate — deploys vault proxy, registers everything
+    /// @notice Create a new syndicate — deploys vault proxy, registers ENS subname, stores everything
     /// @param config Syndicate configuration
     /// @return syndicateId The new syndicate's ID
     /// @return vault The deployed vault proxy address
     function createSyndicate(SyndicateConfig calldata config) external returns (uint256 syndicateId, address vault) {
+        // Validate subdomain
+        if (bytes(config.subdomain).length < 3) revert SubdomainTooShort();
+        if (subdomainToSyndicate[config.subdomain] != 0) revert SubdomainTaken();
+
         syndicateId = ++syndicateCount;
 
         // Deploy vault as UUPS proxy
@@ -82,24 +110,29 @@ contract SyndicateFactory {
 
         vault = address(new ERC1967Proxy(vaultImpl, initData));
 
+        // Register ENS subname — vault is both address record + NFT owner
+        ensRegistrar.register(config.subdomain, vault);
+
         syndicates[syndicateId] = Syndicate({
             id: syndicateId,
             vault: vault,
             creator: msg.sender,
             metadataURI: config.metadataURI,
             createdAt: block.timestamp,
-            active: true
+            active: true,
+            subdomain: config.subdomain
         });
 
         vaultToSyndicate[vault] = syndicateId;
+        subdomainToSyndicate[config.subdomain] = syndicateId;
 
-        emit SyndicateCreated(syndicateId, vault, msg.sender, config.metadataURI);
+        emit SyndicateCreated(syndicateId, vault, msg.sender, config.metadataURI, config.subdomain);
     }
 
     /// @notice Update syndicate metadata (creator only)
     function updateMetadata(uint256 syndicateId, string calldata metadataURI) external {
         Syndicate storage s = syndicates[syndicateId];
-        require(s.creator == msg.sender, "Not creator");
+        if (s.creator != msg.sender) revert NotCreator();
         s.metadataURI = metadataURI;
         emit MetadataUpdated(syndicateId, metadataURI);
     }
@@ -107,9 +140,14 @@ contract SyndicateFactory {
     /// @notice Deactivate a syndicate (creator only)
     function deactivate(uint256 syndicateId) external {
         Syndicate storage s = syndicates[syndicateId];
-        require(s.creator == msg.sender, "Not creator");
+        if (s.creator != msg.sender) revert NotCreator();
         s.active = false;
         emit SyndicateDeactivated(syndicateId);
+    }
+
+    /// @notice Check if a subdomain is available for registration
+    function isSubdomainAvailable(string calldata subdomain) external view returns (bool) {
+        return subdomainToSyndicate[subdomain] == 0 && ensRegistrar.available(subdomain);
     }
 
     /// @notice Get all active syndicates (for dashboard)

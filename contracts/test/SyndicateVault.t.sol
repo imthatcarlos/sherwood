@@ -154,7 +154,7 @@ contract SyndicateVaultTest is Test {
 
     function test_ragequit_noShares_reverts() public {
         vm.prank(lp1);
-        vm.expectRevert("No shares");
+        vm.expectRevert(ISyndicateVault.NoShares.selector);
         vault.ragequit(lp1);
     }
 
@@ -174,7 +174,7 @@ contract SyndicateVaultTest is Test {
 
     function test_registerAgent_exceedsSyndicateCap_reverts() public {
         vm.prank(owner);
-        vm.expectRevert("Agent maxPerTx > syndicate cap");
+        vm.expectRevert(ISyndicateVault.AgentMaxPerTxExceedsCap.selector);
         vault.registerAgent(agentPkp2, agentEoa2, MAX_PER_TX + 1, 20_000e6);
     }
 
@@ -331,7 +331,7 @@ contract SyndicateVaultTest is Test {
         calls[0] = BatchExecutorLib.Call({target: evil, data: "", value: 0});
 
         vm.prank(agentPkp);
-        vm.expectRevert("Target not allowed");
+        vm.expectRevert(abi.encodeWithSelector(ISyndicateVault.TargetNotAllowed.selector, makeAddr("evilContract")));
         vault.executeBatch(calls, 0);
     }
 
@@ -339,7 +339,7 @@ contract SyndicateVaultTest is Test {
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](0);
 
         vm.prank(makeAddr("attacker"));
-        vm.expectRevert("Not an active agent");
+        vm.expectRevert(ISyndicateVault.NotActiveAgent.selector);
         vault.executeBatch(calls, 0);
     }
 
@@ -356,7 +356,7 @@ contract SyndicateVaultTest is Test {
         calls[1] = BatchExecutorLib.Call({target: makeAddr("notAllowed"), data: "", value: 0});
 
         vm.prank(agentPkp);
-        vm.expectRevert("Target not allowed");
+        vm.expectRevert(abi.encodeWithSelector(ISyndicateVault.TargetNotAllowed.selector, makeAddr("notAllowed")));
         vault.executeBatch(calls, 0);
 
         // Approve from step 1 should NOT have persisted
@@ -381,7 +381,7 @@ contract SyndicateVaultTest is Test {
 
         // Agent cap is 5000e6 — try 6000e6
         vm.prank(agentPkp);
-        vm.expectRevert("Exceeds per-tx cap");
+        vm.expectRevert(ISyndicateVault.ExceedsPerTxCap.selector);
         vault.executeBatch(calls, 6_000e6);
     }
 
@@ -396,7 +396,7 @@ contract SyndicateVaultTest is Test {
 
         // Next tx should fail (20k daily limit, already spent 20k)
         vm.prank(agentPkp);
-        vm.expectRevert("Exceeds agent daily limit");
+        vm.expectRevert(ISyndicateVault.ExceedsAgentDailyLimit.selector);
         vault.executeBatch(calls, 1_000e6);
     }
 
@@ -441,7 +441,7 @@ contract SyndicateVaultTest is Test {
 
         // Agent 2 tries one more — hits syndicate daily limit (50k)
         vm.prank(agentPkp2);
-        vm.expectRevert("Exceeds syndicate daily limit");
+        vm.expectRevert(ISyndicateVault.ExceedsSyndicateDailyLimit.selector);
         vault.executeBatch(calls, 1_000e6);
     }
 
@@ -491,7 +491,7 @@ contract SyndicateVaultTest is Test {
         if (amount > 5_000e6) {
             // Exceeds agent per-tx cap
             vm.prank(agentPkp);
-            vm.expectRevert("Exceeds per-tx cap");
+            vm.expectRevert(ISyndicateVault.ExceedsPerTxCap.selector);
             vault.executeBatch(calls, amount);
         } else {
             vm.prank(agentPkp);
@@ -611,7 +611,7 @@ contract SyndicateVaultTest is Test {
         usdc.mint(lp1, 10_000e6);
         vm.startPrank(lp1);
         usdc.approve(address(closedVault), 10_000e6);
-        vm.expectRevert("Not approved depositor");
+        vm.expectRevert(ISyndicateVault.NotApprovedDepositor.selector);
         closedVault.deposit(10_000e6, lp1);
         vm.stopPrank();
     }

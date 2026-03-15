@@ -391,6 +391,7 @@ export const SYNDICATE_FACTORY_ABI = [
           },
           { name: "initialTargets", type: "address[]" },
           { name: "openDeposits", type: "bool" },
+          { name: "subdomain", type: "string" },
         ],
       },
     ],
@@ -411,6 +412,7 @@ export const SYNDICATE_FACTORY_ABI = [
       { name: "metadataURI", type: "string" },
       { name: "createdAt", type: "uint256" },
       { name: "active", type: "bool" },
+      { name: "subdomain", type: "string" },
     ],
   },
   {
@@ -429,6 +431,7 @@ export const SYNDICATE_FACTORY_ABI = [
           { name: "metadataURI", type: "string" },
           { name: "createdAt", type: "uint256" },
           { name: "active", type: "bool" },
+          { name: "subdomain", type: "string" },
         ],
       },
     ],

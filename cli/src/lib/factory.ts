@@ -19,6 +19,7 @@ export interface SyndicateInfo {
   metadataURI: string;
   createdAt: bigint;
   active: boolean;
+  subdomain: string;
 }
 
 export interface CreateSyndicateParams {
@@ -31,6 +32,7 @@ export interface CreateSyndicateParams {
   maxBorrowRatio: bigint;
   initialTargets: Address[];
   openDeposits: boolean;
+  subdomain: string;
 }
 
 function getFactoryAddress(): Address {
@@ -68,6 +70,7 @@ export async function createSyndicate(params: CreateSyndicateParams): Promise<He
         },
         initialTargets: params.initialTargets,
         openDeposits: params.openDeposits,
+        subdomain: params.subdomain,
       },
     ],
   });
@@ -83,7 +86,7 @@ export async function getSyndicate(id: bigint): Promise<SyndicateInfo> {
     abi: SYNDICATE_FACTORY_ABI,
     functionName: "syndicates",
     args: [id],
-  })) as [bigint, Address, Address, string, bigint, boolean];
+  })) as [bigint, Address, Address, string, bigint, boolean, string];
 
   return {
     id: result[0],
@@ -92,6 +95,7 @@ export async function getSyndicate(id: bigint): Promise<SyndicateInfo> {
     metadataURI: result[3],
     createdAt: result[4],
     active: result[5],
+    subdomain: result[6],
   };
 }
 
@@ -123,6 +127,7 @@ export async function getActiveSyndicates(): Promise<SyndicateInfo[]> {
     metadataURI: string;
     createdAt: bigint;
     active: boolean;
+    subdomain: string;
   }[];
 
   return result.map((s) => ({
@@ -132,6 +137,7 @@ export async function getActiveSyndicates(): Promise<SyndicateInfo[]> {
     metadataURI: s.metadataURI,
     createdAt: s.createdAt,
     active: s.active,
+    subdomain: s.subdomain,
   }));
 }
 

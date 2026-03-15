@@ -75,6 +75,18 @@ const BASE_SEPOLIA_INFRA = {
   MULTICALL3: "0xcA11bde05977b3631167028862bE2a173976CA11" as Address, // Deterministic, same everywhere
 } as const;
 
+// ── ENS / Durin ──
+
+const BASE_ENS = {
+  L2_REGISTRAR: "0x0000000000000000000000000000000000000000" as Address, // TODO: set after mainnet deploy
+  L2_REGISTRY: "0x0000000000000000000000000000000000000000" as Address, // TODO: set after mainnet deploy
+} as const;
+
+const BASE_SEPOLIA_ENS = {
+  L2_REGISTRAR: "0x1fCbe9dFC25e3fa3F7C55b26c7992684A4758b47" as Address,
+  L2_REGISTRY: "0x06eb7b85b59bc3e50fe4837be776cdd26de602cf" as Address,
+} as const;
+
 // ── Exports (functions, resolved at call time) ──
 
 export function TOKENS() {
@@ -91,4 +103,8 @@ export function UNISWAP() {
 
 export function INFRA() {
   return getNetwork() === "base" ? BASE_INFRA : BASE_SEPOLIA_INFRA;
+}
+
+export function ENS() {
+  return getNetwork() === "base" ? BASE_ENS : BASE_SEPOLIA_ENS;
 }

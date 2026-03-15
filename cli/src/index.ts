@@ -8,6 +8,8 @@ import ora from "ora";
 import { setNetwork } from "./lib/network.js";
 import { getExplorerUrl, isTestnet } from "./lib/network.js";
 import { TOKENS } from "./lib/addresses.js";
+import { getPublicClient } from "./lib/client.js";
+import { ERC20_ABI } from "./lib/abis.js";
 import { MoonwellProvider } from "./providers/moonwell.js";
 import { UniswapProvider } from "./providers/uniswap.js";
 import { runLeveredSwap } from "./commands/strategy-run.js";
@@ -37,11 +39,12 @@ const syndicate = program.command("syndicate");
 syndicate
   .command("create")
   .description("Create a new syndicate via the factory")
+  .requiredOption("--subdomain <name>", "ENS subdomain (e.g. alpha-seekers)")
   .requiredOption("--name <name>", "Vault token name")
   .requiredOption("--symbol <symbol>", "Vault token symbol")
   .option("--asset <address>", "Underlying asset address")
-  .option("--max-per-tx <amount>", "Max USDC per transaction", "10000")
-  .option("--max-daily <amount>", "Max daily combined USDC spend", "50000")
+  .option("--max-per-tx <amount>", "Max per transaction (in asset units)", "10000")
+  .option("--max-daily <amount>", "Max daily combined spend (in asset units)", "50000")
   .option("--borrow-ratio <bps>", "Max borrow ratio in basis points", "7500")
   .option("--targets <addresses>", "Comma-separated allowlisted target addresses")
   .option("--metadata-uri <uri>", "IPFS metadata URI", "")
@@ -55,18 +58,27 @@ syndicate
 
       const asset = (opts.asset || TOKENS().USDC) as Address;
 
+      // Read decimals from the asset ERC-20 (USDC=6, WETH=18, etc.)
+      const decimals = await getPublicClient().readContract({
+        address: asset,
+        abi: ERC20_ABI,
+        functionName: "decimals",
+      }) as number;
+
       const hash = await factoryLib.createSyndicate({
         metadataURI: opts.metadataUri,
         asset,
         name: opts.name,
         symbol: opts.symbol,
-        maxPerTx: parseUnits(opts.maxPerTx, 6),
-        maxDailyTotal: parseUnits(opts.maxDaily, 6),
+        maxPerTx: parseUnits(opts.maxPerTx, decimals),
+        maxDailyTotal: parseUnits(opts.maxDaily, decimals),
         maxBorrowRatio: BigInt(opts.borrowRatio),
         initialTargets: targets,
         openDeposits: opts.openDeposits,
+        subdomain: opts.subdomain,
       });
       spinner.succeed(`Syndicate created: ${hash}`);
+      console.log(chalk.dim(`  ENS: ${opts.subdomain}.sherwoodagent.eth`));
       console.log(chalk.dim(`  ${getExplorerUrl(hash)}`));
     } catch (err) {
       spinner.fail("Syndicate creation failed");
@@ -83,7 +95,7 @@ syndicate
     const spinner = ora("Loading syndicates...").start();
     try {
       // Try subgraph first (fast, indexed), fall back to on-chain
-      let syndicates: { id: string | bigint; vault: string; creator: string; metadataURI: string; createdAt: string | bigint; totalDeposits?: string; totalWithdrawals?: string }[];
+      let syndicates: { id: string | bigint; vault: string; creator: string; metadataURI: string; createdAt: string | bigint; totalDeposits?: string; totalWithdrawals?: string; subdomain?: string }[];
 
       if (process.env.SUBGRAPH_URL) {
         const result = await subgraphLib.getActiveSyndicates(opts.creator);
@@ -96,6 +108,7 @@ syndicate
           creator: s.creator,
           metadataURI: s.metadataURI,
           createdAt: s.createdAt.toString(),
+          subdomain: s.subdomain,
         }));
       }
 
@@ -116,7 +129,9 @@ syndicate
       for (const s of syndicates) {
         const ts = typeof s.createdAt === "string" ? Number(s.createdAt) : Number(s.createdAt);
         const date = new Date(ts * 1000).toLocaleDateString();
-        console.log(`  #${s.id}  ${chalk.cyan(String(s.vault))}`);
+        const ensName = s.subdomain ? `${s.subdomain}.sherwoodagent.eth` : "";
+        console.log(`  #${s.id}  ${chalk.bold(ensName || String(s.vault))}`);
+        if (ensName) console.log(`    Vault:   ${chalk.cyan(String(s.vault))}`);
         console.log(`    Creator: ${s.creator}`);
         console.log(`    Created: ${date}`);
         if (s.totalDeposits) {
@@ -154,6 +169,9 @@ syndicate
       console.log();
       console.log(chalk.bold(`Syndicate #${info.id}`));
       console.log(chalk.dim("─".repeat(40)));
+      if (info.subdomain) {
+        console.log(`  ENS:        ${chalk.bold(`${info.subdomain}.sherwoodagent.eth`)}`);
+      }
       console.log(`  Vault:      ${chalk.cyan(info.vault)}`);
       console.log(`  Creator:    ${info.creator}`);
       console.log(`  Created:    ${date}`);
@@ -168,11 +186,11 @@ syndicate
       const vaultInfo = await vaultLib.getVaultInfo();
       console.log();
       console.log(chalk.bold("  Vault Stats"));
-      console.log(`    Total Assets: ${vaultInfo.totalAssets} USDC`);
+      console.log(`    Total Assets: ${vaultInfo.totalAssets}`);
       console.log(`    Agent Count:  ${vaultInfo.agentCount}`);
-      console.log(`    Daily Spend:  ${vaultInfo.dailySpendTotal} USDC`);
-      console.log(`    Max Per Tx:   ${vaultInfo.syndicateCaps.maxPerTx} USDC`);
-      console.log(`    Max Daily:    ${vaultInfo.syndicateCaps.maxDailyTotal} USDC`);
+      console.log(`    Daily Spend:  ${vaultInfo.dailySpendTotal}`);
+      console.log(`    Max Per Tx:   ${vaultInfo.syndicateCaps.maxPerTx}`);
+      console.log(`    Max Daily:    ${vaultInfo.syndicateCaps.maxDailyTotal}`);
       console.log(`    Max Borrow:   ${vaultInfo.syndicateCaps.maxBorrowRatio}`);
       console.log();
     } catch (err) {
@@ -227,14 +245,15 @@ const vaultCmd = program.command("vault");
 
 vaultCmd
   .command("deposit")
-  .description("Deposit USDC into a vault")
+  .description("Deposit into a vault")
   .requiredOption("--vault <address>", "Vault address")
-  .requiredOption("--amount <amount>", "Amount of USDC to deposit")
+  .requiredOption("--amount <amount>", "Amount to deposit (in asset units)")
   .action(async (opts) => {
     const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
     process.env[envKey] = opts.vault;
-    const amount = parseUnits(opts.amount, 6);
-    const spinner = ora(`Depositing ${opts.amount} USDC...`).start();
+    const decimals = await vaultLib.getAssetDecimals();
+    const amount = parseUnits(opts.amount, decimals);
+    const spinner = ora(`Depositing ${opts.amount}...`).start();
     try {
       const hash = await vaultLib.deposit(amount);
       spinner.succeed(`Deposited: ${hash}`);
@@ -280,13 +299,13 @@ vaultCmd
       console.log(chalk.bold("Vault Info"));
       console.log(chalk.dim("─".repeat(40)));
       console.log(`  Address:        ${info.address}`);
-      console.log(`  Total Assets:   ${info.totalAssets} USDC`);
+      console.log(`  Total Assets:   ${info.totalAssets}`);
       console.log(`  Agent Count:    ${info.agentCount}`);
-      console.log(`  Daily Spend:    ${info.dailySpendTotal} USDC`);
+      console.log(`  Daily Spend:    ${info.dailySpendTotal}`);
       console.log();
       console.log(chalk.bold("  Syndicate Caps"));
-      console.log(`    Max Per Tx:     ${info.syndicateCaps.maxPerTx} USDC`);
-      console.log(`    Max Daily:      ${info.syndicateCaps.maxDailyTotal} USDC`);
+      console.log(`    Max Per Tx:     ${info.syndicateCaps.maxPerTx}`);
+      console.log(`    Max Daily:      ${info.syndicateCaps.maxDailyTotal}`);
       console.log(`    Max Borrow:     ${info.syndicateCaps.maxBorrowRatio}`);
       console.log();
     } catch (err) {
@@ -298,7 +317,7 @@ vaultCmd
 
 vaultCmd
   .command("balance")
-  .description("Show LP share balance and USDC value")
+  .description("Show LP share balance and asset value")
   .requiredOption("--vault <address>", "Vault address")
   .option("--address <address>", "Address to check (default: your wallet)")
   .action(async (opts) => {
@@ -312,7 +331,7 @@ vaultCmd
       console.log(chalk.bold("LP Position"));
       console.log(chalk.dim("─".repeat(40)));
       console.log(`  Shares:       ${balance.shares.toString()}`);
-      console.log(`  USDC Value:   ${balance.assetsValue} USDC`);
+      console.log(`  Asset Value:  ${balance.assetsValue}`);
       console.log(`  % of Vault:   ${balance.percentOfVault}`);
       console.log();
     } catch (err) {
@@ -328,13 +347,14 @@ vaultCmd
   .requiredOption("--vault <address>", "Vault address")
   .requiredOption("--pkp <address>", "Agent PKP address")
   .requiredOption("--eoa <address>", "Operator EOA address")
-  .requiredOption("--max-per-tx <amount>", "Max USDC per transaction")
-  .requiredOption("--daily-limit <amount>", "Daily USDC limit")
+  .requiredOption("--max-per-tx <amount>", "Max per transaction (in asset units)")
+  .requiredOption("--daily-limit <amount>", "Daily limit (in asset units)")
   .action(async (opts) => {
     const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
     process.env[envKey] = opts.vault;
-    const maxPerTx = parseUnits(opts.maxPerTx, 6);
-    const dailyLimit = parseUnits(opts.dailyLimit, 6);
+    const decimals = await vaultLib.getAssetDecimals();
+    const maxPerTx = parseUnits(opts.maxPerTx, decimals);
+    const dailyLimit = parseUnits(opts.dailyLimit, decimals);
     const spinner = ora("Registering agent...").start();
     try {
       const hash = await vaultLib.registerAgent(

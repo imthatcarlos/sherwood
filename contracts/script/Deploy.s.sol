@@ -40,6 +40,10 @@ contract Deploy is Script {
     address constant CB_BTC = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf;
     address constant AERO = 0x940181a94A35A4569E4529A3CDfB74e38FD98631;
 
+    // Durin L2 Registrar (ENS subnames for sherwoodagent.eth)
+    // TODO: set once Durin L2 Registrar is deployed on Base mainnet
+    address constant L2_REGISTRAR = address(0);
+
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
@@ -57,7 +61,7 @@ contract Deploy is Script {
         console.log("Vault implementation:", address(vaultImpl));
 
         // 3. Deploy SyndicateFactory
-        SyndicateFactory factory = new SyndicateFactory(address(executorLib), address(vaultImpl));
+        SyndicateFactory factory = new SyndicateFactory(address(executorLib), address(vaultImpl), L2_REGISTRAR);
         console.log("SyndicateFactory:", address(factory));
 
         // 4. Create first syndicate via factory
@@ -84,7 +88,8 @@ contract Deploy is Script {
                     maxBorrowRatio: 7500 // 75% LTV
                 }),
                 initialTargets: targets,
-                openDeposits: false // Whitelist-gated deposits
+                openDeposits: false, // Whitelist-gated deposits
+                subdomain: "sherwood"
             })
         );
         console.log("Syndicate #%d vault:", syndicateId, vaultProxy);
