@@ -481,6 +481,46 @@ export const SYNDICATE_FACTORY_ABI = [
     inputs: [],
     outputs: [{ name: "", type: "address" }],
   },
+  {
+    name: "subdomainToSyndicate",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "subdomain", type: "string" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "isSubdomainAvailable",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "subdomain", type: "string" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+// ── L2 Registry (Durin ENS — text records) ──
+
+export const L2_REGISTRY_ABI = [
+  {
+    name: "setText",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "node", type: "bytes32" },
+      { name: "key", type: "string" },
+      { name: "value", type: "string" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "text",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "node", type: "bytes32" },
+      { name: "key", type: "string" },
+    ],
+    outputs: [{ name: "", type: "string" }],
+  },
 ] as const;
 
 // ── StrategyRegistry ──

@@ -8,7 +8,7 @@ import ora from "ora";
 import { setNetwork } from "./lib/network.js";
 import { getExplorerUrl, isTestnet } from "./lib/network.js";
 import { TOKENS } from "./lib/addresses.js";
-import { getPublicClient } from "./lib/client.js";
+import { getPublicClient, getAccount } from "./lib/client.js";
 import { ERC20_ABI } from "./lib/abis.js";
 import { MoonwellProvider } from "./providers/moonwell.js";
 import { UniswapProvider } from "./providers/uniswap.js";
@@ -17,6 +17,10 @@ import * as vaultLib from "./lib/vault.js";
 import * as factoryLib from "./lib/factory.js";
 import * as subgraphLib from "./lib/subgraph.js";
 import * as registryLib from "./lib/registry.js";
+import { registerChatCommands } from "./commands/chat.js";
+import { getXmtpClient, createSyndicateGroup, getGroup, addMember, sendEnvelope, removeMember } from "./lib/xmtp.js";
+import { setTextRecord, resolveVaultSyndicate } from "./lib/ens.js";
+import { cacheGroupId } from "./lib/config.js";
 
 const program = new Command();
 
@@ -49,6 +53,7 @@ syndicate
   .option("--targets <addresses>", "Comma-separated allowlisted target addresses")
   .option("--metadata-uri <uri>", "IPFS metadata URI", "")
   .option("--open-deposits", "Allow anyone to deposit (no whitelist)", false)
+  .option("--public-chat", "Enable dashboard spectator mode (adds read-only observer to chat)", false)
   .action(async (opts) => {
     const spinner = ora("Creating syndicate...").start();
     try {
@@ -77,9 +82,30 @@ syndicate
         openDeposits: opts.openDeposits,
         subdomain: opts.subdomain,
       });
+      spinner.text = "Creating XMTP chat group...";
+
+      // Create XMTP group for syndicate chat
+      try {
+        const xmtpClient = await getXmtpClient();
+        const groupId = await createSyndicateGroup(xmtpClient, opts.subdomain, opts.publicChat);
+
+        // Store group ID on-chain as ENS text record
+        await setTextRecord(opts.subdomain, "xmtpGroupId", groupId);
+
+        // Cache locally
+        cacheGroupId(opts.subdomain, groupId);
+      } catch (chatErr) {
+        // Non-fatal — syndicate was created, chat setup failed
+        console.warn(chalk.yellow(`  ⚠ Chat setup failed: ${chatErr instanceof Error ? chatErr.message : String(chatErr)}`));
+      }
+
       spinner.succeed(`Syndicate created: ${hash}`);
       console.log(chalk.dim(`  ENS: ${opts.subdomain}.sherwoodagent.eth`));
       console.log(chalk.dim(`  ${getExplorerUrl(hash)}`));
+      console.log(chalk.dim(`  Chat: sherwood chat ${opts.subdomain}`));
+      if (opts.publicChat) {
+        console.log(chalk.dim("  Spectator mode: enabled"));
+      }
     } catch (err) {
       spinner.fail("Syndicate creation failed");
       console.error(chalk.red(err instanceof Error ? err.message : String(err)));
@@ -240,6 +266,100 @@ syndicate
     }
   });
 
+syndicate
+  .command("add")
+  .description("Register an agent on a syndicate vault (creator only)")
+  .requiredOption("--vault <address>", "Vault address")
+  .requiredOption("--pkp <address>", "Agent PKP address")
+  .requiredOption("--eoa <address>", "Operator EOA address")
+  .requiredOption("--max-per-tx <amount>", "Max per transaction (in asset units)")
+  .requiredOption("--daily-limit <amount>", "Daily limit (in asset units)")
+  .action(async (opts) => {
+    const spinner = ora("Verifying creator...").start();
+    try {
+      // Verify caller is the syndicate creator
+      const { creator, subdomain } = await resolveVaultSyndicate(opts.vault as Address);
+      const callerAddress = getAccount().address.toLowerCase();
+      if (creator.toLowerCase() !== callerAddress) {
+        spinner.fail("Only the syndicate creator can add agents");
+        process.exit(1);
+      }
+
+      const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
+      process.env[envKey] = opts.vault;
+      const decimals = await vaultLib.getAssetDecimals();
+      const maxPerTx = parseUnits(opts.maxPerTx, decimals);
+      const dailyLimit = parseUnits(opts.dailyLimit, decimals);
+
+      spinner.text = "Registering agent...";
+      const hash = await vaultLib.registerAgent(
+        opts.pkp as Address,
+        opts.eoa as Address,
+        maxPerTx,
+        dailyLimit,
+      );
+      spinner.succeed(`Agent registered: ${hash}`);
+      console.log(chalk.dim(`  ${getExplorerUrl(hash)}`));
+
+      // Auto-add agent to XMTP chat group
+      try {
+        const xmtpClient = await getXmtpClient();
+        const group = await getGroup(xmtpClient, subdomain);
+        await addMember(group, opts.pkp);
+        await sendEnvelope(group, {
+          type: "AGENT_REGISTERED",
+          agent: { address: opts.pkp },
+          syndicate: subdomain,
+          timestamp: Math.floor(Date.now() / 1000),
+        });
+        console.log(chalk.dim(`  Added to chat: ${subdomain}`));
+      } catch {
+        console.warn(chalk.yellow("  ⚠ Could not add agent to chat group"));
+      }
+    } catch (err) {
+      spinner.fail("Registration failed");
+      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+      process.exit(1);
+    }
+  });
+
+syndicate
+  .command("spectator")
+  .description("Toggle dashboard spectator mode for a syndicate chat")
+  .argument("<subdomain>", "Syndicate subdomain")
+  .option("--on", "Add spectator bot")
+  .option("--off", "Remove spectator bot")
+  .action(async (subdomain: string, opts: { on?: boolean; off?: boolean }) => {
+    if (!opts.on && !opts.off) {
+      console.error(chalk.red("Specify --on or --off"));
+      process.exit(1);
+    }
+
+    const spectatorAddress = process.env.DASHBOARD_SPECTATOR_ADDRESS;
+    if (!spectatorAddress) {
+      console.error(chalk.red("DASHBOARD_SPECTATOR_ADDRESS env var is required"));
+      process.exit(1);
+    }
+
+    const spinner = ora(`${opts.on ? "Enabling" : "Disabling"} spectator mode...`).start();
+    try {
+      const xmtpClient = await getXmtpClient();
+      const group = await getGroup(xmtpClient, subdomain);
+
+      if (opts.on) {
+        await addMember(group, spectatorAddress);
+        spinner.succeed("Spectator mode enabled");
+      } else {
+        await removeMember(group, spectatorAddress);
+        spinner.succeed("Spectator mode disabled");
+      }
+    } catch (err) {
+      spinner.fail("Failed to toggle spectator mode");
+      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+      process.exit(1);
+    }
+  });
+
 // ── Vault commands ──
 const vaultCmd = program.command("vault");
 
@@ -341,36 +461,7 @@ vaultCmd
     }
   });
 
-vaultCmd
-  .command("register-agent")
-  .description("Register an agent (owner only)")
-  .requiredOption("--vault <address>", "Vault address")
-  .requiredOption("--pkp <address>", "Agent PKP address")
-  .requiredOption("--eoa <address>", "Operator EOA address")
-  .requiredOption("--max-per-tx <amount>", "Max per transaction (in asset units)")
-  .requiredOption("--daily-limit <amount>", "Daily limit (in asset units)")
-  .action(async (opts) => {
-    const envKey = isTestnet() ? "VAULT_ADDRESS_TESTNET" : "VAULT_ADDRESS";
-    process.env[envKey] = opts.vault;
-    const decimals = await vaultLib.getAssetDecimals();
-    const maxPerTx = parseUnits(opts.maxPerTx, decimals);
-    const dailyLimit = parseUnits(opts.dailyLimit, decimals);
-    const spinner = ora("Registering agent...").start();
-    try {
-      const hash = await vaultLib.registerAgent(
-        opts.pkp as Address,
-        opts.eoa as Address,
-        maxPerTx,
-        dailyLimit,
-      );
-      spinner.succeed(`Agent registered: ${hash}`);
-      console.log(chalk.dim(`  ${getExplorerUrl(hash)}`));
-    } catch (err) {
-      spinner.fail("Registration failed");
-      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-      process.exit(1);
-    }
-  });
+// register-agent removed — use "syndicate add" instead
 
 vaultCmd
   .command("add-target")
@@ -560,5 +651,8 @@ program
       console.log(`  Chains: ${info.supportedChains.map((c) => c.name).join(", ")}`);
     }
   });
+
+// ── Chat commands ──
+registerChatCommands(program);
 
 program.parse();

@@ -45,6 +45,25 @@ app/         Next.js dashboard
 - Provider pattern: each DeFi protocol = a provider with standard interface
 - `npm run typecheck` before every PR
 
+## Chat (XMTP)
+
+- Encrypted group messaging via XMTP (`@xmtp/node-sdk`) — MLS-based E2E encryption
+- Each syndicate gets an XMTP group on creation, group ID stored as ENS text record + cached locally
+- Creator is super admin — only they can add members via `syndicate add`
+- Agents auto-added to chat after registration, with `AGENT_REGISTERED` lifecycle message
+- Supports text (JSON `ChatEnvelope`), markdown (`sendMarkdown`), and reactions (`sendReaction`)
+- `--public-chat` flag enables spectator mode for dashboard integration
+- Config stored at `~/.sherwood/config.json` (XMTP DB encryption key, group ID cache)
+
+### Chat Commands
+- `sherwood chat <name>` — stream messages in real-time
+- `sherwood chat <name> send "msg"` — send a text message
+- `sherwood chat <name> send "msg" --markdown` — send formatted markdown
+- `sherwood chat <name> react <id> <emoji>` — react to a message
+- `sherwood chat <name> log` — show recent messages
+- `sherwood chat <name> members` — list group members
+- `sherwood chat <name> add <addr>` — add member (creator only)
+
 ## Testing
 
 - Contracts: Foundry tests in `contracts/test/`, fork tests for protocol integrations
