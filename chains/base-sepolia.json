@@ -1,0 +1,20 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "deployer": "0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38",
+  "agentId": 1932,
+  "agentOwner": "0x5A00afAecE9CF61A768E2AE2713084C8d354DF94",
+  "contracts": {
+    "batchExecutorLib": "0xC6744E4941f4810fDadB72c795aD3EE7cb55D925",
+    "vaultImplementation": "0x853003dd7bBABA55Cdb79F09fd47E89d116806F5",
+    "syndicateFactory": "0x997FAcbAB167Afa2e70828Dc8bff5647773eA31D",
+    "strategyRegistry": "0xfb5d298e13D79aa5960F4c6233348b86b3B23e99"
+  },
+  "externalContracts": {
+    "l2Registrar": "0x1fCbe9dFC25e3fa3F7C55b26c7992684A4758b47",
+    "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "reputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713"
+  },
+  "deployedAt": "2026-03-15",
+  "explorer": "https://sepolia.basescan.org"
+}
