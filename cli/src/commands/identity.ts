@@ -1,30 +1,24 @@
 /**
  * Identity commands — sherwood identity <subcommand>
  *
- * Manages ERC-8004 agent identity NFTs on the IdentityRegistry.
+ * Wraps the Agent0 SDK (@agent0-sdk) for ERC-8004 agent identity management.
+ * Handles: mint (register), set metadata, check status, load existing agent.
  * Required before creating or joining syndicates.
  */
 
 import { Command } from "commander";
 import type { Address } from "viem";
-import { decodeEventLog } from "viem";
 import chalk from "chalk";
 import ora from "ora";
-import { getPublicClient, getWalletClient, getAccount } from "../lib/client.js";
-import { getExplorerUrl } from "../lib/network.js";
+import { SDK } from "agent0-sdk";
+import { getPublicClient, getAccount } from "../lib/client.js";
+import { getExplorerUrl, getChain, getRpcUrl } from "../lib/network.js";
 import { AGENT_REGISTRY } from "../lib/addresses.js";
 import { setAgentId, getAgentId } from "../lib/config.js";
 
-// ── ABI (minimal) ──
+// ── ABI (minimal, for status reads without SDK) ──
 
 const IDENTITY_REGISTRY_ABI = [
-  {
-    name: "register",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "agentURI", type: "string" }],
-    outputs: [{ name: "agentId", type: "uint256" }],
-  },
   {
     name: "balanceOf",
     type: "function",
@@ -39,101 +33,121 @@ const IDENTITY_REGISTRY_ABI = [
     inputs: [{ name: "tokenId", type: "uint256" }],
     outputs: [{ name: "", type: "address" }],
   },
-  {
-    name: "tokenURI",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "tokenId", type: "uint256" }],
-    outputs: [{ name: "", type: "string" }],
-  },
 ] as const;
 
-const REGISTERED_EVENT = {
-  type: "event",
-  name: "Registered",
-  inputs: [
-    { name: "agentId", type: "uint256", indexed: true },
-    { name: "agentURI", type: "string", indexed: false },
-    { name: "owner", type: "address", indexed: true },
-  ],
-} as const;
+/**
+ * Initialize the Agent0 SDK with the current network config.
+ */
+function getAgent0SDK(): SDK {
+  const key = process.env.PRIVATE_KEY;
+  if (!key) {
+    throw new Error("PRIVATE_KEY env var is required for identity operations");
+  }
+
+  return new SDK({
+    chainId: getChain().id,
+    rpcUrl: getRpcUrl(),
+    privateKey: key.startsWith("0x") ? key : `0x${key}`,
+  });
+}
 
 export function registerIdentityCommands(program: Command): void {
-  const identity = program.command("identity").description("Manage ERC-8004 agent identity");
+  const identity = program.command("identity").description("Manage ERC-8004 agent identity (via Agent0 SDK)");
 
   // ── identity mint ──
 
   identity
     .command("mint")
-    .description("Mint a new ERC-8004 agent identity NFT (required before creating/joining syndicates)")
-    .option("--uri <uri>", "Agent metadata URI (IPFS recommended)", "")
+    .description("Register a new ERC-8004 agent identity (required before creating/joining syndicates)")
+    .requiredOption("--name <name>", "Agent name (e.g. 'Alpha Seeker Agent')")
+    .option("--description <desc>", "Agent description", "Sherwood syndicate agent")
+    .option("--image <uri>", "Agent image URI (IPFS recommended)")
     .action(async (opts) => {
       const account = getAccount();
-      const registry = AGENT_REGISTRY().IDENTITY_REGISTRY;
 
       // Check if wallet already has an identity
       const existingId = getAgentId();
       if (existingId) {
         console.log(chalk.yellow(`You already have an agent identity saved: #${existingId}`));
-        console.log(chalk.dim("  Use --force to mint another, or 'sherwood identity status' to verify."));
-        // Don't block — they might want to mint another or lost the old one
+        console.log(chalk.dim("  Minting a new one anyway. The old ID is not affected."));
+        console.log();
       }
 
-      const spinner = ora("Minting agent identity...").start();
+      const spinner = ora("Initializing Agent0 SDK...").start();
       try {
-        const wallet = getWalletClient();
-        const client = getPublicClient();
+        const sdk = getAgent0SDK();
 
-        const hash = await wallet.writeContract({
-          account,
-          chain: wallet.chain,
-          address: registry,
-          abi: IDENTITY_REGISTRY_ABI,
-          functionName: "register",
-          args: [opts.uri],
-        });
+        // Create agent with metadata
+        spinner.text = "Creating agent profile...";
+        const agent = sdk.createAgent(opts.name, opts.description, opts.image);
+
+        // Register on-chain (mints ERC-8004 NFT)
+        spinner.text = "Registering on-chain (minting ERC-8004 identity)...";
+        const txHandle = await agent.registerOnChain();
 
         spinner.text = "Waiting for confirmation...";
-        const receipt = await client.waitForTransactionReceipt({ hash });
+        await txHandle.waitMined();
 
-        // Parse the Registered event to get the token ID
-        let agentId: number | undefined;
-        for (const log of receipt.logs) {
-          try {
-            const decoded = decodeEventLog({
-              abi: [REGISTERED_EVENT],
-              data: log.data,
-              topics: log.topics,
-            });
-            if (decoded.eventName === "Registered") {
-              agentId = Number(decoded.args.agentId);
-              break;
-            }
-          } catch {
-            // Not our event, skip
-          }
-        }
-
+        const agentId = agent.agentId;
         if (!agentId) {
-          spinner.warn("Identity minted but could not parse token ID from logs");
-          console.log(chalk.dim(`  Tx: ${getExplorerUrl(hash)}`));
-          console.log(chalk.dim("  Check the tx logs to find your agentId manually."));
+          spinner.warn("Identity registered but could not read agentId");
+          console.log(chalk.dim("  Check the transaction on the explorer."));
           return;
         }
 
-        // Save to config
-        setAgentId(agentId);
+        // Agent0 agentId format is "chainId:tokenId" — extract the token ID
+        const tokenId = Number(agentId.includes(":") ? agentId.split(":")[1] : agentId);
 
-        spinner.succeed(`Agent identity minted: #${agentId}`);
-        console.log(chalk.dim(`  Tx: ${getExplorerUrl(hash)}`));
-        console.log(chalk.dim(`  Registry: ${registry}`));
-        console.log(chalk.dim(`  Owner: ${account.address}`));
-        console.log(chalk.dim(`  Saved to ~/.sherwood/config.json`));
+        // Save to config
+        setAgentId(tokenId);
+
+        spinner.succeed(`Agent identity registered: #${tokenId}`);
+        console.log(chalk.dim(`  Agent0 ID: ${agentId}`));
+        console.log(chalk.dim(`  Name:      ${opts.name}`));
+        console.log(chalk.dim(`  Owner:     ${account.address}`));
+        console.log(chalk.dim(`  Saved to   ~/.sherwood/config.json`));
         console.log();
         console.log(chalk.green("You can now create syndicates:"));
-        console.log(chalk.dim(`  sherwood syndicate create --agent-id ${agentId} --subdomain <name> --name <name>`));
+        console.log(chalk.dim(`  sherwood syndicate create --agent-id ${tokenId} --subdomain <name> --name <name>`));
       } catch (err) {
-        spinner.fail("Failed to mint identity");
+        spinner.fail("Failed to register identity");
+        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+        process.exit(1);
+      }
+    });
+
+  // ── identity load ──
+
+  identity
+    .command("load")
+    .description("Load an existing ERC-8004 agent identity into your config")
+    .requiredOption("--id <tokenId>", "Agent token ID to load")
+    .action(async (opts) => {
+      const account = getAccount();
+      const client = getPublicClient();
+      const registry = AGENT_REGISTRY().IDENTITY_REGISTRY;
+      const tokenId = Number(opts.id);
+
+      const spinner = ora(`Verifying ownership of agent #${tokenId}...`).start();
+      try {
+        const owner = await client.readContract({
+          address: registry,
+          abi: IDENTITY_REGISTRY_ABI,
+          functionName: "ownerOf",
+          args: [BigInt(tokenId)],
+        }) as Address;
+
+        if (owner.toLowerCase() !== account.address.toLowerCase()) {
+          spinner.fail(`Agent #${tokenId} is owned by ${owner}, not your wallet`);
+          process.exit(1);
+        }
+
+        setAgentId(tokenId);
+        spinner.succeed(`Agent #${tokenId} loaded and saved to config`);
+        console.log(chalk.dim(`  Owner:  ${account.address}`));
+        console.log(chalk.dim(`  Saved to ~/.sherwood/config.json`));
+      } catch (err) {
+        spinner.fail("Failed to load identity");
         console.error(chalk.red(err instanceof Error ? err.message : String(err)));
         process.exit(1);
       }
@@ -181,11 +195,24 @@ export function registerIdentityCommands(program: Command): void {
 
             const isOwner = owner.toLowerCase() === account.address.toLowerCase();
             console.log(`  Saved ID:   #${savedId} ${isOwner ? chalk.green("(verified)") : chalk.red("(owned by " + owner + ")")}`);
+
+            // Load full agent details via SDK if verified
+            if (isOwner) {
+              try {
+                const sdk = getAgent0SDK();
+                const agent = await sdk.loadAgent(`${getChain().id}:${savedId}`);
+                if (agent.name) console.log(`  Name:       ${agent.name}`);
+                if (agent.description) console.log(`  Desc:       ${chalk.dim(agent.description)}`);
+                if (agent.walletAddress) console.log(`  Wallet:     ${agent.walletAddress}`);
+              } catch {
+                // SDK load failed — not critical, basic info already shown
+              }
+            }
           } catch {
             console.log(`  Saved ID:   #${savedId} ${chalk.red("(token not found)")}`);
           }
         } else {
-          console.log(`  Saved ID:   ${chalk.dim("none — run 'sherwood identity mint'")}`);
+          console.log(`  Saved ID:   ${chalk.dim("none — run 'sherwood identity mint --name <name>'")}`);
         }
         console.log();
       } catch (err) {
