@@ -4,6 +4,33 @@ pragma solidity 0.8.28;
 import {BatchExecutorLib} from "../BatchExecutorLib.sol";
 
 interface ISyndicateVault {
+    // ── Errors ──
+    error InvalidOwner();
+    error InvalidMaxPerTx();
+    error InvalidMaxDailyTotal();
+    error BorrowRatioTooHigh();
+    error InvalidExecutorImpl();
+    error InvalidTarget();
+    error NoShares();
+    error NotActiveAgent();
+    error ExceedsPerTxCap();
+    error ExceedsAgentDailyLimit();
+    error ExceedsSyndicateDailyLimit();
+    error TargetNotAllowed(address target);
+    error SimulationFailed();
+    error TargetAlreadyAllowed();
+    error TargetNotInAllowlist();
+    error InvalidDepositor();
+    error DepositorAlreadyApproved();
+    error DepositorNotApproved();
+    error NotApprovedDepositor();
+    error InvalidPKPAddress();
+    error InvalidOperatorEOA();
+    error AgentAlreadyRegistered();
+    error AgentMaxPerTxExceedsCap();
+    error AgentDailyLimitExceedsCap();
+    error AgentNotActive();
+
     // ── Syndicate-Level Caps (hard limits for ALL agents) ──
     struct SyndicateCaps {
         uint256 maxPerTx; // Max asset amount per single tx

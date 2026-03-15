@@ -45,8 +45,8 @@ contract StrategyRegistry is
     }
 
     function initialize(address admin, address guardian) external initializer {
-        require(admin != address(0), "Invalid admin");
-        require(guardian != address(0), "Invalid guardian");
+        if (admin == address(0)) revert InvalidAdmin();
+        if (guardian == address(0)) revert InvalidGuardian();
 
         __AccessControlEnumerable_init();
         __Pausable_init();
@@ -66,9 +66,9 @@ contract StrategyRegistry is
         string calldata name,
         string calldata metadataURI
     ) external whenNotPaused returns (uint256 strategyId) {
-        require(implementation != address(0), "Invalid implementation");
-        require(strategyTypeId != 0, "Invalid strategy type");
-        require(bytes(name).length > 0, "Empty name");
+        if (implementation == address(0)) revert InvalidImplementation();
+        if (strategyTypeId == 0) revert InvalidStrategyType();
+        if (bytes(name).length == 0) revert EmptyName();
 
         // TODO: Verify msg.sender has ERC-8004 identity
         // For MVP, any address can register
@@ -93,9 +93,9 @@ contract StrategyRegistry is
     /// @inheritdoc IStrategyRegistry
     function deactivateStrategy(uint256 strategyId) external whenNotPaused {
         StrategyRecord storage record = _strategies[strategyId];
-        require(record.implementation != address(0), "Strategy not found");
-        require(record.creator == msg.sender || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Not authorized");
-        require(record.active, "Already inactive");
+        if (record.implementation == address(0)) revert StrategyNotFound();
+        if (record.creator != msg.sender && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) revert NotAuthorized();
+        if (!record.active) revert AlreadyInactive();
 
         record.active = false;
 
@@ -106,7 +106,7 @@ contract StrategyRegistry is
 
     /// @inheritdoc IStrategyRegistry
     function getStrategy(uint256 strategyId) external view returns (StrategyRecord memory) {
-        require(_strategies[strategyId].implementation != address(0), "Strategy not found");
+        if (_strategies[strategyId].implementation == address(0)) revert StrategyNotFound();
         return _strategies[strategyId];
     }
 

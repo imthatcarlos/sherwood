@@ -192,13 +192,13 @@ contract SyndicateFactoryTest is Test {
         factory.createSyndicate(_configWithSubdomain("taken-name"));
 
         vm.prank(creator2);
-        vm.expectRevert("Name taken");
+        vm.expectRevert(SyndicateFactory.SubdomainTaken.selector);
         factory.createSyndicate(_configWithSubdomain("taken-name"));
     }
 
     function test_createSyndicate_nameTooShort_reverts() public {
         vm.prank(creator1);
-        vm.expectRevert("Name too short");
+        vm.expectRevert(SyndicateFactory.SubdomainTooShort.selector);
         factory.createSyndicate(_configWithSubdomain("ab"));
     }
 
@@ -241,7 +241,7 @@ contract SyndicateFactoryTest is Test {
         (uint256 id,) = factory.createSyndicate(_defaultConfig());
 
         vm.prank(creator2);
-        vm.expectRevert("Not creator");
+        vm.expectRevert(SyndicateFactory.NotCreator.selector);
         factory.updateMetadata(id, "ipfs://QmHack");
     }
 
@@ -263,7 +263,7 @@ contract SyndicateFactoryTest is Test {
         (uint256 id,) = factory.createSyndicate(_defaultConfig());
 
         vm.prank(creator2);
-        vm.expectRevert("Not creator");
+        vm.expectRevert(SyndicateFactory.NotCreator.selector);
         factory.deactivate(id);
     }
 

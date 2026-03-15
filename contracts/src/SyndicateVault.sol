@@ -86,11 +86,11 @@ contract SyndicateVault is
         address[] memory initialTargets_,
         bool openDeposits_
     ) external initializer {
-        require(owner_ != address(0), "Invalid owner");
-        require(caps_.maxPerTx > 0, "Invalid maxPerTx");
-        require(caps_.maxDailyTotal > 0, "Invalid maxDailyTotal");
-        require(caps_.maxBorrowRatio <= 10000, "Borrow ratio > 100%");
-        require(executorImpl_ != address(0), "Invalid executor impl");
+        if (owner_ == address(0)) revert InvalidOwner();
+        if (caps_.maxPerTx == 0) revert InvalidMaxPerTx();
+        if (caps_.maxDailyTotal == 0) revert InvalidMaxDailyTotal();
+        if (caps_.maxBorrowRatio > 10000) revert BorrowRatioTooHigh();
+        if (executorImpl_ == address(0)) revert InvalidExecutorImpl();
 
         __ERC4626_init(asset_);
         __ERC20_init(name_, symbol_);
@@ -103,7 +103,7 @@ contract SyndicateVault is
         _openDeposits = openDeposits_;
 
         for (uint256 i = 0; i < initialTargets_.length; i++) {
-            require(initialTargets_[i] != address(0), "Invalid target");
+            if (initialTargets_[i] == address(0)) revert InvalidTarget();
             _allowedTargets.add(initialTargets_[i]);
         }
     }
@@ -113,7 +113,7 @@ contract SyndicateVault is
     /// @inheritdoc ISyndicateVault
     function ragequit(address receiver) external whenNotPaused returns (uint256 assets) {
         uint256 shares = balanceOf(msg.sender);
-        require(shares > 0, "No shares");
+        if (shares == 0) revert NoShares();
 
         assets = redeem(shares, receiver, msg.sender);
 
@@ -125,13 +125,13 @@ contract SyndicateVault is
     /// @inheritdoc ISyndicateVault
     function executeBatch(BatchExecutorLib.Call[] calldata calls, uint256 assetAmount) external whenNotPaused {
         AgentConfig storage agent = _agents[msg.sender];
-        require(agent.active, "Not an active agent");
+        if (!agent.active) revert NotActiveAgent();
 
         // --- Layer 1: Syndicate caps ---
 
         // Per-tx cap (use the tighter of syndicate vs agent limit)
         uint256 effectiveMaxPerTx = agent.maxPerTx < _syndicateCaps.maxPerTx ? agent.maxPerTx : _syndicateCaps.maxPerTx;
-        require(assetAmount <= effectiveMaxPerTx, "Exceeds per-tx cap");
+        if (assetAmount > effectiveMaxPerTx) revert ExceedsPerTxCap();
 
         // Daily limit — reset if new day
         uint256 today = block.timestamp / 1 days;
@@ -147,10 +147,10 @@ contract SyndicateVault is
         // Agent daily limit
         uint256 effectiveDailyLimit =
             agent.dailyLimit < _syndicateCaps.maxDailyTotal ? agent.dailyLimit : _syndicateCaps.maxDailyTotal;
-        require(agent.spentToday + assetAmount <= effectiveDailyLimit, "Exceeds agent daily limit");
+        if (agent.spentToday + assetAmount > effectiveDailyLimit) revert ExceedsAgentDailyLimit();
 
         // Syndicate combined daily limit
-        require(_dailySpendTotal + assetAmount <= _syndicateCaps.maxDailyTotal, "Exceeds syndicate daily limit");
+        if (_dailySpendTotal + assetAmount > _syndicateCaps.maxDailyTotal) revert ExceedsSyndicateDailyLimit();
 
         // Update spend tracking
         agent.spentToday += assetAmount;
@@ -158,7 +158,7 @@ contract SyndicateVault is
 
         // --- Allowlist check ---
         for (uint256 i = 0; i < calls.length; i++) {
-            require(_allowedTargets.contains(calls[i].target), "Target not allowed");
+            if (!_allowedTargets.contains(calls[i].target)) revert TargetNotAllowed(calls[i].target);
         }
 
         // --- Delegatecall to shared executor lib ---
@@ -189,7 +189,7 @@ contract SyndicateVault is
 
         (bool success, bytes memory returnData) =
             _executorImpl.delegatecall(abi.encodeCall(BatchExecutorLib.simulateBatch, (calls)));
-        require(success, "Simulation delegatecall failed");
+        if (!success) revert SimulationFailed();
         return abi.decode(returnData, (BatchExecutorLib.CallResult[]));
     }
 
@@ -197,21 +197,21 @@ contract SyndicateVault is
 
     /// @inheritdoc ISyndicateVault
     function addTarget(address target) external onlyOwner {
-        require(target != address(0), "Invalid target");
-        require(_allowedTargets.add(target), "Already allowed");
+        if (target == address(0)) revert InvalidTarget();
+        if (!_allowedTargets.add(target)) revert TargetAlreadyAllowed();
         emit TargetAdded(target);
     }
 
     /// @inheritdoc ISyndicateVault
     function removeTarget(address target) external onlyOwner {
-        require(_allowedTargets.remove(target), "Not in allowlist");
+        if (!_allowedTargets.remove(target)) revert TargetNotInAllowlist();
         emit TargetRemoved(target);
     }
 
     /// @inheritdoc ISyndicateVault
     function addTargets(address[] calldata targets) external onlyOwner {
         for (uint256 i = 0; i < targets.length; i++) {
-            require(targets[i] != address(0), "Invalid target");
+            if (targets[i] == address(0)) revert InvalidTarget();
             _allowedTargets.add(targets[i]);
             emit TargetAdded(targets[i]);
         }
@@ -231,21 +231,21 @@ contract SyndicateVault is
 
     /// @inheritdoc ISyndicateVault
     function approveDepositor(address depositor) external onlyOwner {
-        require(depositor != address(0), "Invalid depositor");
-        require(_approvedDepositors.add(depositor), "Already approved");
+        if (depositor == address(0)) revert InvalidDepositor();
+        if (!_approvedDepositors.add(depositor)) revert DepositorAlreadyApproved();
         emit DepositorApproved(depositor);
     }
 
     /// @inheritdoc ISyndicateVault
     function removeDepositor(address depositor) external onlyOwner {
-        require(_approvedDepositors.remove(depositor), "Not approved");
+        if (!_approvedDepositors.remove(depositor)) revert DepositorNotApproved();
         emit DepositorRemoved(depositor);
     }
 
     /// @inheritdoc ISyndicateVault
     function approveDepositors(address[] calldata depositors) external onlyOwner {
         for (uint256 i = 0; i < depositors.length; i++) {
-            require(depositors[i] != address(0), "Invalid depositor");
+            if (depositors[i] == address(0)) revert InvalidDepositor();
             _approvedDepositors.add(depositors[i]);
             emit DepositorApproved(depositors[i]);
         }
@@ -315,13 +315,13 @@ contract SyndicateVault is
         external
         onlyOwner
     {
-        require(pkpAddress != address(0), "Invalid PKP address");
-        require(operatorEOA != address(0), "Invalid operator EOA");
-        require(!_agents[pkpAddress].active, "Agent already registered");
+        if (pkpAddress == address(0)) revert InvalidPKPAddress();
+        if (operatorEOA == address(0)) revert InvalidOperatorEOA();
+        if (_agents[pkpAddress].active) revert AgentAlreadyRegistered();
 
         // Agent limits can't exceed syndicate caps
-        require(maxPerTx <= _syndicateCaps.maxPerTx, "Agent maxPerTx > syndicate cap");
-        require(dailyLimit <= _syndicateCaps.maxDailyTotal, "Agent dailyLimit > syndicate cap");
+        if (maxPerTx > _syndicateCaps.maxPerTx) revert AgentMaxPerTxExceedsCap();
+        if (dailyLimit > _syndicateCaps.maxDailyTotal) revert AgentDailyLimitExceedsCap();
 
         _agents[pkpAddress] = AgentConfig({
             pkpAddress: pkpAddress,
@@ -340,7 +340,7 @@ contract SyndicateVault is
 
     /// @inheritdoc ISyndicateVault
     function removeAgent(address pkpAddress) external onlyOwner {
-        require(_agents[pkpAddress].active, "Agent not active");
+        if (!_agents[pkpAddress].active) revert AgentNotActive();
 
         _agents[pkpAddress].active = false;
         _agentSet.remove(pkpAddress);
@@ -350,9 +350,9 @@ contract SyndicateVault is
 
     /// @inheritdoc ISyndicateVault
     function updateSyndicateCaps(SyndicateCaps calldata caps) external onlyOwner {
-        require(caps.maxPerTx > 0, "Invalid maxPerTx");
-        require(caps.maxDailyTotal > 0, "Invalid maxDailyTotal");
-        require(caps.maxBorrowRatio <= 10000, "Borrow ratio > 100%");
+        if (caps.maxPerTx == 0) revert InvalidMaxPerTx();
+        if (caps.maxDailyTotal == 0) revert InvalidMaxDailyTotal();
+        if (caps.maxBorrowRatio > 10000) revert BorrowRatioTooHigh();
 
         _syndicateCaps = caps;
 
@@ -377,7 +377,7 @@ contract SyndicateVault is
         override
         whenNotPaused
     {
-        require(_openDeposits || _approvedDepositors.contains(receiver), "Not approved depositor");
+        if (!_openDeposits && !_approvedDepositors.contains(receiver)) revert NotApprovedDepositor();
         super._deposit(caller, receiver, assets, shares);
     }
 

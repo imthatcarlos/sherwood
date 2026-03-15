@@ -19,6 +19,14 @@ import {IL2Registrar} from "./interfaces/IL2Registrar.sol";
  *   syndicate gets a <subdomain>.sherwoodagent.eth name resolving to its vault.
  */
 contract SyndicateFactory {
+    // ── Errors ──
+    error InvalidExecutorImpl();
+    error InvalidVaultImpl();
+    error InvalidENSRegistrar();
+    error SubdomainTooShort();
+    error SubdomainTaken();
+    error NotCreator();
+
     struct SyndicateConfig {
         string metadataURI; // ipfs://Qm... (name, description, strategies)
         IERC20 asset; // Deposit asset (e.g., USDC)
@@ -66,9 +74,9 @@ contract SyndicateFactory {
     event SyndicateDeactivated(uint256 indexed id);
 
     constructor(address executorImpl_, address vaultImpl_, address ensRegistrar_) {
-        require(executorImpl_ != address(0), "Invalid executor impl");
-        require(vaultImpl_ != address(0), "Invalid vault impl");
-        require(ensRegistrar_ != address(0), "Invalid ENS registrar");
+        if (executorImpl_ == address(0)) revert InvalidExecutorImpl();
+        if (vaultImpl_ == address(0)) revert InvalidVaultImpl();
+        if (ensRegistrar_ == address(0)) revert InvalidENSRegistrar();
         executorImpl = executorImpl_;
         vaultImpl = vaultImpl_;
         ensRegistrar = IL2Registrar(ensRegistrar_);
@@ -80,8 +88,8 @@ contract SyndicateFactory {
     /// @return vault The deployed vault proxy address
     function createSyndicate(SyndicateConfig calldata config) external returns (uint256 syndicateId, address vault) {
         // Validate subdomain
-        require(bytes(config.subdomain).length >= 3, "Name too short");
-        require(subdomainToSyndicate[config.subdomain] == 0, "Name taken");
+        if (bytes(config.subdomain).length < 3) revert SubdomainTooShort();
+        if (subdomainToSyndicate[config.subdomain] != 0) revert SubdomainTaken();
 
         syndicateId = ++syndicateCount;
 
@@ -124,7 +132,7 @@ contract SyndicateFactory {
     /// @notice Update syndicate metadata (creator only)
     function updateMetadata(uint256 syndicateId, string calldata metadataURI) external {
         Syndicate storage s = syndicates[syndicateId];
-        require(s.creator == msg.sender, "Not creator");
+        if (s.creator != msg.sender) revert NotCreator();
         s.metadataURI = metadataURI;
         emit MetadataUpdated(syndicateId, metadataURI);
     }
@@ -132,7 +140,7 @@ contract SyndicateFactory {
     /// @notice Deactivate a syndicate (creator only)
     function deactivate(uint256 syndicateId) external {
         Syndicate storage s = syndicates[syndicateId];
-        require(s.creator == msg.sender, "Not creator");
+        if (s.creator != msg.sender) revert NotCreator();
         s.active = false;
         emit SyndicateDeactivated(syndicateId);
     }
