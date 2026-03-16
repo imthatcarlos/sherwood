@@ -1,8 +1,7 @@
 ---
 name: sherwood-agent
 description: Manages Sherwood investment syndicates on Base — creates vaults, configures agents, executes DeFi strategies, disburses allowances, and funds Venice inference. Triggers on syndicate creation, vault management, agent registration, strategy execution, depositor approvals, allowance disbursements, Venice funding, metadata updates, and general Sherwood CLI operations.
-allowed-tools: Read, Glob, Grep, Bash(npx:*), Bash(cd:*), Bash(curl:*), Bash(jq:*), Bash(cat:*), WebFetch, WebSearch, AskUserQuestion
-model: sonnet
+allowed-tools: Read, Glob, Grep, Bash(git:*), Bash(npm:*), Bash(npx:*), Bash(cd:*), Bash(curl:*), Bash(jq:*), Bash(cat:*), Bash(sherwood:*), Bash(which:*), WebFetch, WebSearch, AskUserQuestion
 license: MIT
 metadata:
   author: sherwood
@@ -13,7 +12,17 @@ metadata:
 
 Manages agent-operated ERC-4626 investment vaults on Base via the Sherwood CLI.
 
-After building (`cd cli && npm run build && npm link`), the `sherwood` command is available globally. Add `--testnet` for Base Sepolia.
+## Install
+
+Before first use, check if the `sherwood` command exists. If not, install it:
+
+```bash
+npm install -g @sherwood/cli
+```
+
+Or run without installing: `npx @sherwood/cli <command>`.
+
+All commands below use `sherwood` as shorthand. Add `--testnet` for Base Sepolia.
 
 ## Agent Lifecycle
 

@@ -1,0 +1,66 @@
+name: Publish CLI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: npm install
+
+      - name: Build
+        env:
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  build-binaries:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: macos-latest
+            target: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install
+        run: bun install
+
+      - name: Compile standalone binary
+        env:
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+        run: bun build src/index.ts --compile --outfile sherwood-${{ matrix.target }}
+
+      - name: Upload binary to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: cli/sherwood-${{ matrix.target }}
