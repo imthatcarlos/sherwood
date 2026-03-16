@@ -1,14 +1,14 @@
 {
   "network": "base-sepolia",
   "chainId": 84532,
-  "deployer": "0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38",
-  "agentId": 1932,
+  "deployer": "0x5A00afAecE9CF61A768E2AE2713084C8d354DF94",
+  "agentId": 1936,
   "agentOwner": "0x5A00afAecE9CF61A768E2AE2713084C8d354DF94",
   "contracts": {
-    "batchExecutorLib": "0xC6744E4941f4810fDadB72c795aD3EE7cb55D925",
-    "vaultImplementation": "0x853003dd7bBABA55Cdb79F09fd47E89d116806F5",
-    "syndicateFactory": "0x997FAcbAB167Afa2e70828Dc8bff5647773eA31D",
-    "strategyRegistry": "0xfb5d298e13D79aa5960F4c6233348b86b3B23e99"
+    "batchExecutorLib": "0x0c63Ea92336eA0324B81eB6D0fD62455eC38091b",
+    "vaultImplementation": "0x7E1F71A72a88Ce8418cf82CACDE9ce5Bbbcf5772",
+    "syndicateFactory": "0xc705F04fF2781aF9bB53ba416Cb32A29540c4624",
+    "strategyRegistry": "0x8A45f769553D10F26a6633d019B04f7805b1368A"
   },
   "externalContracts": {
     "l2Registrar": "0x1fCbe9dFC25e3fa3F7C55b26c7992684A4758b47",
@@ -16,5 +16,7 @@
     "reputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713"
   },
   "deployedAt": "2026-03-15",
+  "redeployedAt": "2026-03-15",
+  "redeployReason": "Added ERC721Holder to SyndicateVault for ENS subname NFT receipt",
   "explorer": "https://sepolia.basescan.org"
 }

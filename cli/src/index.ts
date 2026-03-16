@@ -29,6 +29,14 @@ async function loadXmtp() {
 }
 import { cacheGroupId, setChainContract, getChainContracts, loadConfig, setPrivateKey } from "./lib/config.js";
 
+/** Set vault address from --vault flag or fall back to config. */
+function resolveVault(opts: { vault?: string }) {
+  if (opts.vault) {
+    resolveVault(opts);
+  }
+  // If no --vault flag, getVaultAddress() in vault.ts reads from config
+}
+
 const program = new Command();
 
 program
@@ -256,10 +264,10 @@ syndicate
 syndicate
   .command("approve-depositor")
   .description("Approve an address to deposit (owner only)")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .requiredOption("--depositor <address>", "Address to approve")
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     const spinner = ora("Approving depositor...").start();
     try {
       const hash = await vaultLib.approveDepositor(opts.depositor as Address);
@@ -275,10 +283,10 @@ syndicate
 syndicate
   .command("remove-depositor")
   .description("Remove an address from the depositor whitelist (owner only)")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .requiredOption("--depositor <address>", "Address to remove")
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     const spinner = ora("Removing depositor...").start();
     try {
       const hash = await vaultLib.removeDepositor(opts.depositor as Address);
@@ -294,7 +302,7 @@ syndicate
 syndicate
   .command("add")
   .description("Register an agent on a syndicate vault (creator only)")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .requiredOption("--agent-id <id>", "Agent's ERC-8004 identity token ID")
   .requiredOption("--pkp <address>", "Agent PKP address")
   .requiredOption("--eoa <address>", "Operator EOA address")
@@ -311,7 +319,7 @@ syndicate
         process.exit(1);
       }
 
-      vaultLib.setVaultAddress(opts.vault as Address);
+      resolveVault(opts);
       const decimals = await vaultLib.getAssetDecimals();
       const maxPerTx = parseUnits(opts.maxPerTx, decimals);
       const dailyLimit = parseUnits(opts.dailyLimit, decimals);
@@ -394,10 +402,10 @@ const vaultCmd = program.command("vault");
 vaultCmd
   .command("deposit")
   .description("Deposit into a vault")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .requiredOption("--amount <amount>", "Amount to deposit (in asset units)")
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     const decimals = await vaultLib.getAssetDecimals();
     const amount = parseUnits(opts.amount, decimals);
     const spinner = ora(`Depositing ${opts.amount}...`).start();
@@ -415,9 +423,9 @@ vaultCmd
 vaultCmd
   .command("ragequit")
   .description("Withdraw all shares from a vault")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     const spinner = ora("Ragequitting...").start();
     try {
       const hash = await vaultLib.ragequit();
@@ -433,9 +441,9 @@ vaultCmd
 vaultCmd
   .command("info")
   .description("Display vault state")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     const spinner = ora("Loading vault info...").start();
     try {
       const info = await vaultLib.getVaultInfo();
@@ -463,10 +471,10 @@ vaultCmd
 vaultCmd
   .command("balance")
   .description("Show LP share balance and asset value")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .option("--address <address>", "Address to check (default: your wallet)")
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     const spinner = ora("Loading balance...").start();
     try {
       const balance = await vaultLib.getBalance(opts.address as Address | undefined);
@@ -490,10 +498,10 @@ vaultCmd
 vaultCmd
   .command("add-target")
   .description("Add a target to the vault allowlist (owner only)")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .requiredOption("--target <address>", "Target address to allow")
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     const spinner = ora("Adding target...").start();
     try {
       const hash = await vaultLib.addTarget(opts.target as Address);
@@ -509,10 +517,10 @@ vaultCmd
 vaultCmd
   .command("remove-target")
   .description("Remove a target from the vault allowlist (owner only)")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .requiredOption("--target <address>", "Target address to remove")
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     const spinner = ora("Removing target...").start();
     try {
       const hash = await vaultLib.removeTarget(opts.target as Address);
@@ -528,9 +536,9 @@ vaultCmd
 vaultCmd
   .command("targets")
   .description("List allowed targets for a vault")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     const spinner = ora("Loading targets...").start();
     try {
       const targets = await vaultLib.getAllowedTargets();
@@ -646,7 +654,7 @@ strategy
 strategy
   .command("run")
   .description("Execute the levered swap strategy")
-  .requiredOption("--vault <address>", "Vault address")
+  .option("--vault <address>", "Vault address (default: from config)")
   .requiredOption("--collateral <amount>", "WETH collateral amount (e.g. 1.0)")
   .requiredOption("--borrow <amount>", "USDC to borrow against collateral")
   .requiredOption("--token <address>", "Target token address to buy")
@@ -654,7 +662,7 @@ strategy
   .option("--slippage <bps>", "Slippage tolerance in bps", "100")
   .option("--execute", "Actually execute on-chain (default: simulate only)", false)
   .action(async (opts) => {
-    vaultLib.setVaultAddress(opts.vault as Address);
+    resolveVault(opts);
     await runLeveredSwap(opts);
   });
 

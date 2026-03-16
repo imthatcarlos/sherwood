@@ -6,7 +6,7 @@
  */
 
 import type { Address, Hex } from "viem";
-import { parseUnits, formatUnits } from "viem";
+import { parseUnits, formatUnits, decodeEventLog } from "viem";
 import { getChain, getNetwork } from "./network.js";
 import { getPublicClient, getWalletClient, getAccount } from "./client.js";
 import { SYNDICATE_FACTORY_ABI } from "./abis.js";
@@ -83,13 +83,28 @@ export async function createSyndicate(params: CreateSyndicateParams): Promise<Cr
   // Wait for receipt and extract vault from SyndicateCreated event
   const receipt = await client.waitForTransactionReceipt({ hash });
 
-  // SyndicateCreated(uint256 syndicateId, address vault, address creator, string metadataURI, string subdomain)
-  // Event topic[0] = keccak256 of signature, topic[1] = syndicateId (indexed), topic[2] = vault (indexed), topic[3] = creator (indexed)
-  const syndicateCreatedTopic = "0x" + "SyndicateCreated(uint256,address,address,string,string)"
-    .split("") // We'll use a simpler approach — read from factory
-    .join("");
+  // Parse SyndicateCreated event from receipt logs
+  for (const log of receipt.logs) {
+    try {
+      const event = decodeEventLog({
+        abi: SYNDICATE_FACTORY_ABI,
+        data: log.data,
+        topics: log.topics,
+      });
+      if (event.eventName === "SyndicateCreated") {
+        const args = event.args as { id: bigint; vault: Address; creator: Address };
+        return {
+          hash,
+          syndicateId: args.id,
+          vault: args.vault,
+        };
+      }
+    } catch {
+      // Not our event, skip
+    }
+  }
 
-  // Simpler: read the latest syndicate count and get that syndicate's info
+  // Fallback: read from factory state (may lag on RPC replicas)
   const count = await getSyndicateCount();
   const info = await getSyndicate(count);
 

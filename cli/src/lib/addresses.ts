@@ -107,8 +107,8 @@ const BASE_SHERWOOD = {
 } as const;
 
 const BASE_SEPOLIA_SHERWOOD = {
-  FACTORY: "0x997FAcbAB167Afa2e70828Dc8bff5647773eA31D" as Address,
-  STRATEGY_REGISTRY: "0xfb5d298e13D79aa5960F4c6233348b86b3B23e99" as Address,
+  FACTORY: "0xc705F04fF2781aF9bB53ba416Cb32A29540c4624" as Address,
+  STRATEGY_REGISTRY: "0x8A45f769553D10F26a6633d019B04f7805b1368A" as Address,
 } as const;
 
 // ── Venice (VVV governance + sVVV staking + DIEM compute) ──

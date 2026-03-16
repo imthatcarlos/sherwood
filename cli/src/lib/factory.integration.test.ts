@@ -7,15 +7,25 @@ import { describe, it, expect } from "vitest";
 import { getSyndicateCount, getActiveSyndicates, getSyndicate } from "./factory.js";
 
 describe("SyndicateFactory (Base Sepolia)", () => {
-  it("getSyndicateCount returns a bigint >= 0", async () => {
+  it("getSyndicateCount returns >= 1 (at least one syndicate deployed)", async () => {
     const count = await getSyndicateCount();
     expect(typeof count).toBe("bigint");
-    expect(count).toBeGreaterThanOrEqual(0n);
+    expect(count).toBeGreaterThanOrEqual(1n);
   });
 
-  it("getActiveSyndicates returns an array", async () => {
+  it("getActiveSyndicates returns at least one syndicate", async () => {
     const syndicates = await getActiveSyndicates();
     expect(Array.isArray(syndicates)).toBe(true);
+    expect(syndicates.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("getSyndicate(1) returns the deployed sherwood-alpha syndicate", async () => {
+    const info = await getSyndicate(1n);
+    expect(info.id).toBe(1n);
+    expect(info.vault).not.toBe("0x0000000000000000000000000000000000000000");
+    expect(info.subdomain).toBe("sherwood-alpha");
+    expect(info.active).toBe(true);
+    expect(info.creator.toLowerCase()).toBe("0x5a00afaece9cf61a768e2ae2713084c8d354df94");
   });
 
   it("getSyndicate(0) returns zero vault (no syndicate 0)", async () => {

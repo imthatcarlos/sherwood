@@ -567,6 +567,17 @@ export const SYNDICATE_FACTORY_ABI = [
     inputs: [{ name: "subdomain", type: "string" }],
     outputs: [{ name: "", type: "bool" }],
   },
+  {
+    name: "SyndicateCreated",
+    type: "event",
+    inputs: [
+      { name: "id", type: "uint256", indexed: true },
+      { name: "vault", type: "address", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "metadataURI", type: "string", indexed: false },
+      { name: "subdomain", type: "string", indexed: false },
+    ],
+  },
 ] as const;
 
 // ── L2 Registry (Durin ENS — text records) ──
