@@ -223,6 +223,23 @@ syndicate
       // Auto-save vault address to config
       setChainContract(getChain().id, "vault", result.vault);
 
+      // ── Register creator as agent on the vault ──
+      spinner.text = W("Registering creator as agent...");
+      try {
+        vaultLib.setVaultAddress(result.vault);
+        const creatorAddress = getAccount().address;
+        await vaultLib.registerAgent(
+          BigInt(agentIdStr),
+          creatorAddress,        // pkp = creator EOA (direct execution)
+          creatorAddress,        // operator = creator EOA
+          parseUnits(maxPerTx, decimals),
+          parseUnits(maxDaily, decimals),
+        );
+      } catch (regErr) {
+        // Non-fatal — creator can register later via `syndicate add`
+        console.warn(chalk.yellow("\n  ⚠ Could not auto-register creator as agent — register manually with `syndicate add`"));
+      }
+
       spinner.text = W("Setting up chat...");
 
       // Create XMTP group for syndicate chat

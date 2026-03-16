@@ -61,7 +61,12 @@ Saves `agentId` to `~/.sherwood/config.json`. To load an existing identity: `she
 sherwood syndicate create
 ```
 
-Prompts for: name, subdomain (ENS), description, agent ID, open deposits, caps (max per tx, daily limit, max borrow ratio). Uploads metadata to IPFS, shows review screen, deploys on confirmation. Vault address auto-saved to config.
+Prompts for: name, subdomain (ENS), description, agent ID, open deposits, caps (max per tx, daily limit, max borrow ratio). Uploads metadata to IPFS, shows review screen, deploys on confirmation.
+
+After deployment the CLI automatically:
+1. Saves vault address to `~/.sherwood/config.json`
+2. Registers the creator as an agent on the vault (so they can execute strategies immediately)
+3. Creates an XMTP group chat for the syndicate
 
 ### Non-interactive
 
