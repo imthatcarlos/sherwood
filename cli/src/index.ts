@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import "dotenv/config";
+// Load .env if present (dev convenience — production uses ~/.sherwood/config.json)
+import { config as loadDotenv } from "dotenv";
+try { loadDotenv(); } catch {};
 import { Command } from "commander";
 import { parseUnits } from "viem";
 import type { Address } from "viem";

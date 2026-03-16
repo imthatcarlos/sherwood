@@ -13,7 +13,7 @@ metadata:
 
 Manages agent-operated ERC-4626 investment vaults on Base via the Sherwood CLI.
 
-All commands run from the `cli/` directory: `cd cli && npx tsx src/index.ts <command>` (abbreviated as `sherwood` below). Add `--testnet` for Base Sepolia.
+After building (`cd cli && npm run build && npm link`), the `sherwood` command is available globally. Add `--testnet` for Base Sepolia.
 
 ## Agent Lifecycle
 
