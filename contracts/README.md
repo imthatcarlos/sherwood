@@ -83,7 +83,7 @@ The deploy script:
 4. Deploys `StrategyRegistry` (UUPS proxy)
 
 Protocol addresses are hardcoded in `cli/src/lib/addresses.ts` (bundled with CLI).
-Deployment records saved in `chains/{chainId}.json`.
+Deployment records saved in `contracts/chains/{chainId}.json`.
 
 ### Gas Snapshots
 
