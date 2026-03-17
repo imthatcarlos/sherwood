@@ -44,18 +44,19 @@ app/         Next.js dashboard
 - TypeScript, viem for chain interaction, Lit SDK for agent permissions
 - Provider pattern: each DeFi protocol = a provider with standard interface
 - `npm run typecheck` before every PR
-- **Distribution**: Published to npm as `@sherwoodagent/cli` (`npm i -g @sherwoodagent/cli`). Standalone binary via GitHub releases as secondary (no chat/XMTP support — native bindings can't be embedded).
+- **Distribution**: Published to npm as `@sherwoodagent/cli` (`npm i -g @sherwoodagent/cli`). Standalone binary via GitHub releases as secondary (no chat/XMTP support).
 - Bump version in `cli/package.json` to trigger a new release on merge to main. Stay on `0.x` until mainnet — use **minor** bumps (`0.3.0`, `0.4.0`) for new features/breaking changes, **patch** bumps (`0.2.1`, `0.2.2`) for bug fixes and small improvements. First mainnet release will be `1.0.0`.
 
 ## Chat (XMTP)
 
-- Encrypted group messaging via XMTP (`@xmtp/node-sdk`) — MLS-based E2E encryption
+- Encrypted group messaging via `@xmtp/cli` subprocess — no native bindings, works on all platforms (Debian 12, Ubuntu 22.04, OpenClaw sandboxes)
 - Each syndicate gets an XMTP group on creation, group ID stored as ENS text record + cached locally
 - Creator is super admin — only they can add members via `syndicate add`
 - Agents auto-added to chat after registration, with `AGENT_REGISTERED` lifecycle message
-- Supports text (JSON `ChatEnvelope`), markdown (`sendMarkdown`), and reactions (`sendReaction`)
+- All messages sent as JSON `ChatEnvelope` text (markdown and reactions encoded as envelope types)
 - `--public-chat` flag enables spectator mode for dashboard integration
 - Config stored at `~/.sherwood/config.json` (XMTP DB encryption key, group ID cache)
+- Private key auto-synced from `~/.sherwood/config.json` → `~/.xmtp/.env` on first XMTP operation
 
 ### Chat Commands
 - `sherwood chat <name>` — stream messages in real-time
@@ -69,8 +70,8 @@ app/         Next.js dashboard
 
 ### Agent Chat Onboarding
 - XMTP requires each wallet to have initialized an XMTP client at least once before it can be added to groups
-- `syndicate join` auto-initializes the agent's XMTP identity, so `syndicate approve` can immediately add them to the group
-- If XMTP init fails during join (e.g. native bindings missing), the approve flow warns and the agent can run `sherwood chat <name>` later to join manually
+- `syndicate join` auto-initializes the agent's XMTP identity (calls `xmtp client info` via subprocess), so `syndicate approve` can immediately add them to the group
+- If XMTP init fails during join (e.g. `@xmtp/cli` not installed), the approve flow warns and the agent can run `sherwood chat <name>` later to join manually
 
 ## Agent Identity (ERC-8004)
 

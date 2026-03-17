@@ -2,6 +2,7 @@
  * Chat commands — sherwood chat <syndicate-name> [action] [args...]
  *
  * Uses XMTP for encrypted group messaging tied to syndicates.
+ * Shells out to the @xmtp/cli binary for all XMTP operations.
  *
  * Commander can't dispatch subcommands when the parent has a positional <name> arg
  * (it always runs the parent action). So we use manual dispatch: a single .action()
@@ -25,11 +26,9 @@ import { getAccount } from "../lib/client.js";
 import { resolveSyndicate, setTextRecord, getTextRecord } from "../lib/ens.js";
 import { cacheGroupId, getCachedGroupId } from "../lib/config.js";
 import type { ChatEnvelope, MessageType } from "../lib/types.js";
-import { isText, isMarkdown, isReaction } from "@xmtp/node-sdk";
-import type { DecodedMessage, Reaction } from "@xmtp/node-sdk";
-import { PermissionLevel } from "@xmtp/node-bindings";
+import type { XmtpMessage } from "../lib/xmtp.js";
 
-// Lazy-load XMTP to avoid breaking non-chat commands when native bindings are missing
+// Lazy-load XMTP to avoid breaking non-chat commands when @xmtp/cli is missing
 async function loadXmtp() {
   return import("../lib/xmtp.js");
 }
@@ -66,46 +65,41 @@ function colorByType(type: MessageType): (text: string) => string {
   }
 }
 
-function formatMessage(msg: DecodedMessage): string {
+function formatMessage(msg: XmtpMessage): string {
   const time = chalk.dim(`[${formatTimestamp(msg.sentAt)}]`);
   const sender = chalk.dim(truncateAddress(msg.senderInboxId));
 
-  if (isReaction(msg)) {
-    const reaction = msg.content as Reaction;
-    return `${time} ${sender} reacted ${reaction.content} to ${truncateAddress(reaction.reference)}`;
-  }
+  const text = msg.content;
+  try {
+    const envelope: ChatEnvelope = JSON.parse(text);
+    const color = colorByType(envelope.type);
+    const from = envelope.from ? truncateAddress(envelope.from) : sender;
 
-  if (isMarkdown(msg)) {
-    return `${time} ${sender}\n${msg.content as string}`;
-  }
-
-  if (isText(msg)) {
-    const text = msg.content as string;
-    try {
-      const envelope: ChatEnvelope = JSON.parse(text);
-      const color = colorByType(envelope.type);
-      const from = envelope.from ? truncateAddress(envelope.from) : sender;
-
-      if (envelope.type === "MESSAGE") {
-        return `${time} ${chalk.dim(from)}: ${envelope.text || ""}`;
-      }
-
-      if (envelope.type === "AGENT_REGISTERED") {
-        return `${time} ${color(`[${envelope.type}]`)} Agent ${truncateAddress(envelope.agent?.address || "?")} registered`;
-      }
-
-      if (envelope.type === "MEMBER_JOIN") {
-        return `${time} ${color(`[${envelope.type}]`)} ${truncateAddress(envelope.from || "?")} joined`;
-      }
-
-      const summary = envelope.text || envelope.type;
-      return `${time} ${color(`[${envelope.type}]`)} ${chalk.dim(from)}: ${summary}`;
-    } catch {
-      return `${time} ${sender}: ${text}`;
+    if (envelope.type === "REACTION") {
+      const data = envelope.data as { reference?: string; emoji?: string } | undefined;
+      return `${time} ${sender} reacted ${data?.emoji || "?"} to ${truncateAddress(data?.reference || "?")}`;
     }
-  }
 
-  return `${time} ${sender}: ${msg.fallback || "[unsupported content]"}`;
+    if (envelope.type === "MESSAGE") {
+      if ((envelope.data as Record<string, unknown>)?.format === "markdown") {
+        return `${time} ${chalk.dim(from)}\n${envelope.text || ""}`;
+      }
+      return `${time} ${chalk.dim(from)}: ${envelope.text || ""}`;
+    }
+
+    if (envelope.type === "AGENT_REGISTERED") {
+      return `${time} ${color(`[${envelope.type}]`)} Agent ${truncateAddress(envelope.agent?.address || "?")} registered`;
+    }
+
+    if (envelope.type === "MEMBER_JOIN") {
+      return `${time} ${color(`[${envelope.type}]`)} ${truncateAddress(envelope.from || "?")} joined`;
+    }
+
+    const summary = envelope.text || envelope.type;
+    return `${time} ${color(`[${envelope.type}]`)} ${chalk.dim(from)}: ${summary}`;
+  } catch {
+    return `${time} ${sender}: ${text}`;
+  }
 }
 
 // ── Action handlers ──
@@ -126,7 +120,7 @@ async function handleStream(name: string): Promise<void> {
 
     process.on("SIGINT", async () => {
       console.log(chalk.dim("\nDisconnecting..."));
-      await cleanup();
+      cleanup();
       process.exit(0);
     });
 
@@ -214,7 +208,7 @@ async function handleMembers(name: string): Promise<void> {
     const xmtp = await loadXmtp();
     const client = await xmtp.getXmtpClient();
     const group = await xmtp.getGroup(client, name);
-    const members = await group.members();
+    const members = await xmtp.getMembers(group);
 
     spinner.stop();
     console.log();
@@ -222,9 +216,9 @@ async function handleMembers(name: string): Promise<void> {
     console.log(chalk.dim("─".repeat(50)));
 
     for (const member of members) {
-      const role = member.permissionLevel === PermissionLevel.SuperAdmin
+      const role = member.permissionLevel === "super_admin"
         ? chalk.yellow(" (super admin)")
-        : member.permissionLevel === PermissionLevel.Admin
+        : member.permissionLevel === "admin"
           ? chalk.blue(" (admin)")
           : "";
       console.log(`  ${member.inboxId}${role}`);
@@ -276,21 +270,8 @@ async function handleInit(name: string, force: boolean, publicChat: boolean): Pr
     if (!force) {
       const existingId = getCachedGroupId(name) || await getTextRecord(name, "xmtpGroupId");
       if (existingId) {
-        try {
-          const xmtp = await loadXmtp();
-          const client = await xmtp.getXmtpClient();
-          await client.conversations.sync();
-          const existing = await client.conversations.getConversationById(existingId);
-          if (existing) {
-            spinner.succeed("XMTP group already exists for this syndicate");
-            console.log(chalk.dim(`  Group ID: ${existingId}`));
-            return;
-          }
-        } catch {
-          // Can't verify — fall through to suggest --force
-        }
-        spinner.warn("Found stale group ID — group is not accessible");
-        console.log(chalk.dim("  Use --force to create a new group"));
+        spinner.succeed("XMTP group already exists for this syndicate");
+        console.log(chalk.dim(`  Group ID: ${existingId}`));
         return;
       }
     }
@@ -307,7 +288,7 @@ async function handleInit(name: string, force: boolean, publicChat: boolean): Pr
       spinner.text = "Writing group ID to ENS...";
       await setTextRecord(name, "xmtpGroupId", groupId, syndicate.vault);
     } catch (ensErr) {
-      console.warn(chalk.yellow("\n  ⚠ Could not write ENS text record (cached locally only)"));
+      console.warn(chalk.yellow("\n  \u26a0 Could not write ENS text record (cached locally only)"));
       console.warn(chalk.dim(`    ${ensErr instanceof Error ? ensErr.message : String(ensErr)}`));
     }
 
