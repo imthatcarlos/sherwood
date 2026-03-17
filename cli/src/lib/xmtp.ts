@@ -192,11 +192,15 @@ let _conversationsSynced = false;
  * Sync conversations from the network into the local XMTP DB.
  * One-shot commands (send, messages, members) spawn a fresh process
  * that may not have the group locally — this ensures it's available.
- * Only runs once per process.
+ *
+ * Uses `sync-all` instead of `sync` because `sync` only refreshes
+ * already-known conversations. `sync-all` also processes MLS welcome
+ * messages, which is required for agents that were added to a group
+ * by someone else. Only runs once per process.
  */
 function syncConversations(): void {
   if (_conversationsSynced) return;
-  execXmtp(["conversations", "sync"]);
+  execXmtp(["conversations", "sync-all"]);
   _conversationsSynced = true;
 }
 
@@ -343,8 +347,26 @@ export async function addMember(
   groupId: string,
   address: string,
 ): Promise<void> {
+  // Verify the target has an active XMTP identity before adding
+  const reachable = execXmtpJson<Array<{ identifier: string; reachable: boolean }>>(
+    ["can-message", address],
+  );
+  if (!reachable?.[0]?.reachable) {
+    throw new Error(
+      `${address} is not reachable on XMTP. They need to initialize their client first (run: xmtp client info --env ${getXmtpEnv()}).`,
+    );
+  }
+
   syncConversations();
   execXmtp(["conversation", "add-members", groupId, address]);
+
+  // Set consent to "allowed" on the adder's side so subsequent operations
+  // (send, messages) don't skip this conversation due to unknown consent state
+  try {
+    execXmtp(["conversation", "update-consent", groupId, "--state", "allowed"]);
+  } catch {
+    // Non-fatal — consent state is a filtering concern, not a blocker
+  }
 }
 
 export async function removeMember(

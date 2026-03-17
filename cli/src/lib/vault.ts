@@ -74,12 +74,13 @@ export async function getAssetDecimals(): Promise<number> {
  */
 export async function deposit(amount: bigint): Promise<Hex> {
   const wallet = getWalletClient();
+  const client = getPublicClient();
   const vaultAddress = getVaultAddress();
   const account = getAccount();
 
   // Approve vault to pull the underlying asset
   const asset = await getAssetAddress();
-  await wallet.writeContract({
+  const approveHash = await wallet.writeContract({
     account: getAccount(),
     chain: getChain(),
     address: asset,
@@ -87,6 +88,7 @@ export async function deposit(amount: bigint): Promise<Hex> {
     functionName: "approve",
     args: [vaultAddress, amount],
   });
+  await client.waitForTransactionReceipt({ hash: approveHash });
 
   // Deposit
   return wallet.writeContract({
@@ -394,8 +396,9 @@ export async function registerAgent(
   dailyLimit: bigint,
 ): Promise<Hex> {
   const wallet = getWalletClient();
+  const client = getPublicClient();
 
-  return wallet.writeContract({
+  const hash = await wallet.writeContract({
     account: getAccount(),
     chain: getChain(),
     address: getVaultAddress(),
@@ -403,6 +406,9 @@ export async function registerAgent(
     functionName: "registerAgent",
     args: [agentId, pkpAddress, operatorEOA, maxPerTx, dailyLimit],
   });
+
+  await client.waitForTransactionReceipt({ hash });
+  return hash;
 }
 
 // ── Views ──
