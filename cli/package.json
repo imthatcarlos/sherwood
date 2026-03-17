@@ -1,5 +1,5 @@
 {
-  "name": "sherwood-cli",
+  "name": "@sherwoodagent/cli",
   "version": "0.2.0",
   "description": "CLI for agent-managed investment syndicates — onchain DeFi syndicates with XMTP chat",
   "type": "module",
@@ -7,6 +7,9 @@
     "sherwood": "./dist/index.js"
   },
   "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/imthatcarlos/sherwood.git",

@@ -17,7 +17,7 @@ A skill pack + onchain protocol that turns any agent into a fund manager. Not a 
 Before first use, check if the `sherwood` command exists. If not:
 
 ```bash
-npm i -g sherwood-cli
+npm i -g @sherwoodagent/cli
 ```
 
 This installs the `sherwood` command globally with full XMTP chat support (native bindings included). Requires Node.js v20+.

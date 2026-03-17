@@ -202,7 +202,7 @@ syndicate
           spinner.succeed(G(`Metadata pinned: ${DIM(metadataURI)}`));
         } catch (err) {
           spinner.warn(chalk.yellow(`IPFS upload failed — using inline metadata`));
-          const json = JSON.stringify({ name, description, subdomain, asset: assetSymbol, openDeposits, createdBy: "sherwood-cli" });
+          const json = JSON.stringify({ name, description, subdomain, asset: assetSymbol, openDeposits, createdBy: "@sherwoodagent/cli" });
           metadataURI = `data:application/json;base64,${Buffer.from(json).toString("base64")}`;
         }
       }
@@ -1126,7 +1126,7 @@ try {
     .action(() => {
       console.error(chalk.red("XMTP native bindings not available."));
       console.error(chalk.dim("Chat requires native dependencies that can't be embedded in standalone binaries."));
-      console.error(chalk.dim("Install via npm:  npm i -g sherwood-cli"));
+      console.error(chalk.dim("Install via npm:  npm i -g @sherwoodagent/cli"));
       console.error(chalk.dim("Or from source:   cd cli && npm i && npm run dev -- chat <name>"));
       process.exit(1);
     });
