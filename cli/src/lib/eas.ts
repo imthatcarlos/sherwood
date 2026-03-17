@@ -223,7 +223,7 @@ export async function queryJoinRequests(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       query,
-      variables: { schemaId: schemaUid, recipient: recipient.toLowerCase() },
+      variables: { schemaId: schemaUid, recipient },
     }),
   });
 
