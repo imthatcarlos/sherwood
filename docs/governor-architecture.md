@@ -46,7 +46,8 @@ struct StrategyProposal {
     uint256 capitalRequired;       // vault capital requested (in asset terms, e.g. USDC)
     uint256 performanceFeeBps;     // agent's cut of profits (e.g. 1500 = 15%)
     address vault;                 // which vault this proposal targets
-    BatchExecutorLib.Call[] calls; // exact calls to execute (target, data, value)
+    BatchExecutorLib.Call[] calls; // full lifecycle: open + close position
+    uint256 splitIndex;            // calls[0..splitIndex-1] = execute, calls[splitIndex..] = settle
     uint256 strategyDuration;      // how long the position runs (seconds), capped by maxStrategyDuration
     uint256 votesFor;              // share-weighted votes in favor
     uint256 votesAgainst;          // share-weighted votes against
@@ -73,7 +74,8 @@ This means:
 | Parameter | Controlled by | Notes |
 |-----------|--------------|-------|
 | vault | Agent (proposer) | Which vault this proposal targets |
-| calls | Agent (proposer) | Exact on-chain calls to execute — committed at proposal time |
+| calls | Agent (proposer) | Full lifecycle calls (open + close) — committed at proposal time |
+| splitIndex | Agent (proposer) | Where execute ends and settle begins in the calls array |
 | capitalRequired | Agent (proposer) | How much vault capital they need |
 | performanceFeeBps | Agent (proposer) | Their fee, capped by maxPerformanceFeeBps |
 | strategyDuration | Agent (proposer) | How long the position runs, capped by maxStrategyDuration |
@@ -244,34 +246,46 @@ No permissionless settlement by random addresses. Settlement is just an asset tr
 
 **If agent never settles:** Owner force-settles. The escrow holds the position assets (mTokens, LP tokens, etc.) which get returned to the vault as-is. The vault/owner can then manually unwind those positions.
 
-#### Unwind problem
+#### Full lifecycle in calls[]
 
-The escrow holds DeFi positions (mTokens, LP tokens, borrows), not just the deposit asset (USDC). When `settle()` is called, it returns whatever tokens the escrow holds — but these might not be USDC.
+The proposal's `calls[]` must include the **complete strategy lifecycle** — both opening AND closing the position. The agent commits everything upfront:
 
-**Options:**
+```
+Example calls[] for a Moonwell borrow + Uniswap swap strategy:
 
-**A. Settle returns all tokens, P&L calculated on deposit asset only**
-- Escrow sends all ERC-20 balances back to vault
-- P&L only measured in the deposit asset (USDC balance of escrow at settlement)
-- Non-USDC tokens (mTokens, LP tokens) return to vault but aren't counted in P&L
-- Vault owner must manually swap them back or agents can propose new strategies to handle them
-- Simple but imprecise
+1. approve WETH to Moonwell           ← open position
+2. supply WETH as collateral           
+3. borrow USDC                         
+4. approve USDC to Uniswap            
+5. swap USDC → target token           
+   ... (strategy duration passes) ...
+6. swap target token → USDC           ← close position
+7. repay USDC borrow                   
+8. redeem WETH collateral              
+9. swap WETH → USDC (if needed)       ← convert everything back to deposit asset
+```
 
-**B. Agent must unwind before settling (via separate proposal)**
-- Agent submits a new "unwind proposal" with calls to close the position (repay borrow, remove LP, swap back to USDC)
-- Shareholders vote on the unwind calls (short voting period)
-- Once executed, escrow holds USDC → settle returns clean P&L
-- Safe but adds friction
+Shareholders vote on the entire sequence. They can inspect every step — open and close.
 
-**C. Pre-committed unwind calls at proposal time**
-- Proposal includes `executeCalls[]` and `unwindCalls[]`
-- `unwindCalls` are executed on the escrow before returning assets to vault
-- Shareholders voted on everything upfront
-- Con: unwind params (slippage, repayment amounts) may be stale
+**Execution is split into two phases, both using the pre-committed calls:**
 
-**Recommendation for hackathon:** Option A — keep it simple. Escrow returns whatever it holds. P&L on deposit asset. Complex position unwinding is manual / v2.
+1. `executeProposal(proposalId)` — runs calls 1-5 (the opening portion, up to a split index)
+2. `settleProposal(proposalId)` — runs calls 6-9 (the closing portion)
 
-**Open question for Carlos:** Which unwind approach fits the demo best?
+The proposal includes a `splitIndex` — which call starts the unwind:
+
+```solidity
+struct StrategyProposal {
+    ...
+    BatchExecutorLib.Call[] calls;  // full lifecycle: open + close
+    uint256 splitIndex;             // calls[0..splitIndex-1] = execute, calls[splitIndex..] = settle
+    ...
+}
+```
+
+**Settlement returns deposit asset only.** After the unwind calls execute, the escrow should hold only the vault's deposit asset (e.g. USDC). `settle()` transfers that USDC to the vault. If the escrow holds non-deposit-asset tokens after settlement (something went wrong), `recoverTokens()` lets the governor/owner retrieve them.
+
+**Stale parameters:** Since unwind calls are committed at proposal time, params like slippage tolerance and exact repayment amounts may be stale by settlement time. Agents should use generous slippage tolerances in their unwind calls. If unwind calls revert due to stale params, the owner can emergency-settle and manually handle the position.
 
 ---
 
