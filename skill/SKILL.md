@@ -14,19 +14,13 @@ A skill pack + onchain protocol that turns any agent into a fund manager. Not a 
 
 ## Install
 
-Before first use, check if the `sherwood` command exists. If not, install via npm (recommended — required for chat/XMTP support):
+Before first use, check if the `sherwood` command exists. If not, install with the one-liner below. This clones the CLI, installs native dependencies (required for XMTP chat), and symlinks `sherwood` into your PATH:
 
 ```bash
-npm i -g @sherwood/cli
+curl -fsSL https://raw.githubusercontent.com/imthatcarlos/sherwood/main/cli/scripts/install.sh | bash
 ```
 
-If you don't need chat features, you can alternatively install the standalone binary:
-
-```bash
-curl -fsSL "https://github.com/imthatcarlos/sherwood/releases/latest/download/sherwood-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')" -o /usr/local/bin/sherwood && chmod +x /usr/local/bin/sherwood
-```
-
-> **Note:** The standalone binary does not support `sherwood chat` commands (XMTP requires native bindings that can't be embedded in a single binary). Use the npm install for full functionality.
+Requires Node.js v20+ and git. To update: run the same command again.
 
 All commands below use `sherwood` as shorthand. Add `--testnet` for Base Sepolia.
 

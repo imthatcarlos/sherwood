@@ -1125,8 +1125,8 @@ try {
     .description("Syndicate chat (XMTP) — requires native bindings")
     .action(() => {
       console.error(chalk.red("XMTP native bindings not available."));
-      console.error(chalk.dim("Chat requires the npm install (native bindings can't be embedded in standalone binaries)."));
-      console.error(chalk.dim("Install via npm:  npm i -g @sherwood/cli"));
+      console.error(chalk.dim("Chat requires native dependencies that can't be embedded in standalone binaries."));
+      console.error(chalk.dim("Reinstall with:   curl -fsSL https://raw.githubusercontent.com/imthatcarlos/sherwood/main/cli/scripts/install.sh | bash"));
       console.error(chalk.dim("Or from source:   cd cli && npm i && npm run dev -- chat <name>"));
       process.exit(1);
     });
