@@ -44,7 +44,7 @@ app/         Next.js dashboard
 - TypeScript, viem for chain interaction, Lit SDK for agent permissions
 - Provider pattern: each DeFi protocol = a provider with standard interface
 - `npm run typecheck` before every PR
-- **Distribution**: Install script (`cli/scripts/install.sh`) clones repo into `~/.sherwood/cli/`, runs `npm install` for native bindings (XMTP), and symlinks `sherwood` into PATH. Standalone binary via GitHub releases as fallback (no chat support).
+- **Distribution**: Published to npm as `sherwood-cli` (`npm i -g sherwood-cli`). Standalone binary via GitHub releases as secondary (no chat/XMTP support — native bindings can't be embedded).
 - Bump version in `cli/package.json` to trigger a new release on merge to main
 
 ## Chat (XMTP)
