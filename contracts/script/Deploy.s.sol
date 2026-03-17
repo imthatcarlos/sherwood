@@ -2,11 +2,13 @@
 pragma solidity 0.8.28;
 
 import {Script, console} from "forge-std/Script.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SyndicateVault} from "../src/SyndicateVault.sol";
 import {ISyndicateVault} from "../src/interfaces/ISyndicateVault.sol";
 import {BatchExecutorLib} from "../src/BatchExecutorLib.sol";
 import {SyndicateFactory} from "../src/SyndicateFactory.sol";
+import {SyndicateGovernor} from "../src/SyndicateGovernor.sol";
 
 /**
  * @notice Deploy Sherwood infrastructure to Base:
@@ -65,9 +67,26 @@ contract Deploy is Script {
         SyndicateVault vaultImpl = new SyndicateVault();
         console.log("Vault implementation:", address(vaultImpl));
 
-        // 3. Deploy SyndicateFactory
+        // 3. Deploy SyndicateGovernor (UUPS proxy)
+        SyndicateGovernor govImpl = new SyndicateGovernor();
+        bytes memory govInitData = abi.encodeCall(
+            SyndicateGovernor.initialize,
+            (
+                deployer, // owner
+                1 days, // votingPeriod
+                1 days, // executionWindow
+                4000, // quorumBps (40%)
+                3000, // maxPerformanceFeeBps (30%)
+                30 days, // maxStrategyDuration
+                1 days // cooldownPeriod
+            )
+        );
+        address governorProxy = address(new ERC1967Proxy(address(govImpl), govInitData));
+        console.log("SyndicateGovernor:", governorProxy);
+
+        // 4. Deploy SyndicateFactory
         SyndicateFactory factory =
-            new SyndicateFactory(address(executorLib), address(vaultImpl), L2_REGISTRAR, AGENT_REGISTRY);
+            new SyndicateFactory(address(executorLib), address(vaultImpl), L2_REGISTRAR, AGENT_REGISTRY, governorProxy);
         console.log("SyndicateFactory:", address(factory));
 
         // 4. Create first syndicate via factory
