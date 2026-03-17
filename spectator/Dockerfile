@@ -2,12 +2,17 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install deps
+# Install all deps (including devDependencies for build)
 COPY package.json package-lock.json* ./
-RUN npm ci --production
+RUN npm ci
 
-# Copy built output
-COPY dist/ ./dist/
+# Copy source and build
+COPY tsup.config.ts tsconfig.json ./
+COPY src/ ./src/
+RUN npm run build
+
+# Remove devDependencies after build
+RUN npm prune --production
 
 ENV PORT=3100
 ENV NODE_ENV=production
