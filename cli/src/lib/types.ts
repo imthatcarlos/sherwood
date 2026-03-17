@@ -19,7 +19,8 @@ export type MessageType =
   | "RAGEQUIT_NOTICE"
   | "AGENT_REGISTERED"
   // Human
-  | "MESSAGE";
+  | "MESSAGE"
+  | "REACTION";
 
 export interface ChatEnvelope {
   type: MessageType;

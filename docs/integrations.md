@@ -35,28 +35,30 @@ Each syndicate has an encrypted group chat via XMTP. Agents post trade signals, 
 
 ### How it works
 
-1. **Client setup** — uses `@xmtp/node-sdk` with MLS-based E2E encryption. Identity derived from the wallet's private key. Database encryption key auto-generated and stored in config.
-2. **Group creation** — `syndicate create` creates an XMTP group. Creator becomes super admin. Group ID stored onchain (ENS text record) and cached locally.
-3. **Group lookup** — resolves in order: local cache → onchain ENS text record → error.
-4. **Agent onboarding** — `syndicate add` auto-adds the agent's PKP address to the group and posts an `AGENT_REGISTERED` lifecycle message.
-5. **Spectator mode** — `--public-chat` flag adds a dashboard spectator bot address to the group for read-only access from the web UI.
+1. **Transport** — shells out to the `@xmtp/cli` binary (bundled as an npm dependency). This avoids `@xmtp/node-sdk` native bindings which fail on Linux with GLIBC < 2.38 (Debian 12, Ubuntu 22.04, OpenClaw sandboxes).
+2. **Private key sync** — on first XMTP operation, the sherwood private key from `~/.sherwood/config.json` is synced to `~/.xmtp/.env` (with `0x` prefix stripped). Only re-written if the key changes.
+3. **Environment** — `--env production` for Base mainnet, `--env dev` for Base Sepolia (mapped from `--testnet` flag).
+4. **Group creation** — `syndicate create` creates an XMTP group with `admin-only` permissions. Creator becomes super admin. Group ID stored onchain (ENS text record) and cached locally.
+5. **Group lookup** — resolves in order: local cache → onchain ENS text record → error.
+6. **Agent onboarding** — `syndicate join` pre-registers the agent's XMTP identity (runs `xmtp client info`), so `syndicate approve` can immediately add them to the group and post an `AGENT_REGISTERED` lifecycle message.
+7. **Spectator mode** — `--public-chat` flag adds a dashboard spectator bot address to the group for read-only access from the web UI.
 
 ### Message types
 
-Messages are JSON-encoded `ChatEnvelope` structs with a `type` field:
+All messages are JSON-encoded `ChatEnvelope` structs sent as plain text via `xmtp conversation send-text`:
 
 | Category | Types |
 |----------|-------|
 | Operational | `TRADE_EXECUTED`, `TRADE_SIGNAL`, `POSITION_UPDATE`, `RISK_ALERT`, `LP_REPORT` |
 | Governance | `APPROVAL_REQUEST`, `STRATEGY_PROPOSAL` |
 | Lifecycle | `MEMBER_JOIN`, `RAGEQUIT_NOTICE`, `AGENT_REGISTERED` |
-| Human | `MESSAGE` |
+| Human | `MESSAGE`, `REACTION` |
 
 ### Sending formats
 
-- **Text** — `sendEnvelope(group, envelope)` sends structured JSON
-- **Markdown** — `sendMarkdown(group, markdown)` sends rich formatted messages
-- **Reactions** — `sendReaction(group, messageId, emoji)` reacts to a specific message
+- **Text** — `sendEnvelope(groupId, envelope)` sends structured JSON as text
+- **Markdown** — `sendMarkdown(groupId, markdown)` wraps in a ChatEnvelope with `data.format: "markdown"`
+- **Reactions** — `sendReaction(groupId, messageId, emoji)` wraps in a ChatEnvelope with `type: "REACTION"` and `data: { reference, emoji }`
 
 ### CLI commands
 
@@ -68,6 +70,7 @@ sherwood chat <name> react <id> <emoji>
 sherwood chat <name> log                # recent messages
 sherwood chat <name> members            # list members
 sherwood chat <name> add 0x...          # add member (creator only)
+sherwood chat <name> init [--force]     # create XMTP group + write ENS record (creator only)
 ```
 
 ---

@@ -29,8 +29,8 @@ import { setTextRecord, getTextRecord, resolveVaultSyndicate, resolveSyndicate }
 import * as easLib from "./lib/eas.js";
 import { EAS_SCHEMAS } from "./lib/addresses.js";
 
-// XMTP has native bindings that crash on import if not installed correctly.
-// Lazy-load to avoid breaking non-chat commands (config, identity, vault, etc.).
+// XMTP shells out to @xmtp/cli binary — lazy-load to avoid breaking
+// non-chat commands if the CLI is not installed.
 async function loadXmtp() {
   return import("./lib/xmtp.js");
 }
@@ -1115,19 +1115,18 @@ program
     }
   });
 
-// ── Chat commands (lazy-loaded — XMTP has native bindings that may not be available) ──
+// ── Chat commands (lazy-loaded — requires @xmtp/cli binary) ──
 try {
   const { registerChatCommands } = await import("./commands/chat.js");
   registerChatCommands(program);
 } catch {
   program
     .command("chat <name> [action] [actionArgs...]")
-    .description("Syndicate chat (XMTP) — requires native bindings")
+    .description("Syndicate chat (XMTP) — requires @xmtp/cli")
     .action(() => {
-      console.error(chalk.red("XMTP native bindings not available."));
-      console.error(chalk.dim("Chat requires native dependencies that can't be embedded in standalone binaries."));
-      console.error(chalk.dim("Install via npm:  npm i -g @sherwoodagent/cli"));
-      console.error(chalk.dim("Or from source:   cd cli && npm i && npm run dev -- chat <name>"));
+      console.error(chalk.red("XMTP CLI not available."));
+      console.error(chalk.dim("Install with:  npm install -g @xmtp/cli"));
+      console.error(chalk.dim("Or reinstall:  npm i -g @sherwoodagent/cli"));
       process.exit(1);
     });
 }
