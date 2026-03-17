@@ -16,6 +16,9 @@ contracts/cache/
 .env.local
 .env*.local
 
+# XMTP local databases
+xmtp-dev-*.db3*
+
 # OS
 .DS_Store
 Thumbs.db

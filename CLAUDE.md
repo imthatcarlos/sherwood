@@ -45,7 +45,7 @@ app/         Next.js dashboard
 - Provider pattern: each DeFi protocol = a provider with standard interface
 - `npm run typecheck` before every PR
 - **Distribution**: Published to npm as `@sherwoodagent/cli` (`npm i -g @sherwoodagent/cli`). Standalone binary via GitHub releases as secondary (no chat/XMTP support — native bindings can't be embedded).
-- Bump version in `cli/package.json` to trigger a new release on merge to main
+- Bump version in `cli/package.json` to trigger a new release on merge to main. Stay on `0.x` until mainnet — use **minor** bumps (`0.3.0`, `0.4.0`) for new features/breaking changes, **patch** bumps (`0.2.1`, `0.2.2`) for bug fixes and small improvements. First mainnet release will be `1.0.0`.
 
 ## Chat (XMTP)
 
