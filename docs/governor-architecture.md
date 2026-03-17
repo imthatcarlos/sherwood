@@ -6,6 +6,8 @@ A governance system where agents propose strategies, vault shareholders vote, an
 
 **One-liner:** Agents pitch trade plans. Shareholders vote. Winners execute and earn carry.
 
+**Multi-vault:** A single governor manages multiple vaults. Proposals target a specific vault. Only shareholders of that vault vote on its proposals.
+
 ---
 
 ## The Flow
@@ -43,6 +45,7 @@ struct StrategyProposal {
     string metadataURI;            // IPFS: full rationale, research, risk analysis
     uint256 capitalRequired;       // vault capital requested (in asset terms, e.g. USDC)
     uint256 performanceFeeBps;     // agent's cut of profits (e.g. 1500 = 15%)
+    address vault;                 // which vault this proposal targets
     BatchExecutorLib.Call[] calls; // exact calls to execute (target, data, value)
     uint256 strategyDuration;      // how long the position runs (seconds), capped by maxStrategyDuration
     uint256 votesFor;              // share-weighted votes in favor
@@ -69,6 +72,7 @@ This means:
 
 | Parameter | Controlled by | Notes |
 |-----------|--------------|-------|
+| vault | Agent (proposer) | Which vault this proposal targets |
 | calls | Agent (proposer) | Exact on-chain calls to execute — committed at proposal time |
 | capitalRequired | Agent (proposer) | How much vault capital they need |
 | performanceFeeBps | Agent (proposer) | Their fee, capped by maxPerformanceFeeBps |
@@ -84,11 +88,12 @@ This means:
 
 ## Voting
 
-- **Voting power = vault shares** (ERC-4626 balanceOf)
+- **Voting power = shares of the target vault** (ERC-4626 balanceOf on `proposal.vault`)
+- Only shareholders of the target vault can vote — your money, your decision
 - Snapshot at proposal creation (block.timestamp) to prevent flash-loan manipulation
 - 1 address = 1 vote per proposal (weighted by shares at snapshot)
 - Simple majority: votesFor > votesAgainst (if quorum met)
-- Quorum = minimum % of total supply that must participate
+- Quorum = minimum % of target vault's total supply that must participate
 
 ---
 
@@ -270,20 +275,23 @@ No. Once submitted, proposal params are immutable. If an agent wants different t
 ## Contract Architecture
 
 ```
-┌──────────────────┐     ┌──────────────────────┐
-│ SyndicateGovernor │────▶│    SyndicateVault     │
-│  (UUPS proxy)    │     │   (ERC-4626 proxy)    │
-│                  │     │                       │
-│  - proposals     │     │  - executeProposalBatch│
-│  - voting        │     │  - settleProposal     │
-│  - parameters    │     │  - registerAgent      │
-│                  │     │    (permissionless)    │
-└──────────────────┘     │                       │
-                         │  delegatecall ───────►│── BatchExecutorLib
-                         └──────────────────────┘
+                         ┌──────────────────────┐
+                    ┌───▶│   SyndicateVault A    │──▶ BatchExecutorLib
+                    │    │   (ERC-4626 proxy)    │
+┌──────────────────┐│    └──────────────────────┘
+│ SyndicateGovernor ├┤
+│  (UUPS proxy)    ││    ┌──────────────────────┐
+│                  │├───▶│   SyndicateVault B    │──▶ BatchExecutorLib
+│  - proposals     ││    │   (ERC-4626 proxy)    │
+│  - voting        ││    └──────────────────────┘
+│  - parameters    ││
+│  - vault registry│└───▶│   SyndicateVault N    │──▶ ...
+└──────────────────┘     └──────────────────────┘
 ```
 
-Governor is a separate contract. Vault trusts the governor address (set by owner) to call proposal execution functions. This keeps the vault clean and governance upgradeable independently.
+One governor manages multiple vaults. Each vault sets the governor as its trusted governance contract. Proposals target a specific vault. Only that vault's shareholders vote.
+
+**Bootstrap:** On initial deployment, the owner can add the first vault(s) directly. After that, adding/removing vaults goes through governance proposals (VaultManagement type).
 
 ---
 
@@ -304,17 +312,20 @@ UUPS upgradeable. Holds all governance logic.
 - `proposalCount` counter
 - `hasVoted` mapping (proposalId → address → bool)
 - `snapshotBalances` mapping (proposalId → address → uint256) for vote weight snapshots
-- `totalCapitalAllocated` — sum of capitalRequired for all Approved+Executed proposals (for capital budget enforcement)
+- `totalCapitalAllocated` mapping (vault address → uint256) — per-vault sum of capitalRequired for Approved+Executed proposals
+- `registeredVaults` — EnumerableSet of vault addresses the governor manages
 - Governor parameters: `votingPeriod`, `executionWindow`, `quorumBps`, `maxPerformanceFeeBps`, `maxStrategyDuration`
-- Reference to vault address
 
 **Functions:**
-- `initialize(vault, owner, votingPeriod, executionWindow, quorumBps, maxPerformanceFeeBps, maxStrategyDuration)`
-- `propose(metadataURI, capitalRequired, performanceFeeBps, strategyDuration, calls[])` → returns proposalId
-  - Caller must be registered agent in vault
+- `initialize(owner, votingPeriod, executionWindow, quorumBps, maxPerformanceFeeBps, maxStrategyDuration)`
+- `addVault(address vault)` — governance proposal (or owner during bootstrap)
+- `removeVault(address vault)` — governance proposal
+- `propose(vault, metadataURI, capitalRequired, performanceFeeBps, strategyDuration, calls[])` → returns proposalId
+  - Vault must be registered in governor
+  - Caller must be registered agent in that vault
   - `performanceFeeBps ≤ maxPerformanceFeeBps`
   - `strategyDuration ≤ maxStrategyDuration`
-  - `totalCapitalAllocated + capitalRequired ≤ vault.totalAssets()`
+  - `totalCapitalAllocated[vault] + capitalRequired ≤ vault.totalAssets()`
   - Snapshots all current shareholder balances (or uses a checkpoint pattern)
 - `vote(proposalId, support)` — support = true (FOR) / false (AGAINST)
   - Must be within voting period
@@ -348,8 +359,9 @@ Governor parameters are **not owner-controlled**. Changing them requires a propo
 **Proposal types (enum):**
 ```solidity
 enum ProposalType {
-    Strategy,        // agent executes a trade
-    ParameterChange  // change a governor setting
+    Strategy,        // agent executes a trade on a specific vault
+    ParameterChange, // change a governor setting
+    VaultManagement  // add or remove a vault from the governor
 }
 ```
 
@@ -416,22 +428,17 @@ These bounds prevent governance attacks (e.g. setting quorum to 0% or voting per
 
 #### 4. SyndicateFactory.sol (modifications)
 
-**Option A (minimal):** Factory stays the same. Governor is deployed separately and linked to the vault via `setGovernor()` after syndicate creation.
+Since the governor is a singleton managing multiple vaults, the factory doesn't deploy a governor. Instead:
 
-**Option B (atomic):** Factory deploys governor alongside vault in `createSyndicate()`. Adds governor config to `SyndicateConfig` struct:
+1. Governor is deployed once (separate from factory)
+2. Factory's `createSyndicate()` accepts an optional `governor` address in config
+3. If provided, factory calls `vault.setGovernor(governor)` after deployment
+4. Governor's `addVault()` is called separately (governance proposal, or owner during bootstrap)
 
 ```solidity
 // Added to SyndicateConfig:
-uint256 votingPeriod;
-uint256 executionWindow;
-uint256 quorumBps;
-uint256 maxPerformanceFeeBps;
-uint256 maxStrategyDuration;
+address governor;  // optional — address(0) means no governor
 ```
-
-Factory deploys governor proxy, initializes it with vault address, calls `vault.setGovernor(governor)`.
-
-**Recommendation:** Option B for production (one-tx syndicate creation). Option A is fine for hackathon (deploy governor separately).
 
 ### New Tests
 
