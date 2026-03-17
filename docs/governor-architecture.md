@@ -139,16 +139,18 @@ This means:
 
 ## Mandate Execution
 
-When a proposal is approved, the pre-committed calls are executed:
+When a proposal is approved, the pre-committed calls are executed via an isolated escrow:
 
 1. Anyone calls `executeProposal(proposalId)` on the governor (no arguments beyond the ID)
 2. Governor verifies: proposal is Approved, within execution window
-3. Governor calls vault's `executeProposalBatch(proposal.calls)` with the stored calls
-4. Vault delegatecalls BatchExecutorLib (same as regular executeBatch)
+3. Governor deploys a new `ProposalEscrow` contract for this proposal
+4. Governor calls `vault.fundEscrow(escrow, capitalRequired)` — vault transfers capital to escrow
+5. Governor calls `escrow.execute(proposal.calls)` — escrow runs the pre-approved calls
+6. All DeFi positions (mTokens, LP tokens, borrows) now live on the escrow address
 
 **No new input from the agent at execution time.** The calls were locked in at proposal creation and voted on by shareholders. Execution is just replaying what was approved.
 
-Note: the proposal targets don't need to be in the vault's global allowlist — the governor authorizes them specifically for this proposal. This means agents can propose interacting with new protocols without needing the owner to add targets first.
+**Capital isolation:** The strategy operates on the escrow, not the vault. The agent cannot access the vault's other assets. Other strategies running simultaneously are completely isolated in their own escrows.
 
 ---
 
@@ -169,58 +171,105 @@ Two separate clocks:
 | Who | When | Use case |
 |-----|------|----------|
 | Agent (proposer) | Anytime after execution | Early close — agent decides position has run its course |
-| Anyone | After strategy duration expires | Permissionless — prevents ghost strategies holding capital hostage |
-| Owner | Anytime (emergency) | Force-close for emergencies |
+| Owner | Anytime (emergency) | Force-close, agent no-show, or emergency |
 
-The `settleBy` timestamp = `executedAt + strategyDuration`. After this, settlement is permissionless.
+If agent never settles, owner force-settles. Escrow returns whatever it holds to the vault.
 
-### P&L Calculation — Per-Proposal Atomic Settlement
+### P&L Calculation — Escrow Pattern
 
-**Problem:** If multiple strategies run simultaneously in the same vault, you can't use the vault's total balance change to attribute P&L to a specific proposal.
+**Problem:** If multiple strategies run simultaneously in the same vault, you can't use the vault's total balance change to attribute P&L. And allowing agents to submit arbitrary settlement calls against the vault is an attack vector — they could drain funds instead of unwinding.
 
-**Solution:** Track capital out at execution, track capital back in at settlement. Each settlement is atomic — the balance diff within that single tx belongs to that proposal only.
+**Solution:** Each proposal gets an isolated escrow. Capital is transferred from the vault to the escrow at execution. The agent's calls operate on the escrow, not the vault. Settlement returns whatever is in the escrow back to the vault. Agent physically cannot touch other strategies' funds or vault reserves.
+
+#### ProposalEscrow.sol (new contract)
+
+A minimal contract deployed per proposal. Holds the capital for one strategy.
+
+```solidity
+contract ProposalEscrow {
+    address public immutable governor;
+    address public immutable vault;
+    uint256 public immutable proposalId;
+
+    // Only governor can trigger execution and settlement
+    modifier onlyGovernor();
+
+    // Execute the pre-approved calls (delegatecall to BatchExecutorLib)
+    function execute(BatchExecutorLib.Call[] calldata calls) external onlyGovernor;
+
+    // Return all assets to vault
+    function settle(address asset) external onlyGovernor returns (uint256 returned);
+}
+```
+
+#### Lifecycle
 
 ```
 Execute:
-  1. Governor snapshots vault asset balance: balanceBefore
-  2. Vault executes proposal calls (borrow, swap, LP, etc.)
-  3. Governor records: capitalDeployed[proposalId] = balanceBefore - balanceAfter
+  1. Vault transfers capitalRequired to a new ProposalEscrow
+  2. Governor records capitalDeployed[proposalId]
+  3. Escrow executes the pre-approved calls[] 
+     (positions now live on the escrow address, NOT the vault)
+
+During strategy:
+  - Position is live on the escrow (e.g. mTokens, LP tokens, borrowed assets)
+  - Agent cannot interact with escrow directly — only governor can
+  - Vault funds are untouched
 
 Settle:
-  1. Governor snapshots vault asset balance: balanceBefore
-  2. Vault executes settlement calls (unwind position, repay borrow, swap back)
-  3. assetsReturned = balanceAfter - balanceBefore
-  4. P&L = assetsReturned - capitalDeployed[proposalId]
-  5. If P&L > 0: fee = P&L * performanceFeeBps / 10000, transferred to proposer
-  6. If P&L ≤ 0: no fee, loss is socialized across shareholders
-  7. Proposal state → Settled
+  1. Escrow returns all held assets to the vault
+  2. P&L = assetsReturned - capitalDeployed
+  3. If P&L > 0: fee = P&L * performanceFeeBps / 10000, transferred to proposer
+  4. If P&L ≤ 0: no fee, loss is socialized across shareholders
+  5. Proposal state → Settled
 ```
 
-**Why this works with multiple simultaneous strategies:**
-- Each settlement is a single atomic tx
-- The balance diff within that tx belongs to that proposal only
-- Other strategies' positions are untouched during the settlement tx
-- No cross-contamination between proposals
+#### Why escrow solves the trust problem
 
-**Settlement calls:**
-Unlike execution calls (committed at proposal time), settlement calls are submitted at settlement time by the agent. This is necessary because unwind parameters depend on market conditions at close time (e.g. slippage, repayment amounts, LP token balances).
+- **No malicious settlement calls** — settlement is just "return everything to vault." No arbitrary calldata.
+- **No cross-contamination** — each proposal's capital is isolated. Multiple strategies can run simultaneously without accounting complexity.
+- **No attack surface** — agent never submits unwind calls. The escrow just sends back whatever it holds.
+- **Clean P&L** — `assetsReturned - capitalDeployed`. No balance-diff tricks needed.
 
-```solidity
-function settleProposal(uint256 proposalId, BatchExecutorLib.Call[] calldata settlementCalls) external;
-```
+#### Who can trigger settlement
 
-The governor validates:
-- Proposal is in Executed state
-- Caller is authorized (proposer anytime, anyone after duration, owner emergency)
-- After executing settlementCalls, vault balance increased (assets returned)
+| Who | When |
+|-----|------|
+| Proposer (agent) | Anytime after execution — early close |
+| Owner | Anytime — emergency |
 
-**Edge cases:**
-- If settlement calls fail to return assets → tx reverts, proposal stays Executed
-- If agent never settles → anyone can settle after strategyDuration expires (they submit the unwind calls)
-- If no one settles and position is stuck → owner emergency cancels, manual intervention
-- Partial unwind → allowed, but P&L is calculated on what's returned. Agent can settle multiple times? **Open question: single settlement or allow partial settlements?**
+No permissionless settlement by random addresses. Settlement is just an asset transfer from escrow to vault, so no risk of malicious calls.
 
-**Recommendation for hackathon:** Single settlement (one atomic tx that unwinds everything). Partial settlements are a v2 feature.
+**If agent never settles:** Owner force-settles. The escrow holds the position assets (mTokens, LP tokens, etc.) which get returned to the vault as-is. The vault/owner can then manually unwind those positions.
+
+#### Unwind problem
+
+The escrow holds DeFi positions (mTokens, LP tokens, borrows), not just the deposit asset (USDC). When `settle()` is called, it returns whatever tokens the escrow holds — but these might not be USDC.
+
+**Options:**
+
+**A. Settle returns all tokens, P&L calculated on deposit asset only**
+- Escrow sends all ERC-20 balances back to vault
+- P&L only measured in the deposit asset (USDC balance of escrow at settlement)
+- Non-USDC tokens (mTokens, LP tokens) return to vault but aren't counted in P&L
+- Vault owner must manually swap them back or agents can propose new strategies to handle them
+- Simple but imprecise
+
+**B. Agent must unwind before settling (via separate proposal)**
+- Agent submits a new "unwind proposal" with calls to close the position (repay borrow, remove LP, swap back to USDC)
+- Shareholders vote on the unwind calls (short voting period)
+- Once executed, escrow holds USDC → settle returns clean P&L
+- Safe but adds friction
+
+**C. Pre-committed unwind calls at proposal time**
+- Proposal includes `executeCalls[]` and `unwindCalls[]`
+- `unwindCalls` are executed on the escrow before returning assets to vault
+- Shareholders voted on everything upfront
+- Con: unwind params (slippage, repayment amounts) may be stale
+
+**Recommendation for hackathon:** Option A — keep it simple. Escrow returns whatever it holds. P&L on deposit asset. Complex position unwinding is manual / v2.
+
+**Open question for Carlos:** Which unwind approach fits the demo best?
 
 ---
 
@@ -331,11 +380,22 @@ One governor manages multiple vaults. Each vault sets the governor as its truste
 
 ### New Contracts
 
-#### 1. ISyndicateGovernor.sol (new file)
+#### 1. ProposalEscrow.sol (new file)
+
+Minimal contract deployed per proposal. Isolates strategy capital from the vault.
+
+- Deployed by governor during `executeProposal`
+- Immutable references: `governor`, `vault`, `proposalId`
+- `execute(calls[])` — onlyGovernor, delegatecalls BatchExecutorLib with the pre-approved calls
+- `settle(asset)` — onlyGovernor, transfers all deposit-asset balance to vault, returns amount
+- `recoverTokens(token, to)` — onlyGovernor, recovers non-deposit-asset tokens (mTokens, LP tokens) stuck after settlement
+- Receives ETH (for WETH unwrapping)
+
+#### 2. ISyndicateGovernor.sol (new file)
 
 Full interface: structs (`StrategyProposal`, `ProposalState` enum), all errors, events, and function signatures.
 
-#### 2. SyndicateGovernor.sol (new file)
+#### 3. SyndicateGovernor.sol (new file)
 
 UUPS upgradeable. Holds all governance logic.
 
@@ -344,6 +404,7 @@ UUPS upgradeable. Holds all governance logic.
 - `proposalCount` counter
 - `hasVoted` mapping (proposalId → address → bool)
 - `snapshotBalances` mapping (proposalId → address → uint256) for vote weight snapshots
+- `proposalEscrows` mapping (proposalId → address) — escrow contract per proposal
 - `totalCapitalAllocated` mapping (vault address → uint256) — per-vault sum of capitalRequired for Approved+Executed proposals
 - `registeredVaults` — EnumerableSet of vault addresses the governor manages
 - Governor parameters: `votingPeriod`, `executionWindow`, `quorumBps`, `maxPerformanceFeeBps`, `maxStrategyDuration`
@@ -367,14 +428,17 @@ UUPS upgradeable. Holds all governance logic.
 - `executeProposal(proposalId)` — permissionless, no arguments beyond ID
   - Proposal must be Approved (voting ended, quorum met, majority FOR)
   - Must be within execution window
-  - Calls `vault.executeProposalBatch(proposal.calls)`
+  - Deploys a new ProposalEscrow contract
+  - Calls `vault.fundEscrow(escrow, capitalRequired)` to transfer capital
+  - Calls `escrow.execute(proposal.calls)` to run the pre-approved strategy
   - Updates `proposal.state = Executed`, records `executedAt`
+  - Stores escrow address in `proposalEscrows[proposalId]`
 - `settleProposal(proposalId)`
-  - If caller is proposer: anytime after execution
-  - If caller is anyone else: only after `executedAt + strategyDuration`
+  - If caller is proposer: anytime after execution (early close)
   - If caller is owner: anytime (emergency)
-  - Calls `vault.settleProposal(proposalId, proposer, performanceFeeBps)`
-  - Frees `capitalRequired` from `totalCapitalAllocated`
+  - Calls `escrow.settle(asset)` — returns all deposit-asset tokens to vault
+  - Calls `vault.receiveSettlement(proposalId, proposer, performanceFeeBps, capitalDeployed)`
+  - Frees `capitalRequired` from `totalCapitalAllocated[vault]`
 - `cancelProposal(proposalId)` — proposer can cancel before voting ends
 - `emergencyCancel(proposalId)` — owner can cancel anytime before settlement
 - **Setters** (onlyOwner): `setVotingPeriod`, `setExecutionWindow`, `setQuorumBps`, `setMaxPerformanceFeeBps`, `setMaxStrategyDuration`, `addVault`, `removeVault`
@@ -404,23 +468,16 @@ Shareholders govern **what happens with their money** (strategy proposals). The 
 
 **New storage slots** (appended — UUPS safe):
 - `address private _governor` — trusted governor contract
-- `mapping(uint256 => uint256) private _proposalCapitalDeployed` — assets that left the vault per proposal (for P&L calculation at settlement)
 
 **New functions:**
 - `setGovernor(address governor_)` — onlyOwner, sets trusted governor address
-- `executeProposalBatch(BatchExecutorLib.Call[] calldata calls)` — onlyGovernor
-  - Skips the normal agent caps / daily spend / target allowlist checks
-  - Governor has already validated everything via the proposal
-  - Snapshots vault asset balance before execution
-  - Delegatecalls BatchExecutorLib.executeBatch(calls)
-  - Records capitalDeployed = balanceBefore - balanceAfter
-- `settleProposal(uint256 proposalId, BatchExecutorLib.Call[] calldata settlementCalls, address proposer, uint256 performanceFeeBps)` — onlyGovernor
-  - Snapshots vault asset balance before executing settlement calls
-  - Executes settlement calls via delegatecall to BatchExecutorLib
-  - Calculates assetsReturned = balanceAfter - balanceBefore
-  - P&L = assetsReturned - capitalDeployed[proposalId]
-  - If profit > 0: transfers `profit * performanceFeeBps / 10000` to proposer
-  - Remaining profit stays in vault
+- `fundEscrow(address escrow, uint256 amount)` — onlyGovernor
+  - Transfers `amount` of vault's deposit asset to the escrow contract
+- `receiveSettlement(uint256 proposalId, address proposer, uint256 performanceFeeBps, uint256 capitalDeployed)` — onlyGovernor
+  - Called after escrow returns assets to vault
+  - Calculates P&L = deposit asset balance received - capitalDeployed
+  - If profit > 0: transfers performance fee to proposer
+  - Emits settlement event
 
 **Modified functions:**
 - `registerAgent` — remove `onlyOwner` modifier, make permissionless
