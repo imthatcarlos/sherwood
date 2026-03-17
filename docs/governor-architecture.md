@@ -287,10 +287,164 @@ Governor is a separate contract. Vault trusts the governor address (set by owner
 
 ---
 
-## Implementation Plan
+## Required Changes
 
-1. **ISyndicateGovernor.sol** — interface with structs, errors, events
-2. **SyndicateGovernor.sol** — proposals, voting, parameter setters, mandate enforcement
-3. **SyndicateVault.sol updates** — permissionless registration, governor slot, executeProposalBatch, settleProposal
-4. **SyndicateGovernor.t.sol** — full test suite
-5. **CLI commands** — `sherwood proposal create|list|vote|execute|settle`
+### New Contracts
+
+#### 1. ISyndicateGovernor.sol (new file)
+
+Full interface: structs (`StrategyProposal`, `ProposalState` enum), all errors, events, and function signatures.
+
+#### 2. SyndicateGovernor.sol (new file)
+
+UUPS upgradeable. Holds all governance logic.
+
+**Storage:**
+- `proposals` mapping (uint256 → StrategyProposal)
+- `proposalCount` counter
+- `hasVoted` mapping (proposalId → address → bool)
+- `snapshotBalances` mapping (proposalId → address → uint256) for vote weight snapshots
+- `totalCapitalAllocated` — sum of capitalRequired for all Approved+Executed proposals (for capital budget enforcement)
+- Governor parameters: `votingPeriod`, `executionWindow`, `quorumBps`, `maxPerformanceFeeBps`, `maxStrategyDuration`
+- Reference to vault address
+
+**Functions:**
+- `initialize(vault, owner, votingPeriod, executionWindow, quorumBps, maxPerformanceFeeBps, maxStrategyDuration)`
+- `propose(metadataURI, capitalRequired, performanceFeeBps, strategyDuration, calls[])` → returns proposalId
+  - Caller must be registered agent in vault
+  - `performanceFeeBps ≤ maxPerformanceFeeBps`
+  - `strategyDuration ≤ maxStrategyDuration`
+  - `totalCapitalAllocated + capitalRequired ≤ vault.totalAssets()`
+  - Snapshots all current shareholder balances (or uses a checkpoint pattern)
+- `vote(proposalId, support)` — support = true (FOR) / false (AGAINST)
+  - Must be within voting period
+  - Voter must have had shares at snapshot time
+  - Cannot vote twice
+  - Weight = share balance at snapshot
+- `executeProposal(proposalId)` — permissionless, no arguments beyond ID
+  - Proposal must be Approved (voting ended, quorum met, majority FOR)
+  - Must be within execution window
+  - Calls `vault.executeProposalBatch(proposal.calls)`
+  - Updates `proposal.state = Executed`, records `executedAt`
+- `settleProposal(proposalId)`
+  - If caller is proposer: anytime after execution
+  - If caller is anyone else: only after `executedAt + strategyDuration`
+  - If caller is owner: anytime (emergency)
+  - Calls `vault.settleProposal(proposalId, proposer, performanceFeeBps)`
+  - Frees `capitalRequired` from `totalCapitalAllocated`
+- `cancelProposal(proposalId)` — proposer can cancel before voting ends
+- `emergencyCancel(proposalId)` — owner can cancel anytime before settlement
+- **Setters** (onlyOwner): `setVotingPeriod`, `setExecutionWindow`, `setQuorumBps`, `setMaxPerformanceFeeBps`, `setMaxStrategyDuration`
+- **Views**: `getProposal`, `getProposalState`, `getVoteWeight`, `hasVoted`, `proposalCount`
+
+### Existing Contract Changes
+
+#### 3. SyndicateVault.sol (modifications)
+
+**New storage slots** (appended — UUPS safe):
+- `address private _governor` — trusted governor contract
+- `mapping(uint256 => uint256) private _proposalCapitalSnapshot` — vault asset balance before each proposal execution (for P&L calculation)
+
+**New functions:**
+- `setGovernor(address governor_)` — onlyOwner, sets trusted governor address
+- `executeProposalBatch(BatchExecutorLib.Call[] calldata calls)` — onlyGovernor
+  - Skips the normal agent caps / daily spend / target allowlist checks
+  - Governor has already validated everything via the proposal
+  - Delegatecalls BatchExecutorLib.executeBatch(calls)
+  - Snapshots vault asset balance before execution (for settlement P&L)
+- `settleProposal(uint256 proposalId, address proposer, uint256 performanceFeeBps)` — onlyGovernor
+  - Calculates P&L: `currentAssetBalance - snapshotBalance`
+  - If profit > 0: transfers `profit * performanceFeeBps / 10000` to proposer
+  - Remaining profit stays in vault
+
+**Modified functions:**
+- `registerAgent` — remove `onlyOwner` modifier, make permissionless
+  - Agent must own the ERC-8004 NFT themselves: `msg.sender == operatorEOA` and `nftOwner == msg.sender`
+  - Remove the check allowing vault owner to register on behalf of agents
+  - Keep all other validation (non-zero addresses, not already registered, agent limits ≤ syndicate caps)
+
+**New modifier:**
+- `onlyGovernor` — `require(msg.sender == _governor)`
+
+**New events:**
+- `GovernorUpdated(address indexed oldGovernor, address indexed newGovernor)`
+- `ProposalExecuted(uint256 indexed proposalId, uint256 capitalSnapshot)`
+- `ProposalSettled(uint256 indexed proposalId, int256 pnl, uint256 performanceFee)`
+
+#### 4. SyndicateFactory.sol (modifications)
+
+**Option A (minimal):** Factory stays the same. Governor is deployed separately and linked to the vault via `setGovernor()` after syndicate creation.
+
+**Option B (atomic):** Factory deploys governor alongside vault in `createSyndicate()`. Adds governor config to `SyndicateConfig` struct:
+
+```solidity
+// Added to SyndicateConfig:
+uint256 votingPeriod;
+uint256 executionWindow;
+uint256 quorumBps;
+uint256 maxPerformanceFeeBps;
+uint256 maxStrategyDuration;
+```
+
+Factory deploys governor proxy, initializes it with vault address, calls `vault.setGovernor(governor)`.
+
+**Recommendation:** Option B for production (one-tx syndicate creation). Option A is fine for hackathon (deploy governor separately).
+
+### New Tests
+
+#### 5. SyndicateGovernor.t.sol (new file)
+
+Full test suite:
+- **Lifecycle:** propose → vote → approve → execute → settle (happy path)
+- **Rejection:** votes against > votes for
+- **Quorum:** not met → proposal cannot be executed
+- **Expiry:** execution window passes → Expired
+- **Snapshot:** buying shares after proposal doesn't increase vote weight
+- **Double vote:** same address cannot vote twice
+- **Permissionless registration:** agent self-registers without owner
+- **Performance fee:** correct calculation and distribution on profit
+- **No fee on loss:** zero fee when strategy loses money
+- **Capital budget:** proposals rejected when total allocated exceeds vault assets
+- **Settlement timing:** agent can settle early, anyone after duration, owner anytime
+- **Cancel:** proposer cancels, owner emergency cancels
+- **Parameter setters:** only owner, values validated
+- **Fuzz:** voting weights, fee calculations, capital limits
+
+#### 6. Existing tests — NO CHANGES
+
+All 66 existing tests must continue to pass. The only vault change that could break them is making `registerAgent` permissionless — existing tests that call `registerAgent` as owner will need the caller to also be the NFT owner / operatorEOA (review test setup).
+
+### CLI Changes
+
+#### 7. CLI commands (new)
+
+- `sherwood proposal create --capital 5000 --fee 1500 --duration 7d --metadata ipfs://... --calls <encoded>`
+- `sherwood proposal list [--state active|approved|executed]`
+- `sherwood proposal show <id>` — full detail including decoded calls
+- `sherwood proposal vote --id 1 --support yes|no`
+- `sherwood proposal execute --id 1`
+- `sherwood proposal settle --id 1`
+- `sherwood governor set-voting-period --seconds 3600`
+- `sherwood governor set-execution-window --seconds 86400`
+- `sherwood governor set-quorum --bps 4000`
+- `sherwood governor info` — current parameters
+
+### Subgraph Changes
+
+#### 8. Subgraph entities (new)
+
+- `Proposal` entity: all proposal fields, state, votes
+- `Vote` entity: voter, proposalId, support, weight
+- `ProposalExecution` entity: proposalId, timestamp, txHash
+- `ProposalSettlement` entity: proposalId, pnl, performanceFee
+
+Event handlers for: `ProposalCreated`, `VoteCast`, `ProposalExecuted`, `ProposalSettled`, `ProposalCancelled`
+
+### Dashboard Changes
+
+#### 9. Dashboard pages (new/updated)
+
+- **Proposals page** — list active/past proposals with vote status, call decoding
+- **Proposal detail** — full rationale (IPFS metadata), vote breakdown, execution status, P&L
+- **Vote UI** — connect wallet, vote for/against
+- **Syndicate page** — add active proposals section, capital allocation breakdown
