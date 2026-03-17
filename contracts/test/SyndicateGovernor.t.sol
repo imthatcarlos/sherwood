@@ -482,10 +482,10 @@ contract SyndicateGovernorTest is Test {
         assertFalse(vault.redemptionsLocked());
     }
 
-    function test_settleProposal_byOwner() public {
+    function test_settleProposal_byVaultOwner() public {
         uint256 proposalId = _createAndExecuteProposal(1500, 7 days);
 
-        vm.prank(owner);
+        vm.prank(owner); // vault owner
         governor.settleProposal(proposalId);
 
         assertEq(uint256(governor.getProposal(proposalId).state), uint256(ISyndicateGovernor.ProposalState.Settled));
@@ -654,11 +654,11 @@ contract SyndicateGovernorTest is Test {
         assertEq(uint256(governor.getProposal(proposalId).state), uint256(ISyndicateGovernor.ProposalState.Cancelled));
     }
 
-    function test_emergencyCancel_notOwner_reverts() public {
+    function test_emergencyCancel_notVaultOwner_reverts() public {
         (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
 
         vm.prank(random);
-        vm.expectRevert();
+        vm.expectRevert(ISyndicateGovernor.NotVaultOwner.selector);
         governor.emergencyCancel(proposalId);
     }
 
@@ -689,13 +689,13 @@ contract SyndicateGovernorTest is Test {
         assertEq(governor.getActiveProposal(address(vault)), 0);
     }
 
-    function test_emergencySettle_notOwner_reverts() public {
+    function test_emergencySettle_notVaultOwner_reverts() public {
         uint256 proposalId = _createAndExecuteProposal(1500, 7 days);
 
         BatchExecutorLib.Call[] memory customCalls = new BatchExecutorLib.Call[](0);
 
         vm.prank(random);
-        vm.expectRevert();
+        vm.expectRevert(ISyndicateGovernor.NotVaultOwner.selector);
         governor.emergencySettle(proposalId, customCalls);
     }
 

@@ -234,10 +234,10 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
 
         // Check settlement permissions
         bool isProposer = msg.sender == proposal.proposer;
-        bool isOwner = msg.sender == owner();
+        bool isVaultOwner = msg.sender == OwnableUpgradeable(proposal.vault).owner();
         bool durationElapsed = block.timestamp >= proposal.executedAt + proposal.strategyDuration;
 
-        if (!isProposer && !isOwner && !durationElapsed) revert SettlementNotAllowed();
+        if (!isProposer && !isVaultOwner && !durationElapsed) revert SettlementNotAllowed();
 
         // Run the unwind calls
         BatchExecutorLib.Call[] storage calls = _proposalCalls[proposalId];
@@ -254,8 +254,9 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function emergencySettle(uint256 proposalId, BatchExecutorLib.Call[] calldata calls) external onlyOwner {
+    function emergencySettle(uint256 proposalId, BatchExecutorLib.Call[] calldata calls) external {
         StrategyProposal storage proposal = _proposals[proposalId];
+        if (msg.sender != OwnableUpgradeable(proposal.vault).owner()) revert NotVaultOwner();
         if (proposal.state != ProposalState.Executed) revert ProposalNotExecuted();
 
         // Run owner-provided unwind calls
@@ -281,8 +282,9 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function emergencyCancel(uint256 proposalId) external onlyOwner {
+    function emergencyCancel(uint256 proposalId) external {
         StrategyProposal storage proposal = _proposals[proposalId];
+        if (msg.sender != OwnableUpgradeable(proposal.vault).owner()) revert NotVaultOwner();
         // Can cancel anything that isn't already settled or cancelled
         if (
             proposal.state == ProposalState.Settled || proposal.state == ProposalState.Cancelled

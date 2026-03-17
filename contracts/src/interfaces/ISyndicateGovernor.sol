@@ -73,6 +73,7 @@ interface ISyndicateGovernor {
     error InvalidVault();
     error ZeroAddress();
     error ExecutionWindowNotExpired();
+    error NotVaultOwner();
 
     // ── Events ──
 
