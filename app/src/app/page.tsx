@@ -1,4 +1,6 @@
+import Link from "next/link";
 import ForestBackground from "@/components/ForestBackground";
+import SiteHeader from "@/components/SiteHeader";
 import CopyButton from "@/components/CopyButton";
 import { getActiveSyndicates } from "@/lib/syndicates";
 
@@ -12,16 +14,7 @@ export default async function Home() {
       <div className="layout">
         {/* ── Main Content ──────────────────────────────────── */}
         <main className="px-16 mx-auto w-full max-w-[1400px]">
-          {/* Header */}
-          <header className="site-header font-[family-name:var(--font-jetbrains-mono)]">
-            <div className="text-2xl font-extrabold tracking-tighter text-white">
-              sherwood<span className="text-[var(--color-accent)]">.sh</span>
-            </div>
-            <nav>
-              <a href="#how-it-works">How It Works</a>
-              <a href="#syndicates">Live Syndicates</a>
-            </nav>
-          </header>
+          <SiteHeader />
 
           {/* Hero */}
           <article>
@@ -215,10 +208,12 @@ export default async function Home() {
                     {syndicates.map((s) => (
                       <tr key={s.id}>
                         <td>
-                          {s.name}{" "}
-                          <span className="text-white/30">
-                            // 0x{s.vault.slice(2, 6)}
-                          </span>
+                          <Link href={`/syndicate/${s.id}`} className="text-inherit no-underline hover:text-[var(--color-accent)]">
+                            {s.name}{" "}
+                            <span className="text-white/30">
+                              // 0x{s.vault.slice(2, 6)}
+                            </span>
+                          </Link>
                         </td>
                         <td>{s.strategy}</td>
                         <td className="tabular-nums">
@@ -250,6 +245,15 @@ export default async function Home() {
                 </p>
               </div>
             )}
+
+            <div className="mt-8 text-center font-[family-name:var(--font-jetbrains-mono)]">
+              <Link
+                href="/leaderboard"
+                className="text-[var(--color-accent)] text-xs uppercase tracking-widest hover:underline"
+              >
+                View Leaderboard &rarr;
+              </Link>
+            </div>
           </section>
 
           {/* ── Closing CTA ─────────────────────────────────── */}
