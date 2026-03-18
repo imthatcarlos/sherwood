@@ -1024,6 +1024,10 @@ try {
     });
 }
 
+// ── Session commands ──
+const { registerSessionCommands } = await import("./commands/session.js");
+registerSessionCommands(program);
+
 // ── Venice commands ──
 registerVeniceCommands(program);
 

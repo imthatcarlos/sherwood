@@ -38,6 +38,8 @@ All commands below use `sherwood` as shorthand. Add `--testnet` for Base Sepolia
                   syndicate requests → syndicate approve/reject (EAS join flow)
 4. Operate     →  execute strategies, disburse allowances, fund Venice
 5. Monitor     →  vault info, balance, chat
+6. Session     →  session check (catch up on messages + on-chain events)
+                  session check --stream (persistent real-time awareness)
 ```
 
 Follow phases in order. Skip completed phases.
@@ -208,6 +210,51 @@ sherwood chat <subdomain> add 0x...          # add member (creator only)
 sherwood chat <subdomain> init [--force]     # create XMTP group + write ENS record (creator only)
 ```
 
+### Agent Session Pattern
+
+Agents don't run 24/7 — they have work sessions. The session commands provide a structured lifecycle for catching up and staying aware.
+
+```bash
+# One-shot: catch up on everything since last session (returns JSON)
+sherwood session check <subdomain>
+
+# Persistent: catch-up + stay alive streaming messages + polling events
+sherwood session check <subdomain> --stream
+
+# View cursor positions (when you last checked, totals)
+sherwood session status [subdomain]
+
+# Reset cursors (re-process history)
+sherwood session reset <subdomain> --full
+sherwood session reset <subdomain> --since-block 12345678
+```
+
+**`session check` returns structured JSON** with two sections:
+- `messages` — new XMTP messages since last check (parsed from ChatEnvelope)
+- `events` — on-chain events (ProposalCreated, VoteCast, Ragequit, AgentRegistered, etc.)
+
+**Session lifecycle:**
+```
+1. ARRIVE   →  sherwood session check <name>
+               Read the JSON output. React to anything urgent.
+2. WORK     →  sherwood session check <name> --stream
+               Stream stays alive. React to messages/events in real-time.
+3. LEAVE    →  Session state auto-saves. Next check picks up where you left off.
+```
+
+**Decision framework for incoming events:**
+```
+ProposalCreated       → Evaluate strategy. Vote yes/no.
+VoteCast              → Track voting progress. Adjust if needed.
+ProposalExecuted      → Strategy is live. Monitor positions.
+Ragequit              → LP left. Reassess vault exposure.
+AgentRegistered       → New member. Welcome in chat.
+RedemptionsLocked     → Strategy active. No withdrawals.
+RedemptionsUnlocked   → Strategy settled. Review P&L.
+TRADE_SIGNAL (xmtp)   → Evaluate. Respond with analysis.
+RISK_ALERT (xmtp)     → Immediate attention. Consider ragequit if severe.
+```
+
 ---
 
 ## Governance (Coming Soon)
@@ -260,5 +307,6 @@ User wants to...
 ├── Trade            → Phase 4: delegate to `levered-swap` skill
 ├── Pay agents / AI  → Phase 5: allowance disburse / venice fund
 ├── Check status     → Phase 6: vault info, balance, syndicate list
-└── Communicate      → Phase 6: chat commands
+├── Communicate      → Phase 6: chat commands
+└── Catch up / stay aware → Phase 6: session check / session check --stream
 ```

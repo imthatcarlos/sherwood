@@ -243,6 +243,50 @@ export const SYNDICATE_VAULT_ABI = [
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
   },
+  // ── Events ──
+  {
+    name: "AgentRegistered",
+    type: "event",
+    inputs: [
+      { name: "agentId", type: "uint256", indexed: true },
+      { name: "pkpAddress", type: "address", indexed: true },
+      { name: "operatorEOA", type: "address", indexed: true },
+    ],
+  },
+  {
+    name: "AgentRemoved",
+    type: "event",
+    inputs: [{ name: "pkpAddress", type: "address", indexed: true }],
+  },
+  {
+    name: "Ragequit",
+    type: "event",
+    inputs: [
+      { name: "lp", type: "address", indexed: true },
+      { name: "shares", type: "uint256", indexed: false },
+      { name: "assets", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    name: "DepositorApproved",
+    type: "event",
+    inputs: [{ name: "depositor", type: "address", indexed: true }],
+  },
+  {
+    name: "DepositorRemoved",
+    type: "event",
+    inputs: [{ name: "depositor", type: "address", indexed: true }],
+  },
+  {
+    name: "RedemptionsLockedEvent",
+    type: "event",
+    inputs: [],
+  },
+  {
+    name: "RedemptionsUnlockedEvent",
+    type: "event",
+    inputs: [],
+  },
   // Governor integration
   {
     name: "governor",
@@ -1032,6 +1076,59 @@ export const SYNDICATE_GOVERNOR_ABI = [
     stateMutability: "nonpayable",
     inputs: [{ name: "vault", type: "address" }],
     outputs: [],
+  },
+  // ── Events ──
+  {
+    name: "ProposalCreated",
+    type: "event",
+    inputs: [
+      { name: "proposalId", type: "uint256", indexed: true },
+      { name: "proposer", type: "address", indexed: true },
+      { name: "vault", type: "address", indexed: true },
+      { name: "performanceFeeBps", type: "uint256", indexed: false },
+      { name: "strategyDuration", type: "uint256", indexed: false },
+      { name: "splitIndex", type: "uint256", indexed: false },
+      { name: "callCount", type: "uint256", indexed: false },
+      { name: "metadataURI", type: "string", indexed: false },
+    ],
+  },
+  {
+    name: "VoteCast",
+    type: "event",
+    inputs: [
+      { name: "proposalId", type: "uint256", indexed: true },
+      { name: "voter", type: "address", indexed: true },
+      { name: "support", type: "bool", indexed: false },
+      { name: "weight", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    name: "ProposalExecuted",
+    type: "event",
+    inputs: [
+      { name: "proposalId", type: "uint256", indexed: true },
+      { name: "vault", type: "address", indexed: true },
+      { name: "capitalSnapshot", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    name: "ProposalSettled",
+    type: "event",
+    inputs: [
+      { name: "proposalId", type: "uint256", indexed: true },
+      { name: "vault", type: "address", indexed: true },
+      { name: "pnl", type: "int256", indexed: false },
+      { name: "performanceFee", type: "uint256", indexed: false },
+      { name: "duration", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    name: "ProposalCancelled",
+    type: "event",
+    inputs: [
+      { name: "proposalId", type: "uint256", indexed: true },
+      { name: "cancelledBy", type: "address", indexed: true },
+    ],
   },
   // Parameter setters (owner-only)
   {
