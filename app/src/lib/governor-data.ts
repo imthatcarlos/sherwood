@@ -101,10 +101,16 @@ async function fetchProposalMetadata(
 
     const res = await fetch(url, { next: { revalidate: 300 } });
     if (!res.ok) return null;
-    const json = await res.json();
+    const json = (await res.json()) as Record<string, unknown>;
+    const title =
+      (typeof json.title === "string" && json.title) ||
+      (typeof json.name === "string" && json.name) ||
+      "";
+    const description =
+      (typeof json.description === "string" && json.description) || "";
     return {
-      title: (json.title as string) || "",
-      description: (json.description as string) || "",
+      title,
+      description,
     };
   } catch {
     return null;

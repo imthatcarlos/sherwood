@@ -21,6 +21,9 @@ export default function ProposalCard({
 }: ProposalCardProps) {
   const title =
     proposal.metadata?.title || `Proposal #${proposal.id.toString()}`;
+  const description = proposal.metadata?.description?.trim() || "";
+  const truncatedDescription =
+    description.length > 180 ? `${description.slice(0, 177)}...` : description;
   const totalVotes = proposal.votesFor + proposal.votesAgainst;
   const forPct =
     totalVotes > 0n
@@ -72,6 +75,18 @@ export default function ProposalCard({
             {formatBps(proposal.performanceFeeBps)} ·{" "}
             {isPending ? "Voting" : "Execution"}: {deadline > 0n ? formatTimeRemaining(deadline) : "—"}
           </div>
+          {truncatedDescription && (
+            <div
+              style={{
+                marginTop: "0.5rem",
+                fontSize: "12px",
+                color: "rgba(255,255,255,0.7)",
+                lineHeight: 1.4,
+              }}
+            >
+              {truncatedDescription}
+            </div>
+          )}
         </div>
         <span
           className="glitch-tag"
