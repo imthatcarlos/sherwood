@@ -453,9 +453,8 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
 
         // Try pre-committed calls first
         try ISyndicateVault(proposal.vault).executeGovernorBatch(settleCalls) {
-        // Pre-committed calls succeeded — done
-        }
-        catch {
+            // Pre-committed calls succeeded — done
+        } catch {
             // Pre-committed calls failed — run fallback calls
             if (fallbackCalls.length > 0) {
                 ISyndicateVault(proposal.vault).executeGovernorBatch(fallbackCalls);

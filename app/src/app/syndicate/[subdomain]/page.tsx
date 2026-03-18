@@ -111,13 +111,13 @@ export default async function SyndicateDetailPage({
                 <div className="stat-value">{data.agentCount.toString()}</div>
               </div>
               <div className="stat-item">
-                <div className="stat-label">Daily Spend</div>
-                <div className="stat-value">
-                  {data.display.dailySpend}
-                  <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.3)" }}>
-                    {" "}
-                    / {data.display.maxDailyTotal}
-                  </span>
+                <div className="stat-label">Mgmt Fee</div>
+                <div className="stat-value">{data.display.managementFee}</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-label">Redemptions</div>
+                <div className="stat-value" style={{ color: data.redemptionsLocked ? "#ff4d4d" : "var(--color-accent)" }}>
+                  {data.redemptionsLocked ? "LOCKED" : "OPEN"}
                 </div>
               </div>
             </div>
@@ -133,11 +133,11 @@ export default async function SyndicateDetailPage({
           <div className="grid-dashboard">
             {/* Top-left: Vault Configuration */}
             <VaultOverview
-              caps={data.caps}
               openDeposits={data.openDeposits}
-              allowedTargets={data.allowedTargets}
               totalSupply={data.totalSupply}
               paused={data.paused}
+              redemptionsLocked={data.redemptionsLocked}
+              managementFeeBps={data.managementFeeBps}
             />
 
             {/* Top-right: Agent Roster */}

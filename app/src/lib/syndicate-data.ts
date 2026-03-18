@@ -28,17 +28,8 @@ export interface AgentInfo {
   agentId: bigint;
   pkpAddress: Address;
   operatorEOA: Address;
-  maxPerTx: bigint;
-  dailyLimit: bigint;
-  spentToday: bigint;
   active: boolean;
   identity: AgentIdentity | null;
-}
-
-export interface SyndicateCaps {
-  maxPerTx: bigint;
-  maxDailyTotal: bigint;
-  maxBorrowRatio: bigint;
 }
 
 export interface SyndicateMetadata {
@@ -77,13 +68,12 @@ export interface SyndicatePageData {
   totalAssets: bigint;
   totalSupply: bigint;
   totalDeposited: bigint;
-  caps: SyndicateCaps;
   agentCount: bigint;
-  dailySpendTotal: bigint;
-  allowedTargets: Address[];
   openDeposits: boolean;
   owner: Address;
   paused: boolean;
+  redemptionsLocked: boolean;
+  managementFeeBps: bigint;
 
   // Agent data (from subgraph PKPs + on-chain getAgentConfig)
   agents: AgentInfo[];
@@ -101,8 +91,7 @@ export interface SyndicatePageData {
   display: {
     tvl: string;
     totalDeposited: string;
-    dailySpend: string;
-    maxDailyTotal: string;
+    managementFee: string;
   };
 }
 
@@ -226,27 +215,24 @@ export async function resolveSyndicateBySubdomain(
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "totalAssets" },
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "totalSupply" },
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "totalDeposited" },
-      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "getSyndicateCaps" },
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "getAgentCount" },
-      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "getDailySpendTotal" },
-      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "getAllowedTargets" },
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "openDeposits" },
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "owner" },
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "paused" },
+      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "redemptionsLocked" },
+      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "managementFeeBps" },
     ],
   });
 
   const totalAssets = (vaultResults[0].result as bigint) ?? 0n;
   const totalSupply = (vaultResults[1].result as bigint) ?? 0n;
   const totalDeposited = (vaultResults[2].result as bigint) ?? 0n;
-  const capsRaw = vaultResults[3].result as { maxPerTx: bigint; maxDailyTotal: bigint; maxBorrowRatio: bigint } | undefined;
-  const caps: SyndicateCaps = capsRaw ?? { maxPerTx: 0n, maxDailyTotal: 0n, maxBorrowRatio: 0n };
-  const agentCount = (vaultResults[4].result as bigint) ?? 0n;
-  const dailySpendTotal = (vaultResults[5].result as bigint) ?? 0n;
-  const allowedTargets = (vaultResults[6].result as Address[]) ?? [];
-  const openDepositsVal = (vaultResults[7].result as boolean) ?? false;
-  const owner = (vaultResults[8].result as Address) ?? creator;
-  const paused = (vaultResults[9].result as boolean) ?? false;
+  const agentCount = (vaultResults[3].result as bigint) ?? 0n;
+  const openDepositsVal = (vaultResults[4].result as boolean) ?? false;
+  const owner = (vaultResults[5].result as Address) ?? creator;
+  const paused = (vaultResults[6].result as boolean) ?? false;
+  const redemptionsLocked = (vaultResults[7].result as boolean) ?? false;
+  const managementFeeBps = (vaultResults[8].result as bigint) ?? 0n;
 
   // Step 4: Fetch agent configs
   // Try subgraph first for PKP addresses, fall back to event logs
@@ -275,10 +261,6 @@ export async function resolveSyndicateBySubdomain(
         agentId: bigint;
         pkpAddress: Address;
         operatorEOA: Address;
-        maxPerTx: bigint;
-        dailyLimit: bigint;
-        spentToday: bigint;
-        lastResetDay: bigint;
         active: boolean;
       };
       if (!cfg.active) continue;
@@ -286,9 +268,6 @@ export async function resolveSyndicateBySubdomain(
         agentId: cfg.agentId,
         pkpAddress: cfg.pkpAddress,
         operatorEOA: cfg.operatorEOA,
-        maxPerTx: cfg.maxPerTx,
-        dailyLimit: cfg.dailyLimit,
-        spentToday: cfg.spentToday,
         active: cfg.active,
         identity: null,
       });
@@ -324,13 +303,12 @@ export async function resolveSyndicateBySubdomain(
     totalAssets,
     totalSupply,
     totalDeposited,
-    caps,
     agentCount,
-    dailySpendTotal,
-    allowedTargets,
     openDeposits: openDepositsVal,
     owner,
     paused,
+    redemptionsLocked,
+    managementFeeBps,
     agents,
     metadata,
     xmtpGroupId,
@@ -338,8 +316,7 @@ export async function resolveSyndicateBySubdomain(
     display: {
       tvl: formatUSDC(totalAssets),
       totalDeposited: formatUSDC(totalDeposited),
-      dailySpend: formatUSDC(dailySpendTotal),
-      maxDailyTotal: formatUSDC(caps.maxDailyTotal),
+      managementFee: `${(Number(managementFeeBps) / 100).toFixed(1)}%`,
     },
   };
 }

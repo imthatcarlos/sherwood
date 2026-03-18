@@ -57,7 +57,8 @@ contract SyndicateVaultTest is Test {
         SyndicateVault impl = new SyndicateVault();
         bytes memory initData = abi.encodeCall(
             SyndicateVault.initialize,
-            (ISyndicateVault.InitParams({
+            (
+                ISyndicateVault.InitParams({
                     asset: address(usdc),
                     name: "Sherwood Vault",
                     symbol: "swUSDC",
@@ -67,7 +68,8 @@ contract SyndicateVaultTest is Test {
                     agentRegistry: address(agentRegistry),
                     governor: address(0),
                     managementFeeBps: 0
-                }))
+                })
+            )
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         vault = SyndicateVault(payable(address(proxy)));
@@ -215,7 +217,9 @@ contract SyndicateVaultTest is Test {
 
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](1);
         calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(mUsdc), 10_000e6)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(mUsdc), 10_000e6)),
+            value: 0
         });
 
         vm.prank(owner);
@@ -316,7 +320,8 @@ contract SyndicateVaultTest is Test {
         SyndicateVault impl2 = new SyndicateVault();
         bytes memory initData = abi.encodeCall(
             SyndicateVault.initialize,
-            (ISyndicateVault.InitParams({
+            (
+                ISyndicateVault.InitParams({
                     asset: address(usdc),
                     name: "Closed Vault",
                     symbol: "cVault",
@@ -326,7 +331,8 @@ contract SyndicateVaultTest is Test {
                     agentRegistry: address(agentRegistry),
                     governor: address(0),
                     managementFeeBps: 0
-                }))
+                })
+            )
         );
         ERC1967Proxy proxy2 = new ERC1967Proxy(address(impl2), initData);
         return SyndicateVault(payable(address(proxy2)));

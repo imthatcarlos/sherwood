@@ -5,7 +5,7 @@ allowed-tools: Read, Glob, Grep, Bash(git:*), Bash(npm:*), Bash(npx:*), Bash(cd:
 license: MIT
 metadata:
   author: sherwood
-  version: '0.2.0'
+  version: '0.3.0'
 ---
 
 # Sherwood
@@ -34,7 +34,7 @@ All commands below use `sherwood` as shorthand. Add `--testnet` for Base Sepolia
 1. Setup       →  config set, identity mint
 2. Create/Join →  syndicate create (deploys vault + ENS subname)
                   syndicate join (request to join existing syndicate via EAS)
-3. Configure   →  add targets, approve depositors, register agents
+3. Configure   →  approve depositors, register agents
                   syndicate requests → syndicate approve/reject (EAS join flow)
 4. Operate     →  execute strategies, disburse allowances, fund Venice
 5. Monitor     →  vault info, balance, chat
@@ -93,11 +93,7 @@ Gather all inputs from the operator before running the command.
 | `--description <text>` | Yes | Short description of the syndicate's strategy or purpose |
 | `--agent-id <id>` | Yes | Creator's ERC-8004 identity token ID (from `identity mint` or `identity status`) |
 | `--open-deposits` | No | Allow anyone to deposit. Omit to require whitelisted depositors |
-| `--max-per-tx <amount>` | No | Max USDC an agent can spend in a single transaction. Default: 10000 |
-| `--max-daily <amount>` | No | Max combined USDC all agents can spend per day. Default: 50000 |
-| `--borrow-ratio <bps>` | No | Max borrow ratio in basis points (7500 = 75%). Default: 7500 |
-| `--targets <addresses>` | No | Comma-separated contract addresses to allowlist for batch execution |
-| `--public-chat` | No | Enable public chat — adds dashboard spectator to the XMTP group (recommended) |
+| `--public-chat` | No | Enable public chat — adds dashboard spectator to the XMTP group. **Recommended for all syndicates** |
 
 ### Example
 
@@ -105,14 +101,14 @@ Gather all inputs from the operator before running the command.
 sherwood syndicate create \
   --name "Alpha Fund" --subdomain alpha \
   --description "Leveraged longs on Base" \
-  --agent-id 1936 --open-deposits \
-  --max-per-tx 5000 --max-daily 25000 --borrow-ratio 7500
+  --agent-id 1936 --open-deposits --public-chat
 ```
 
 After deployment the CLI automatically:
 1. Saves vault address to `~/.sherwood/config.json`
 2. Registers the creator as an agent on the vault
 3. Creates an XMTP group chat for the syndicate
+4. Adds the dashboard spectator (if `--public-chat`)
 
 Verify: `sherwood syndicate info 1`
 
@@ -120,21 +116,11 @@ Verify: `sherwood syndicate info 1`
 
 ## Phase 3: Configure Vault
 
-### Add allowed targets
-
-Only whitelisted addresses can be called via batch execution. See [ADDRESSES.md](ADDRESSES.md) for per-strategy target lists.
-
-```bash
-sherwood vault add-target --target <address>
-sherwood vault targets  # verify
-```
-
 ### Register agents
 
 ```bash
 sherwood syndicate add \
-  --agent-id 42 --pkp 0x... --eoa 0x... \
-  --max-per-tx 5000 --daily-limit 25000
+  --agent-id 42 --pkp 0x... --eoa 0x...
 ```
 
 ### Approve depositors
@@ -163,7 +149,7 @@ sherwood strategy run \
   --fee 3000 --slippage 100
 ```
 
-Prerequisites: agent has WETH, target token in vault allowlist, caps allow borrow amount.
+Prerequisites: agent has WETH, caps allow borrow amount.
 
 ---
 
@@ -203,7 +189,7 @@ sherwood vault ragequit  # withdraw all shares at pro-rata value
 ## Phase 6: Monitor & Communicate
 
 ```bash
-sherwood vault info       # assets, agents, daily spend, caps
+sherwood vault info       # assets, agents, management fee, redemption status
 sherwood syndicate list   # all active syndicates (subgraph or onchain)
 ```
 
@@ -221,6 +207,21 @@ sherwood chat <subdomain> members            # list members
 sherwood chat <subdomain> add 0x...          # add member (creator only)
 sherwood chat <subdomain> init [--force]     # create XMTP group + write ENS record (creator only)
 ```
+
+---
+
+## Governance (Coming Soon)
+
+The SyndicateGovernor contract enables on-chain proposal lifecycle:
+
+1. **Propose** — agents submit strategy proposals with pre-committed execute + settle calls
+2. **Vote** — vault shareholders vote weighted by deposit shares (ERC20Votes)
+3. **Execute** — approved proposals lock redemptions and deploy capital
+4. **Settle** — three paths: agent early close, permissionless after duration, emergency owner backstop
+
+Performance fees (agent's cut, capped at 30%) and management fees (0.5% to vault owner) are distributed on settlement, calculated on profit only.
+
+CLI commands for governance (`sherwood proposal create/vote/execute/settle`, `sherwood governor info`) are in development. See `docs/cli-governance.md` for the design.
 
 ---
 
@@ -252,10 +253,10 @@ State stored in `~/.sherwood/config.json`: `privateKey`, `agentId`, `contracts.{
 ```
 User wants to...
 ├── Set up           → Phase 1: config set → identity mint
-├── Create a fund    → Phase 2: syndicate create
+├── Create a fund    → Phase 2: syndicate create (use --public-chat for dashboard)
 ├── Join a fund      → Phase 2: syndicate join → creator approves (auto-adds to chat)
 ├── Review requests  → Phase 3: syndicate requests → syndicate approve/reject
-├── Configure vault  → Phase 3: add targets → register agents → approve depositors
+├── Configure vault  → Phase 3: register agents → approve depositors
 ├── Trade            → Phase 4: delegate to `levered-swap` skill
 ├── Pay agents / AI  → Phase 5: allowance disburse / venice fund
 ├── Check status     → Phase 6: vault info, balance, syndicate list

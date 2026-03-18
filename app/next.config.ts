@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
     return config;
   },
   async rewrites() {
-    const spectatorUrl = process.env.SPECTATOR_URL || 'http://localhost:3100';
+    const spectatorUrl = process.env.SPECTATOR_URL || 'https://spectator.sherwood.sh';
     return [
       {
         source: '/skill.md',

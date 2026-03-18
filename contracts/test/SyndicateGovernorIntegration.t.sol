@@ -65,7 +65,8 @@ contract SyndicateGovernorIntegrationTest is Test {
         SyndicateVault vaultImpl = new SyndicateVault();
         bytes memory vaultInit = abi.encodeCall(
             SyndicateVault.initialize,
-            (ISyndicateVault.InitParams({
+            (
+                ISyndicateVault.InitParams({
                     asset: address(usdc),
                     name: "Sherwood Vault",
                     symbol: "swUSDC",
@@ -75,7 +76,8 @@ contract SyndicateGovernorIntegrationTest is Test {
                     agentRegistry: address(agentRegistry),
                     governor: address(0),
                     managementFeeBps: 0
-                }))
+                })
+            )
         );
         vault = SyndicateVault(payable(address(new ERC1967Proxy(address(vaultImpl), vaultInit))));
 
@@ -154,10 +156,14 @@ contract SyndicateGovernorIntegrationTest is Test {
         // 1. Agent proposes: approve + revoke
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
         calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)),
+            value: 0
         });
         calls[1] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
+            value: 0
         });
 
         vm.prank(agent);
@@ -219,10 +225,14 @@ contract SyndicateGovernorIntegrationTest is Test {
     function test_fullLifecycle_rejectedProposal() public {
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
         calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)),
+            value: 0
         });
         calls[1] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
+            value: 0
         });
 
         vm.prank(agent);
@@ -250,10 +260,14 @@ contract SyndicateGovernorIntegrationTest is Test {
     function test_fullLifecycle_emergencySettle() public {
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
         calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)),
+            value: 0
         });
         calls[1] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
+            value: 0
         });
 
         uint256 proposalId = _proposeVoteApprove(calls, 1, 1500, 7 days);
@@ -268,7 +282,9 @@ contract SyndicateGovernorIntegrationTest is Test {
         // Owner emergency settles with custom unwind
         BatchExecutorLib.Call[] memory customCalls = new BatchExecutorLib.Call[](1);
         customCalls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
+            value: 0
         });
 
         uint256 agentBalBefore = usdc.balanceOf(agent);
@@ -288,10 +304,14 @@ contract SyndicateGovernorIntegrationTest is Test {
     function test_fullLifecycle_multipleProposalsSequential() public {
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
         calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)),
+            value: 0
         });
         calls[1] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
+            value: 0
         });
 
         // First strategy
@@ -328,29 +348,43 @@ contract SyndicateGovernorIntegrationTest is Test {
 
         // Execute: supply + borrow (4 calls)
         calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(mUsdc), supplyAmount)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(mUsdc), supplyAmount)),
+            value: 0
         });
         calls[1] = BatchExecutorLib.Call({
-            target: address(mUsdc), data: abi.encodeWithSignature("mint(uint256)", supplyAmount), value: 0
+            target: address(mUsdc),
+            data: abi.encodeWithSignature("mint(uint256)", supplyAmount),
+            value: 0
         });
         address[] memory markets = new address[](1);
         markets[0] = address(mUsdc);
         calls[2] = BatchExecutorLib.Call({
-            target: address(comptroller), data: abi.encodeCall(comptroller.enterMarkets, (markets)), value: 0
+            target: address(comptroller),
+            data: abi.encodeCall(comptroller.enterMarkets, (markets)),
+            value: 0
         });
         calls[3] = BatchExecutorLib.Call({
-            target: address(mUsdc), data: abi.encodeWithSignature("borrow(uint256)", borrowAmount), value: 0
+            target: address(mUsdc),
+            data: abi.encodeWithSignature("borrow(uint256)", borrowAmount),
+            value: 0
         });
 
         // Settle: approve → repay → redeem (3 calls)
         calls[4] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(mUsdc), borrowAmount)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(mUsdc), borrowAmount)),
+            value: 0
         });
         calls[5] = BatchExecutorLib.Call({
-            target: address(mUsdc), data: abi.encodeWithSignature("repayBorrow(uint256)", borrowAmount), value: 0
+            target: address(mUsdc),
+            data: abi.encodeWithSignature("repayBorrow(uint256)", borrowAmount),
+            value: 0
         });
         calls[6] = BatchExecutorLib.Call({
-            target: address(mUsdc), data: abi.encodeWithSignature("redeemUnderlying(uint256)", supplyAmount), value: 0
+            target: address(mUsdc),
+            data: abi.encodeWithSignature("redeemUnderlying(uint256)", supplyAmount),
+            value: 0
         });
 
         // splitIndex = 4 (first 4 are execute, last 3 are settle)
@@ -401,29 +435,43 @@ contract SyndicateGovernorIntegrationTest is Test {
 
         // Execute: supply + borrow (4 calls)
         calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(mUsdc), supplyAmount)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(mUsdc), supplyAmount)),
+            value: 0
         });
         calls[1] = BatchExecutorLib.Call({
-            target: address(mUsdc), data: abi.encodeWithSignature("mint(uint256)", supplyAmount), value: 0
+            target: address(mUsdc),
+            data: abi.encodeWithSignature("mint(uint256)", supplyAmount),
+            value: 0
         });
         address[] memory markets = new address[](1);
         markets[0] = address(mUsdc);
         calls[2] = BatchExecutorLib.Call({
-            target: address(comptroller), data: abi.encodeCall(comptroller.enterMarkets, (markets)), value: 0
+            target: address(comptroller),
+            data: abi.encodeCall(comptroller.enterMarkets, (markets)),
+            value: 0
         });
         calls[3] = BatchExecutorLib.Call({
-            target: address(mUsdc), data: abi.encodeWithSignature("borrow(uint256)", borrowAmount), value: 0
+            target: address(mUsdc),
+            data: abi.encodeWithSignature("borrow(uint256)", borrowAmount),
+            value: 0
         });
 
         // Settle: approve → repay → redeem (3 calls)
         calls[4] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(mUsdc), borrowAmount)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(mUsdc), borrowAmount)),
+            value: 0
         });
         calls[5] = BatchExecutorLib.Call({
-            target: address(mUsdc), data: abi.encodeWithSignature("repayBorrow(uint256)", borrowAmount), value: 0
+            target: address(mUsdc),
+            data: abi.encodeWithSignature("repayBorrow(uint256)", borrowAmount),
+            value: 0
         });
         calls[6] = BatchExecutorLib.Call({
-            target: address(mUsdc), data: abi.encodeWithSignature("redeemUnderlying(uint256)", supplyAmount), value: 0
+            target: address(mUsdc),
+            data: abi.encodeWithSignature("redeemUnderlying(uint256)", supplyAmount),
+            value: 0
         });
 
         // splitIndex = 4

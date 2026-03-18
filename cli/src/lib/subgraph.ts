@@ -23,8 +23,6 @@ export interface SubgraphAgent {
   id: string;
   pkpAddress: string;
   operatorEOA: string;
-  maxPerTx: string;
-  dailyLimit: string;
   active: boolean;
   registeredAt: string;
   totalBatches: string;
@@ -41,19 +39,9 @@ export interface SubgraphDeposit {
   txHash: string;
 }
 
-export interface SubgraphBatchExecution {
-  id: string;
-  agent: { id: string; pkpAddress: string };
-  callCount: string;
-  assetAmount: string;
-  timestamp: string;
-  txHash: string;
-}
-
 export interface SyndicateDetails extends SubgraphSyndicate {
   agents: SubgraphAgent[];
   deposits: SubgraphDeposit[];
-  batchExecutions: SubgraphBatchExecution[];
 }
 
 function getSubgraphUrl(): string {
@@ -142,8 +130,6 @@ export async function getSyndicateDetails(
           id
           pkpAddress
           operatorEOA
-          maxPerTx
-          dailyLimit
           active
           registeredAt
           totalBatches
@@ -155,17 +141,6 @@ export async function getSyndicateDetails(
           owner
           assets
           shares
-          timestamp
-          txHash
-        }
-        batchExecutions(first: 10, orderBy: timestamp, orderDirection: desc) {
-          id
-          agent {
-            id
-            pkpAddress
-          }
-          callCount
-          assetAmount
           timestamp
           txHash
         }

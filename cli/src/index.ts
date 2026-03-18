@@ -77,10 +77,6 @@ syndicate
   .option("--name <name>", "Syndicate name (skip prompt)")
   .option("--agent-id <id>", "ERC-8004 agent identity token ID (skip prompt)")
   .option("--asset <address>", "Underlying asset address")
-  .option("--max-per-tx <amount>", "Max per transaction (in asset units)")
-  .option("--max-daily <amount>", "Max daily combined spend (in asset units)")
-  .option("--borrow-ratio <bps>", "Max borrow ratio in basis points")
-  .option("--targets <addresses>", "Comma-separated allowlisted target addresses")
   .option("--description <text>", "Short description")
   .option("--metadata-uri <uri>", "Override metadata URI (skip IPFS upload)")
   .option("--open-deposits", "Allow anyone to deposit (no whitelist)")
@@ -127,21 +123,6 @@ syndicate
         default: true,
       });
 
-      const maxPerTx = opts.maxPerTx || await input({
-        message: G("Max per transaction (USDC)"),
-        default: "10000",
-      });
-
-      const maxDaily = opts.maxDaily || await input({
-        message: G("Max daily spend (USDC)"),
-        default: "50000",
-      });
-
-      const borrowRatio = opts.borrowRatio || await input({
-        message: G("Max borrow ratio (bps, 7500 = 75%)"),
-        default: "7500",
-      });
-
       // ── Resolve asset ──
       const asset = (opts.asset || TOKENS().USDC) as Address;
       const publicClient = getPublicClient();
@@ -150,10 +131,6 @@ syndicate
         publicClient.readContract({ address: asset, abi: ERC20_ABI, functionName: "symbol" }) as Promise<string>,
       ]);
       const symbol = `sw${assetSymbol}`;
-
-      const targets: Address[] = opts.targets
-        ? opts.targets.split(",").map((a: string) => a.trim() as Address)
-        : [];
 
       // ── Confirmation ──
       console.log();
@@ -165,13 +142,7 @@ syndicate
       console.log(W(`  Agent ID:     #${agentIdStr}`));
       console.log(W(`  Asset:        ${assetSymbol} (${asset.slice(0, 10)}...)`));
       console.log(W(`  Share token:  ${symbol}`));
-      console.log(W(`  Max per tx:   ${maxPerTx} ${assetSymbol}`));
-      console.log(W(`  Max daily:    ${maxDaily} ${assetSymbol}`));
-      console.log(W(`  Borrow ratio: ${(Number(borrowRatio) / 100).toFixed(1)}%`));
       console.log(W(`  Open deposits: ${openDeposits ? G("yes") : chalk.red("no (whitelist)")}`));
-      if (targets.length > 0) {
-        console.log(W(`  Targets:      ${targets.length} address(es)`));
-      }
       SEP();
 
       const go = await confirm({ message: G("Deploy syndicate?"), default: true });
@@ -216,10 +187,6 @@ syndicate
         asset,
         name,
         symbol,
-        maxPerTx: parseUnits(maxPerTx, decimals),
-        maxDailyTotal: parseUnits(maxDaily, decimals),
-        maxBorrowRatio: BigInt(borrowRatio),
-        initialTargets: targets,
         openDeposits,
         subdomain,
       });
@@ -236,8 +203,6 @@ syndicate
           BigInt(agentIdStr),
           creatorAddress,        // pkp = creator EOA (direct execution)
           creatorAddress,        // operator = creator EOA
-          parseUnits(maxPerTx, decimals),
-          parseUnits(maxDaily, decimals),
         );
       } catch (regErr) {
         // Non-fatal — creator can register later via `syndicate add`
@@ -377,12 +342,10 @@ syndicate
       const vaultInfo = await vaultLib.getVaultInfo();
       console.log();
       console.log(chalk.bold("  Vault Stats"));
-      console.log(`    Total Assets: ${vaultInfo.totalAssets}`);
-      console.log(`    Agent Count:  ${vaultInfo.agentCount}`);
-      console.log(`    Daily Spend:  ${vaultInfo.dailySpendTotal}`);
-      console.log(`    Max Per Tx:   ${vaultInfo.syndicateCaps.maxPerTx}`);
-      console.log(`    Max Daily:    ${vaultInfo.syndicateCaps.maxDailyTotal}`);
-      console.log(`    Max Borrow:   ${vaultInfo.syndicateCaps.maxBorrowRatio}`);
+      console.log(`    Total Assets:       ${vaultInfo.totalAssets}`);
+      console.log(`    Agent Count:        ${vaultInfo.agentCount}`);
+      console.log(`    Redemptions Locked: ${vaultInfo.redemptionsLocked}`);
+      console.log(`    Management Fee:     ${Number(vaultInfo.managementFeeBps) / 100}%`);
       console.log();
     } catch (err) {
       spinner.fail("Failed to load syndicate info");
@@ -484,8 +447,6 @@ syndicate
   .requiredOption("--agent-id <id>", "Agent's ERC-8004 identity token ID")
   .requiredOption("--pkp <address>", "Agent PKP address")
   .requiredOption("--eoa <address>", "Operator EOA address")
-  .requiredOption("--max-per-tx <amount>", "Max per transaction (in asset units)")
-  .requiredOption("--daily-limit <amount>", "Daily limit (in asset units)")
   .action(async (opts) => {
     const spinner = ora("Verifying creator...").start();
     try {
@@ -501,17 +462,11 @@ syndicate
         process.exit(1);
       }
 
-      const decimals = await vaultLib.getAssetDecimals();
-      const maxPerTx = parseUnits(opts.maxPerTx, decimals);
-      const dailyLimit = parseUnits(opts.dailyLimit, decimals);
-
       spinner.text = "Registering agent...";
       const hash = await vaultLib.registerAgent(
         BigInt(opts.agentId),
         opts.pkp as Address,
         opts.eoa as Address,
-        maxPerTx,
-        dailyLimit,
       );
       spinner.succeed(`Agent registered: ${hash}`);
       console.log(chalk.dim(`  ${getExplorerUrl(hash)}`));
@@ -693,7 +648,7 @@ syndicate
       }
 
       console.log(G("  To approve:"));
-      console.log(DIM(`    sherwood syndicate approve --agent-id <id> --pkp <addr> --eoa <addr> --max-per-tx <amt> --daily-limit <amt>`));
+      console.log(DIM(`    sherwood syndicate approve --agent-id <id> --pkp <addr> --eoa <addr>`));
       console.log(G("  To reject:"));
       console.log(DIM(`    sherwood syndicate reject --attestation <uid>`));
       console.log();
@@ -712,8 +667,6 @@ syndicate
   .requiredOption("--agent-id <id>", "Agent's ERC-8004 identity token ID")
   .requiredOption("--pkp <address>", "Agent PKP address")
   .requiredOption("--eoa <address>", "Operator EOA address")
-  .requiredOption("--max-per-tx <amount>", "Max per transaction (in asset units)")
-  .requiredOption("--daily-limit <amount>", "Daily limit (in asset units)")
   .option("--revoke-request <uid>", "Revoke the join request attestation after approval")
   .action(async (opts) => {
     const spinner = ora("Verifying creator...").start();
@@ -735,10 +688,6 @@ syndicate
         process.exit(1);
       }
 
-      const decimals = await vaultLib.getAssetDecimals();
-      const maxPerTx = parseUnits(opts.maxPerTx, decimals);
-      const dailyLimit = parseUnits(opts.dailyLimit, decimals);
-
       // 1. Register agent on-chain (same as syndicate add)
       spinner.text = "Registering agent on vault...";
       try {
@@ -746,8 +695,6 @@ syndicate
           BigInt(opts.agentId),
           opts.pkp as Address,
           opts.eoa as Address,
-          maxPerTx,
-          dailyLimit,
         );
         console.log(DIM(`  Agent registered: ${getExplorerUrl(regHash)}`));
       } catch (regErr) {
@@ -888,15 +835,11 @@ vaultCmd
       console.log();
       console.log(chalk.bold("Vault Info"));
       console.log(chalk.dim("─".repeat(40)));
-      console.log(`  Address:        ${info.address}`);
-      console.log(`  Total Assets:   ${info.totalAssets}`);
-      console.log(`  Agent Count:    ${info.agentCount}`);
-      console.log(`  Daily Spend:    ${info.dailySpendTotal}`);
-      console.log();
-      console.log(chalk.bold("  Syndicate Caps"));
-      console.log(`    Max Per Tx:     ${info.syndicateCaps.maxPerTx}`);
-      console.log(`    Max Daily:      ${info.syndicateCaps.maxDailyTotal}`);
-      console.log(`    Max Borrow:     ${info.syndicateCaps.maxBorrowRatio}`);
+      console.log(`  Address:            ${info.address}`);
+      console.log(`  Total Assets:       ${info.totalAssets}`);
+      console.log(`  Agent Count:        ${info.agentCount}`);
+      console.log(`  Redemptions Locked: ${info.redemptionsLocked}`);
+      console.log(`  Management Fee:     ${Number(info.managementFeeBps) / 100}%`);
       console.log();
     } catch (err) {
       spinner.fail("Failed to load vault info");
@@ -925,70 +868,6 @@ vaultCmd
       console.log();
     } catch (err) {
       spinner.fail("Failed to load balance");
-      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-      process.exit(1);
-    }
-  });
-
-// register-agent removed — use "syndicate add" instead
-
-vaultCmd
-  .command("add-target")
-  .description("Add a target to the vault allowlist (owner only)")
-  .option("--vault <address>", "Vault address (default: from config)")
-  .requiredOption("--target <address>", "Target address to allow")
-  .action(async (opts) => {
-    resolveVault(opts);
-    const spinner = ora("Adding target...").start();
-    try {
-      const hash = await vaultLib.addTarget(opts.target as Address);
-      spinner.succeed(`Target added: ${hash}`);
-      console.log(chalk.dim(`  ${getExplorerUrl(hash)}`));
-    } catch (err) {
-      spinner.fail("Failed to add target");
-      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-      process.exit(1);
-    }
-  });
-
-vaultCmd
-  .command("remove-target")
-  .description("Remove a target from the vault allowlist (owner only)")
-  .option("--vault <address>", "Vault address (default: from config)")
-  .requiredOption("--target <address>", "Target address to remove")
-  .action(async (opts) => {
-    resolveVault(opts);
-    const spinner = ora("Removing target...").start();
-    try {
-      const hash = await vaultLib.removeTarget(opts.target as Address);
-      spinner.succeed(`Target removed: ${hash}`);
-      console.log(chalk.dim(`  ${getExplorerUrl(hash)}`));
-    } catch (err) {
-      spinner.fail("Failed to remove target");
-      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-      process.exit(1);
-    }
-  });
-
-vaultCmd
-  .command("targets")
-  .description("List allowed targets for a vault")
-  .option("--vault <address>", "Vault address (default: from config)")
-  .action(async (opts) => {
-    resolveVault(opts);
-    const spinner = ora("Loading targets...").start();
-    try {
-      const targets = await vaultLib.getAllowedTargets();
-      spinner.stop();
-      console.log();
-      console.log(chalk.bold(`Allowed Targets (${targets.length})`));
-      console.log(chalk.dim("─".repeat(50)));
-      for (const t of targets) {
-        console.log(`  ${t}`);
-      }
-      console.log();
-    } catch (err) {
-      spinner.fail("Failed to load targets");
       console.error(chalk.red(err instanceof Error ? err.message : String(err)));
       process.exit(1);
     }

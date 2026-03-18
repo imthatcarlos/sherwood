@@ -219,7 +219,7 @@ export function registerAllowanceCommands(program: Command): void {
 
       const execSpinner = ora("Executing batch via vault...").start();
       try {
-        const txHash = await executeBatch(calls, requestedAmount);
+        const txHash = await executeBatch(calls);
         execSpinner.succeed(`Batch executed: ${txHash}`);
         console.log(chalk.dim(`  ${getExplorerUrl(txHash)}`));
       } catch (err) {

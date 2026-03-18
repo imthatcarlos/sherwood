@@ -9,8 +9,8 @@
  *   5. Execute on-chain (if --execute flag)
  *
  * The vault is the onchain identity — all positions live on the vault
- * via delegatecall to a shared executor lib. assetAmount=0 since
- * agent provides their own WETH (no LP capital deployed).
+ * via delegatecall to a shared executor lib. Agent provides their
+ * own WETH (no LP capital deployed).
  */
 
 import type { Address } from "viem";
@@ -135,9 +135,6 @@ export async function runLeveredSwap(opts: {
   console.log(formatBatch(calls));
   console.log();
 
-  // assetAmount=0: no vault capital at risk, agent provides own WETH
-  const assetAmount = 0n;
-
   // ── Simulate ──
 
   const simSpinner = ora("Simulating via vault...").start();
@@ -178,7 +175,7 @@ export async function runLeveredSwap(opts: {
 
   const execSpinner = ora("Executing batch via vault...").start();
   try {
-    const txHash = await executeBatch(calls, assetAmount);
+    const txHash = await executeBatch(calls);
     execSpinner.succeed(`Batch executed: ${txHash}`);
     console.log(chalk.dim(`  ${getExplorerUrl(txHash)}`));
   } catch (err) {
