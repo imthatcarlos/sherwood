@@ -220,16 +220,14 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     }
 
     /// @inheritdoc ISyndicateGovernor
-    /// @notice Path 1: Agent settles with custom calls. Enforces no loss.
+    /// @notice Path 1: Agent settles. Tries pre-committed calls first, falls back to custom calls. Enforces no loss.
     function settleByAgent(uint256 proposalId, BatchExecutorLib.Call[] calldata calls) external {
         StrategyProposal storage proposal = _proposals[proposalId];
         if (proposal.state != ProposalState.Executed) revert ProposalNotExecuted();
         if (msg.sender != proposal.proposer) revert NotProposer();
 
-        // Run agent-provided unwind calls
-        if (calls.length > 0) {
-            ISyndicateVault(proposal.vault).executeGovernorBatch(calls);
-        }
+        // Try pre-committed unwind calls first, fall back to agent-provided calls
+        _tryPrecommittedThenFallback(proposalId, proposal, calls);
 
         // Enforce no loss — agent can only settle if vault balance >= snapshot
         address asset = IERC4626(proposal.vault).asset();
@@ -263,17 +261,15 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     }
 
     /// @inheritdoc ISyndicateGovernor
-    /// @notice Path 3: Vault owner settles with custom calls. After duration. Backstop.
+    /// @notice Path 3: Vault owner settles. Tries pre-committed calls first, falls back to custom. After duration.
     function emergencySettle(uint256 proposalId, BatchExecutorLib.Call[] calldata calls) external {
         StrategyProposal storage proposal = _proposals[proposalId];
         if (msg.sender != OwnableUpgradeable(proposal.vault).owner()) revert NotVaultOwner();
         if (proposal.state != ProposalState.Executed) revert ProposalNotExecuted();
         if (block.timestamp < proposal.executedAt + proposal.strategyDuration) revert StrategyDurationNotElapsed();
 
-        // Run vault-owner-provided unwind calls
-        if (calls.length > 0) {
-            ISyndicateVault(proposal.vault).executeGovernorBatch(calls);
-        }
+        // Try pre-committed unwind calls first, fall back to owner-provided calls
+        _tryPrecommittedThenFallback(proposalId, proposal, calls);
 
         (int256 pnl,) = _finishSettlement(proposalId, proposal);
 
@@ -438,6 +434,34 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     }
 
     // ==================== INTERNAL ====================
+
+    /// @dev Try pre-committed unwind calls first. If they revert, run the fallback calls.
+    function _tryPrecommittedThenFallback(
+        uint256 proposalId,
+        StrategyProposal storage proposal,
+        BatchExecutorLib.Call[] calldata fallbackCalls
+    ) internal {
+        // Build pre-committed settle calls
+        BatchExecutorLib.Call[] storage storedCalls = _proposalCalls[proposalId];
+        uint256 splitIndex = proposal.splitIndex;
+        uint256 totalCalls = storedCalls.length;
+
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](totalCalls - splitIndex);
+        for (uint256 i = splitIndex; i < totalCalls; i++) {
+            settleCalls[i - splitIndex] = storedCalls[i];
+        }
+
+        // Try pre-committed calls first
+        try ISyndicateVault(proposal.vault).executeGovernorBatch(settleCalls) {
+        // Pre-committed calls succeeded — done
+        }
+        catch {
+            // Pre-committed calls failed — run fallback calls
+            if (fallbackCalls.length > 0) {
+                ISyndicateVault(proposal.vault).executeGovernorBatch(fallbackCalls);
+            }
+        }
+    }
 
     function _resolveState(StrategyProposal storage proposal) internal returns (ProposalState) {
         if (proposal.state != ProposalState.Pending) return proposal.state;
