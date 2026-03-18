@@ -236,7 +236,7 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
         uint256 balanceAfter = IERC20(asset).balanceOf(proposal.vault);
         if (balanceAfter < _capitalSnapshots[proposalId]) revert SettlementCausedLoss();
 
-        (int256 pnl, uint256 agentFee) = _finishSettlement(proposalId, proposal, balanceAfter);
+        (int256 pnl, uint256 agentFee) = _finishSettlement(proposalId, proposal);
 
         emit AgentSettled(proposalId, proposal.vault, pnl, agentFee);
     }
@@ -259,7 +259,7 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
         }
         ISyndicateVault(proposal.vault).executeGovernorBatch(settleCalls);
 
-        _finishSettlement(proposalId, proposal, 0);
+        _finishSettlement(proposalId, proposal);
     }
 
     /// @inheritdoc ISyndicateGovernor
@@ -275,7 +275,7 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
             ISyndicateVault(proposal.vault).executeGovernorBatch(calls);
         }
 
-        (int256 pnl,) = _finishSettlement(proposalId, proposal, 0);
+        (int256 pnl,) = _finishSettlement(proposalId, proposal);
 
         emit EmergencySettled(proposalId, proposal.vault, pnl, calls.length);
     }
@@ -482,14 +482,13 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
         return ProposalState.Approved;
     }
 
-    /// @param balanceAfterOverride If non-zero, use this value instead of reading from chain.
-    function _finishSettlement(uint256 proposalId, StrategyProposal storage proposal, uint256 balanceAfterOverride)
+    function _finishSettlement(uint256 proposalId, StrategyProposal storage proposal)
         internal
         returns (int256 pnl, uint256 agentFee)
     {
         address vault = proposal.vault;
         address asset = IERC4626(vault).asset();
-        uint256 balanceAfter = balanceAfterOverride > 0 ? balanceAfterOverride : IERC20(asset).balanceOf(vault);
+        uint256 balanceAfter = IERC20(asset).balanceOf(vault);
         uint256 capitalSnapshot = _capitalSnapshots[proposalId];
 
         // casting to int256 is safe because vault balances won't exceed int256.max
