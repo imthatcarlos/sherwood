@@ -1,10 +1,17 @@
-FROM node:22-slim
+FROM ubuntu:24.04
+
+# Install Node.js 22 — Ubuntu 24.04 has GLIBC 2.39 (>= 2.38 required by @xmtp/node-bindings)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install all deps (including devDependencies for build)
-COPY package.json package-lock.json* ./
-RUN npm ci
+# Install deps — fresh install to ensure platform-specific optional deps resolve correctly
+COPY package.json ./
+RUN npm install
 
 # Copy source and build
 COPY tsup.config.ts tsconfig.json ./
