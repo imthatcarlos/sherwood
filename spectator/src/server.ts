@@ -94,7 +94,7 @@ async function getMessages(
 
   const opts: Record<string, unknown> = {
     limit,
-    direction: "descending",
+    direction: 1, // SortDirection.Descending
   };
   if (beforeNs) {
     opts.sentBeforeNs = BigInt(beforeNs);
