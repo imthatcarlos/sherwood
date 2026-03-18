@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import type { Address } from "viem";
-import { setVaultAddress, getAssetAddress, getAssetDecimals, getVaultInfo, getAllowedTargets, isAllowedTarget } from "./vault.js";
+import { setVaultAddress, getAssetAddress, getAssetDecimals, getVaultInfo } from "./vault.js";
 import { TOKENS } from "./addresses.js";
 
 // Vault deployed by syndicate #1 on the redeployed factory
@@ -32,21 +32,7 @@ describe("SyndicateVault (Base Sepolia)", () => {
     expect(info.address.toLowerCase()).toBe(VAULT_ADDRESS.toLowerCase());
     expect(typeof info.totalAssets).toBe("string");
     expect(["number", "bigint"]).toContain(typeof info.agentCount);
-    expect(typeof info.dailySpendTotal).toBe("string");
-    expect(info.syndicateCaps).toBeDefined();
-    expect(typeof info.syndicateCaps.maxPerTx).toBe("string");
-    expect(typeof info.syndicateCaps.maxDailyTotal).toBe("string");
-    expect(typeof info.syndicateCaps.maxBorrowRatio).toBe("string");
-  });
-
-  it("getAllowedTargets returns an array", async () => {
-    const targets = await getAllowedTargets();
-    expect(Array.isArray(targets)).toBe(true);
-  });
-
-  it("isAllowedTarget returns false for random address", async () => {
-    const random = "0x0000000000000000000000000000000000000001" as Address;
-    const allowed = await isAllowedTarget(random);
-    expect(allowed).toBe(false);
+    expect(typeof info.redemptionsLocked).toBe("boolean");
+    expect(typeof info.managementFeeBps).toBe("bigint");
   });
 });

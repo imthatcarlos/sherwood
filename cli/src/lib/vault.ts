@@ -121,14 +121,11 @@ export async function ragequit(): Promise<Hex> {
 // ── Batch Execution ──
 
 /**
- * Execute a batch of protocol calls through the vault.
- * The vault checks caps + allowlist, then delegatecalls to the executor lib.
+ * Execute a batch of protocol calls through the vault (owner only).
+ * The vault delegatecalls to the executor lib.
  * All calls execute as the vault — positions live on the vault.
  */
-export async function executeBatch(
-  calls: BatchCall[],
-  assetAmount: bigint,
-): Promise<Hex> {
+export async function executeBatch(calls: BatchCall[]): Promise<Hex> {
   const wallet = getWalletClient();
 
   return wallet.writeContract({
@@ -143,7 +140,6 @@ export async function executeBatch(
         data: c.data,
         value: c.value,
       })),
-      assetAmount,
     ],
   });
 }
@@ -188,78 +184,6 @@ export async function simulateBatch(calls: BatchCall[]): Promise<SimulationResul
     success: r.success,
     returnData: r.returnData,
   }));
-}
-
-// ── Target Management ──
-
-/**
- * Add a single target to the vault's allowlist (owner only).
- */
-export async function addTarget(target: Address): Promise<Hex> {
-  const client = getWalletClient();
-  return client.writeContract({
-    account: getAccount(),
-    chain: getChain(),
-    address: getVaultAddress(),
-    abi: SYNDICATE_VAULT_ABI,
-    functionName: "addTarget",
-    args: [target],
-  });
-}
-
-/**
- * Remove a target from the vault's allowlist (owner only).
- */
-export async function removeTarget(target: Address): Promise<Hex> {
-  const client = getWalletClient();
-  return client.writeContract({
-    account: getAccount(),
-    chain: getChain(),
-    address: getVaultAddress(),
-    abi: SYNDICATE_VAULT_ABI,
-    functionName: "removeTarget",
-    args: [target],
-  });
-}
-
-/**
- * Add multiple targets to the vault's allowlist (owner only).
- */
-export async function addTargets(targets: Address[]): Promise<Hex> {
-  const client = getWalletClient();
-  return client.writeContract({
-    account: getAccount(),
-    chain: getChain(),
-    address: getVaultAddress(),
-    abi: SYNDICATE_VAULT_ABI,
-    functionName: "addTargets",
-    args: [targets],
-  });
-}
-
-/**
- * Check if a target is in the vault's allowlist.
- */
-export async function isAllowedTarget(target: Address): Promise<boolean> {
-  const client = getPublicClient();
-  return client.readContract({
-    address: getVaultAddress(),
-    abi: SYNDICATE_VAULT_ABI,
-    functionName: "isAllowedTarget",
-    args: [target],
-  }) as Promise<boolean>;
-}
-
-/**
- * Get all allowed targets.
- */
-export async function getAllowedTargets(): Promise<Address[]> {
-  const client = getPublicClient();
-  return client.readContract({
-    address: getVaultAddress(),
-    abi: SYNDICATE_VAULT_ABI,
-    functionName: "getAllowedTargets",
-  }) as Promise<Address[]>;
 }
 
 // ── Depositor Management ──
@@ -392,8 +316,6 @@ export async function registerAgent(
   agentId: bigint,
   pkpAddress: Address,
   operatorEOA: Address,
-  maxPerTx: bigint,
-  dailyLimit: bigint,
 ): Promise<Hex> {
   const wallet = getWalletClient();
   const client = getPublicClient();
@@ -404,7 +326,7 @@ export async function registerAgent(
     address: getVaultAddress(),
     abi: SYNDICATE_VAULT_ABI,
     functionName: "registerAgent",
-    args: [agentId, pkpAddress, operatorEOA, maxPerTx, dailyLimit],
+    args: [agentId, pkpAddress, operatorEOA],
   });
 
   await client.waitForTransactionReceipt({ hash });
@@ -416,13 +338,9 @@ export async function registerAgent(
 export interface VaultInfo {
   address: Address;
   totalAssets: string;
-  syndicateCaps: {
-    maxPerTx: string;
-    maxDailyTotal: string;
-    maxBorrowRatio: string;
-  };
   agentCount: bigint;
-  dailySpendTotal: string;
+  redemptionsLocked: boolean;
+  managementFeeBps: bigint;
 }
 
 /**
@@ -432,39 +350,36 @@ export async function getVaultInfo(): Promise<VaultInfo> {
   const client = getPublicClient();
   const vaultAddress = getVaultAddress();
 
-  const [totalAssets, caps, agentCount, dailySpend, decimals] = await Promise.all([
-    client.readContract({
-      address: vaultAddress,
-      abi: SYNDICATE_VAULT_ABI,
-      functionName: "totalAssets",
-    }) as Promise<bigint>,
-    client.readContract({
-      address: vaultAddress,
-      abi: SYNDICATE_VAULT_ABI,
-      functionName: "getSyndicateCaps",
-    }) as Promise<{ maxPerTx: bigint; maxDailyTotal: bigint; maxBorrowRatio: bigint }>,
-    client.readContract({
-      address: vaultAddress,
-      abi: SYNDICATE_VAULT_ABI,
-      functionName: "getAgentCount",
-    }) as Promise<bigint>,
-    client.readContract({
-      address: vaultAddress,
-      abi: SYNDICATE_VAULT_ABI,
-      functionName: "getDailySpendTotal",
-    }) as Promise<bigint>,
-    getAssetDecimals(),
-  ]);
+  const [totalAssets, agentCount, redemptionsLocked, managementFeeBps, decimals] =
+    await Promise.all([
+      client.readContract({
+        address: vaultAddress,
+        abi: SYNDICATE_VAULT_ABI,
+        functionName: "totalAssets",
+      }) as Promise<bigint>,
+      client.readContract({
+        address: vaultAddress,
+        abi: SYNDICATE_VAULT_ABI,
+        functionName: "getAgentCount",
+      }) as Promise<bigint>,
+      client.readContract({
+        address: vaultAddress,
+        abi: SYNDICATE_VAULT_ABI,
+        functionName: "redemptionsLocked",
+      }) as Promise<boolean>,
+      client.readContract({
+        address: vaultAddress,
+        abi: SYNDICATE_VAULT_ABI,
+        functionName: "managementFeeBps",
+      }) as Promise<bigint>,
+      getAssetDecimals(),
+    ]);
 
   return {
     address: vaultAddress,
     totalAssets: formatUnits(totalAssets, decimals),
-    syndicateCaps: {
-      maxPerTx: formatUnits(caps.maxPerTx, decimals),
-      maxDailyTotal: formatUnits(caps.maxDailyTotal, decimals),
-      maxBorrowRatio: `${(Number(caps.maxBorrowRatio) / 100).toFixed(1)}%`,
-    },
     agentCount,
-    dailySpendTotal: formatUnits(dailySpend, decimals),
+    redemptionsLocked,
+    managementFeeBps,
   };
 }

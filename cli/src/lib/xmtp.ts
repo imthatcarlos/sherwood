@@ -304,9 +304,10 @@ export async function createSyndicateGroup(
     throw new Error("Failed to parse group ID from xmtp CLI output");
   }
 
-  // Add spectator if requested
-  if (isPublic && process.env.DASHBOARD_SPECTATOR_ADDRESS) {
-    await addMember(groupId, process.env.DASHBOARD_SPECTATOR_ADDRESS);
+  // Add spectator if requested — enables dashboard live feed
+  const SPECTATOR_ADDRESS = process.env.DASHBOARD_SPECTATOR_ADDRESS || "0xec00089b73fbd0733cc11ee39f81404cbc9c9786";
+  if (isPublic) {
+    await addMember(groupId, SPECTATOR_ADDRESS);
   }
 
   // Cache locally

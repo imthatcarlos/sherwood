@@ -3,7 +3,7 @@
  * Extracted from contracts/src/ — keep in sync if contracts change.
  */
 
-// ── SyndicateVault (includes batch execution, target management) ──
+// ── SyndicateVault (ERC-4626 + ERC20Votes + governor integration) ──
 
 export const SYNDICATE_VAULT_ABI = [
   // ERC-4626
@@ -47,7 +47,7 @@ export const SYNDICATE_VAULT_ABI = [
     inputs: [{ name: "receiver", type: "address" }],
     outputs: [{ name: "assets", type: "uint256" }],
   },
-  // Batch execution (via delegatecall to shared executor lib)
+  // Batch execution (owner-only, via delegatecall to shared executor lib)
   {
     name: "executeBatch",
     type: "function",
@@ -62,7 +62,6 @@ export const SYNDICATE_VAULT_ABI = [
           { name: "value", type: "uint256" },
         ],
       },
-      { name: "assetAmount", type: "uint256" },
     ],
     outputs: [],
   },
@@ -92,42 +91,6 @@ export const SYNDICATE_VAULT_ABI = [
       },
     ],
   },
-  // Target allowlist
-  {
-    name: "addTarget",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "target", type: "address" }],
-    outputs: [],
-  },
-  {
-    name: "addTargets",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "targets", type: "address[]" }],
-    outputs: [],
-  },
-  {
-    name: "removeTarget",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "target", type: "address" }],
-    outputs: [],
-  },
-  {
-    name: "isAllowedTarget",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "target", type: "address" }],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    name: "getAllowedTargets",
-    type: "function",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address[]" }],
-  },
   // Agent management
   {
     name: "registerAgent",
@@ -137,8 +100,6 @@ export const SYNDICATE_VAULT_ABI = [
       { name: "agentId", type: "uint256" },
       { name: "pkpAddress", type: "address" },
       { name: "operatorEOA", type: "address" },
-      { name: "maxPerTx", type: "uint256" },
-      { name: "dailyLimit", type: "uint256" },
     ],
     outputs: [],
   },
@@ -163,41 +124,13 @@ export const SYNDICATE_VAULT_ABI = [
           { name: "agentId", type: "uint256" },
           { name: "pkpAddress", type: "address" },
           { name: "operatorEOA", type: "address" },
-          { name: "maxPerTx", type: "uint256" },
-          { name: "dailyLimit", type: "uint256" },
-          { name: "spentToday", type: "uint256" },
-          { name: "lastResetDay", type: "uint256" },
           { name: "active", type: "bool" },
         ],
       },
     ],
   },
   {
-    name: "getSyndicateCaps",
-    type: "function",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [
-      {
-        name: "",
-        type: "tuple",
-        components: [
-          { name: "maxPerTx", type: "uint256" },
-          { name: "maxDailyTotal", type: "uint256" },
-          { name: "maxBorrowRatio", type: "uint256" },
-        ],
-      },
-    ],
-  },
-  {
     name: "getAgentCount",
-    type: "function",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    name: "getDailySpendTotal",
     type: "function",
     stateMutability: "view",
     inputs: [],
@@ -309,6 +242,35 @@ export const SYNDICATE_VAULT_ABI = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
+  },
+  // Governor integration
+  {
+    name: "governor",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    name: "redemptionsLocked",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "managementFeeBps",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "setGovernor",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "governor_", type: "address" }],
+    outputs: [],
   },
 ] as const;
 
@@ -452,16 +414,6 @@ export const SYNDICATE_FACTORY_ABI = [
           { name: "asset", type: "address" },
           { name: "name", type: "string" },
           { name: "symbol", type: "string" },
-          {
-            name: "caps",
-            type: "tuple",
-            components: [
-              { name: "maxPerTx", type: "uint256" },
-              { name: "maxDailyTotal", type: "uint256" },
-              { name: "maxBorrowRatio", type: "uint256" },
-            ],
-          },
-          { name: "initialTargets", type: "address[]" },
           { name: "openDeposits", type: "bool" },
           { name: "subdomain", type: "string" },
         ],
@@ -828,6 +780,301 @@ export const EAS_ABI = [
         ],
       },
     ],
+  },
+] as const;
+
+// ── SyndicateGovernor ──
+
+export const SYNDICATE_GOVERNOR_ABI = [
+  // Proposal lifecycle
+  {
+    name: "propose",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "metadataURI", type: "string" },
+      { name: "performanceFeeBps", type: "uint256" },
+      { name: "strategyDuration", type: "uint256" },
+      {
+        name: "calls",
+        type: "tuple[]",
+        components: [
+          { name: "target", type: "address" },
+          { name: "data", type: "bytes" },
+          { name: "value", type: "uint256" },
+        ],
+      },
+      { name: "splitIndex", type: "uint256" },
+    ],
+    outputs: [{ name: "proposalId", type: "uint256" }],
+  },
+  {
+    name: "vote",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "proposalId", type: "uint256" },
+      { name: "support", type: "bool" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "executeProposal",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "settleProposal",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "settleByAgent",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "proposalId", type: "uint256" },
+      {
+        name: "calls",
+        type: "tuple[]",
+        components: [
+          { name: "target", type: "address" },
+          { name: "data", type: "bytes" },
+          { name: "value", type: "uint256" },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
+    name: "emergencySettle",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "proposalId", type: "uint256" },
+      {
+        name: "calls",
+        type: "tuple[]",
+        components: [
+          { name: "target", type: "address" },
+          { name: "data", type: "bytes" },
+          { name: "value", type: "uint256" },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
+    name: "cancelProposal",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "emergencyCancel",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [],
+  },
+  // Views
+  {
+    name: "getProposal",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "id", type: "uint256" },
+          { name: "proposer", type: "address" },
+          { name: "vault", type: "address" },
+          { name: "metadataURI", type: "string" },
+          { name: "performanceFeeBps", type: "uint256" },
+          { name: "splitIndex", type: "uint256" },
+          { name: "strategyDuration", type: "uint256" },
+          { name: "votesFor", type: "uint256" },
+          { name: "votesAgainst", type: "uint256" },
+          { name: "snapshotTimestamp", type: "uint256" },
+          { name: "voteEnd", type: "uint256" },
+          { name: "executeBy", type: "uint256" },
+          { name: "executedAt", type: "uint256" },
+          { name: "state", type: "uint8" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "getProposalState",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint8" }],
+  },
+  {
+    name: "getProposalCalls",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple[]",
+        components: [
+          { name: "target", type: "address" },
+          { name: "data", type: "bytes" },
+          { name: "value", type: "uint256" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "getVoteWeight",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "proposalId", type: "uint256" },
+      { name: "voter", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "hasVoted",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "proposalId", type: "uint256" },
+      { name: "voter", type: "address" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "proposalCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "getGovernorParams",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "votingPeriod", type: "uint256" },
+          { name: "executionWindow", type: "uint256" },
+          { name: "quorumBps", type: "uint256" },
+          { name: "maxPerformanceFeeBps", type: "uint256" },
+          { name: "maxStrategyDuration", type: "uint256" },
+          { name: "cooldownPeriod", type: "uint256" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "getRegisteredVaults",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address[]" }],
+  },
+  {
+    name: "getActiveProposal",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "vault", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "getCooldownEnd",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "vault", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "getCapitalSnapshot",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "isRegisteredVault",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "vault", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  // Vault management
+  {
+    name: "addVault",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "vault", type: "address" }],
+    outputs: [],
+  },
+  {
+    name: "removeVault",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "vault", type: "address" }],
+    outputs: [],
+  },
+  // Parameter setters (owner-only)
+  {
+    name: "setVotingPeriod",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newVotingPeriod", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "setExecutionWindow",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newExecutionWindow", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "setQuorumBps",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newQuorumBps", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "setMaxPerformanceFeeBps",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newMaxPerformanceFeeBps", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "setMaxStrategyDuration",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newMaxStrategyDuration", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "setCooldownPeriod",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newCooldownPeriod", type: "uint256" }],
+    outputs: [],
   },
 ] as const;
 

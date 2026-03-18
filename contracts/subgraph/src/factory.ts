@@ -5,7 +5,7 @@ import {
   SyndicateDeactivated,
 } from "../generated/SyndicateFactory/SyndicateFactory";
 import { SyndicateVault as SyndicateVaultTemplate } from "../generated/templates";
-import { Syndicate } from "../generated/schema";
+import { Syndicate, VaultLookup } from "../generated/schema";
 
 export function handleSyndicateCreated(event: SyndicateCreated): void {
   let syndicate = new Syndicate(event.params.id.toString());
@@ -16,10 +16,16 @@ export function handleSyndicateCreated(event: SyndicateCreated): void {
   syndicate.subdomain = event.params.subdomain;
   syndicate.createdAt = event.block.timestamp;
   syndicate.active = true;
+  syndicate.redemptionsLocked = false;
   syndicate.totalDeposits = BigDecimal.zero();
   syndicate.totalWithdrawals = BigDecimal.zero();
 
   syndicate.save();
+
+  // Create reverse lookup for governor handlers to resolve vault → syndicate
+  let lookup = new VaultLookup(event.params.vault.toHexString());
+  lookup.syndicate = event.params.id.toString();
+  lookup.save();
 
   // Pass syndicateId via context so vault handlers can look it up in O(1)
   let context = new DataSourceContext();

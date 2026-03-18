@@ -142,20 +142,7 @@ export async function setTextRecord(
   const l2Registry = ENS().L2_REGISTRY;
   const node = getSubdomainNode(subdomain);
 
-  // Ensure the vault has L2Registry in its allowed targets
   vaultLib.setVaultAddress(vaultAddress);
-  try {
-    const addTargetHash = await vaultLib.addTarget(l2Registry);
-    // Wait for the addTarget tx to be mined before calling executeBatch,
-    // otherwise the node simulates executeBatch against pre-addTarget state
-    await waitForTx(addTargetHash);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // TargetAlreadyAllowed() — already in the allowlist, safe to continue
-    if (!msg.includes("0xff0e53f8") && !msg.includes("TargetAlreadyAllowed")) {
-      throw err;
-    }
-  }
 
   // Encode the L2Registry.setText call
   const setTextData = encodeFunctionData({
@@ -164,10 +151,9 @@ export async function setTextRecord(
     args: [node, key, value],
   });
 
-  // Route through vault.executeBatch with assetAmount=0 (no spend tracking)
+  // Route through vault.executeBatch (owner only)
   return vaultLib.executeBatch(
     [{ target: l2Registry, data: setTextData, value: 0n }],
-    0n,
   );
 }
 

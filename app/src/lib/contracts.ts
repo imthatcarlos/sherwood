@@ -69,7 +69,7 @@ const BASE_ADDRESSES: ChainAddresses = {
 };
 
 const BASE_SEPOLIA_ADDRESSES: ChainAddresses = {
-  factory: "0xc705F04fF2781aF9bB53ba416Cb32A29540c4624",
+  factory: "0x60bf54dDce61ece85BE5e66CBaA17cC312DEa6C8",
   usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   l2Registry: "0x06eb7b85b59bc3e50fe4837be776cdd26de602cf",
   identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
@@ -185,23 +185,6 @@ export const SYNDICATE_VAULT_ABI = [
   },
   // Views
   {
-    name: "getSyndicateCaps",
-    type: "function",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [
-      {
-        name: "",
-        type: "tuple",
-        components: [
-          { name: "maxPerTx", type: "uint256" },
-          { name: "maxDailyTotal", type: "uint256" },
-          { name: "maxBorrowRatio", type: "uint256" },
-        ],
-      },
-    ],
-  },
-  {
     name: "getAgentCount",
     type: "function",
     stateMutability: "view",
@@ -228,28 +211,10 @@ export const SYNDICATE_VAULT_ABI = [
           { name: "agentId", type: "uint256" },
           { name: "pkpAddress", type: "address" },
           { name: "operatorEOA", type: "address" },
-          { name: "maxPerTx", type: "uint256" },
-          { name: "dailyLimit", type: "uint256" },
-          { name: "spentToday", type: "uint256" },
-          { name: "lastResetDay", type: "uint256" },
           { name: "active", type: "bool" },
         ],
       },
     ],
-  },
-  {
-    name: "getDailySpendTotal",
-    type: "function",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    name: "getAllowedTargets",
-    type: "function",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address[]" }],
   },
   {
     name: "openDeposits",
@@ -272,7 +237,29 @@ export const SYNDICATE_VAULT_ABI = [
     inputs: [],
     outputs: [{ name: "", type: "address[]" }],
   },
-  // OZ inherited (not in CLI ABI)
+  // Governor integration
+  {
+    name: "governor",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    name: "redemptionsLocked",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "managementFeeBps",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  // OZ inherited
   {
     name: "owner",
     type: "function",

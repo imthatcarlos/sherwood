@@ -54,7 +54,8 @@ contract SyndicateGovernorTest is Test {
         SyndicateVault vaultImpl = new SyndicateVault();
         bytes memory vaultInit = abi.encodeCall(
             SyndicateVault.initialize,
-            (ISyndicateVault.InitParams({
+            (
+                ISyndicateVault.InitParams({
                     asset: address(usdc),
                     name: "Sherwood Vault",
                     symbol: "swUSDC",
@@ -64,7 +65,8 @@ contract SyndicateGovernorTest is Test {
                     agentRegistry: address(agentRegistry),
                     governor: address(0),
                     managementFeeBps: 50
-                }))
+                })
+            )
         );
         vault = SyndicateVault(payable(address(new ERC1967Proxy(address(vaultImpl), vaultInit))));
 
@@ -123,11 +125,15 @@ contract SyndicateGovernorTest is Test {
         calls = new BatchExecutorLib.Call[](2);
         // Execute call: approve targetToken to spend vault's USDC
         calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)),
+            value: 0
         });
         // Settle call: revoke approval
         calls[1] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
+            value: 0
         });
 
         vm.prank(agent);
@@ -161,7 +167,9 @@ contract SyndicateGovernorTest is Test {
     function _simpleSettleCalls() internal view returns (BatchExecutorLib.Call[] memory) {
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](1);
         calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
+            value: 0
         });
         return calls;
     }
@@ -985,7 +993,8 @@ contract SyndicateGovernorTest is Test {
         SyndicateVault vaultImpl2 = new SyndicateVault();
         bytes memory vault2Init = abi.encodeCall(
             SyndicateVault.initialize,
-            (ISyndicateVault.InitParams({
+            (
+                ISyndicateVault.InitParams({
                     asset: address(usdc),
                     name: "Vault B",
                     symbol: "swUSDC-B",
@@ -995,7 +1004,8 @@ contract SyndicateGovernorTest is Test {
                     agentRegistry: address(agentRegistry),
                     governor: address(governor),
                     managementFeeBps: 50
-                }))
+                })
+            )
         );
         SyndicateVault vault2 = SyndicateVault(payable(address(new ERC1967Proxy(address(vaultImpl2), vault2Init))));
 
@@ -1023,18 +1033,26 @@ contract SyndicateGovernorTest is Test {
         // Create proposals on BOTH vaults
         BatchExecutorLib.Call[] memory calls1 = new BatchExecutorLib.Call[](2);
         calls1[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)),
+            value: 0
         });
         calls1[1] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
+            value: 0
         });
 
         BatchExecutorLib.Call[] memory calls2 = new BatchExecutorLib.Call[](2);
         calls2[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 30_000e6)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 30_000e6)),
+            value: 0
         });
         calls2[1] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
+            target: address(usdc),
+            data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
+            value: 0
         });
 
         // Propose on vault1

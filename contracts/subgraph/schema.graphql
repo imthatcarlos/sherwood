@@ -9,6 +9,7 @@ type Syndicate @entity(immutable: false) {
   subdomain: String!
   createdAt: BigInt!
   active: Boolean!
+  redemptionsLocked: Boolean!
 
   # Aggregated stats
   totalDeposits: BigDecimal!
@@ -18,8 +19,17 @@ type Syndicate @entity(immutable: false) {
   agents: [Agent!]! @derivedFrom(field: "syndicate")
   deposits: [Deposit!]! @derivedFrom(field: "syndicate")
   withdrawals: [Withdrawal!]! @derivedFrom(field: "syndicate")
-  batchExecutions: [BatchExecution!]! @derivedFrom(field: "syndicate")
   depositors: [Depositor!]! @derivedFrom(field: "syndicate")
+  proposals: [Proposal!]! @derivedFrom(field: "syndicate")
+}
+
+"""
+VaultLookup — reverse mapping from vault address to syndicate.
+Used by governor handlers to resolve syndicate from vault address.
+"""
+type VaultLookup @entity(immutable: true) {
+  id: ID! # vault address (lowercase hex)
+  syndicate: Syndicate!
 }
 
 """
@@ -31,16 +41,12 @@ type Agent @entity(immutable: false) {
   agentId: BigInt!
   pkpAddress: Bytes!
   operatorEOA: Bytes!
-  maxPerTx: BigInt!
-  dailyLimit: BigInt!
   active: Boolean!
   registeredAt: BigInt!
 
   # Aggregated stats
   totalBatches: BigInt!
   totalAssetAmount: BigInt!
-
-  batchExecutions: [BatchExecution!]! @derivedFrom(field: "agent")
 }
 
 """
@@ -75,20 +81,6 @@ type Withdrawal @entity(immutable: true) {
 }
 
 """
-BatchExecution — agent executes a batch of protocol calls.
-"""
-type BatchExecution @entity(immutable: true) {
-  id: ID! # tx hash - log index
-  syndicate: Syndicate!
-  agent: Agent!
-  callCount: BigInt!
-  assetAmount: BigInt!
-  timestamp: BigInt!
-  blockNumber: BigInt!
-  txHash: Bytes!
-}
-
-"""
 Depositor — an address approved to deposit into a vault.
 """
 type Depositor @entity(immutable: false) {
@@ -110,5 +102,42 @@ type Ragequit @entity(immutable: true) {
   assets: BigInt!
   timestamp: BigInt!
   blockNumber: BigInt!
+  txHash: Bytes!
+}
+
+"""
+Proposal — an agent's strategy proposal submitted to the governor.
+"""
+type Proposal @entity(immutable: false) {
+  id: ID! # proposalId
+  syndicate: Syndicate!
+  vault: Bytes!
+  proposer: Bytes!
+  metadataURI: String!
+  performanceFeeBps: BigInt!
+  strategyDuration: BigInt!
+  splitIndex: BigInt!
+  callCount: BigInt!
+  state: String! # Pending, Approved, Rejected, Expired, Executed, Settled, Cancelled
+  capitalSnapshot: BigInt
+  finalPnl: BigInt
+  performanceFee: BigInt
+  createdAt: BigInt!
+  executedAt: BigInt
+  settledAt: BigInt
+  txHash: Bytes!
+  votes: [Vote!]! @derivedFrom(field: "proposal")
+}
+
+"""
+Vote — a shareholder's vote on a proposal.
+"""
+type Vote @entity(immutable: true) {
+  id: ID! # proposalId-voter
+  proposal: Proposal!
+  voter: Bytes!
+  support: Boolean!
+  weight: BigInt!
+  timestamp: BigInt!
   txHash: Bytes!
 }

@@ -2,23 +2,21 @@ import { BigDecimal, BigInt, dataSource } from "@graphprotocol/graph-ts";
 import {
   AgentRegistered,
   AgentRemoved,
-  BatchExecuted,
   Deposit as DepositEvent,
   Withdraw as WithdrawEvent,
   Ragequit as RagequitEvent,
   DepositorApproved,
   DepositorRemoved,
-  SyndicateCapsUpdated,
-  TargetAdded,
-  TargetRemoved,
   OpenDepositsUpdated,
+  GovernorUpdated,
+  RedemptionsLockedEvent,
+  RedemptionsUnlockedEvent,
 } from "../generated/templates/SyndicateVault/SyndicateVault";
 import {
   Syndicate,
   Agent,
   Deposit,
   Withdrawal,
-  BatchExecution,
   Depositor,
   Ragequit,
 } from "../generated/schema";
@@ -48,8 +46,6 @@ export function handleAgentRegistered(event: AgentRegistered): void {
   agent.agentId = event.params.agentId;
   agent.pkpAddress = event.params.pkpAddress;
   agent.operatorEOA = event.params.operatorEOA;
-  agent.maxPerTx = event.params.maxPerTx;
-  agent.dailyLimit = event.params.dailyLimit;
   agent.active = true;
   agent.registeredAt = event.block.timestamp;
   agent.totalBatches = BigInt.zero();
@@ -65,35 +61,6 @@ export function handleAgentRemoved(event: AgentRemoved): void {
 
   agent.active = false;
   agent.save();
-}
-
-// ── Batch Execution ──
-
-export function handleBatchExecuted(event: BatchExecuted): void {
-  let syndicateId = getSyndicateId();
-
-  let id = event.transaction.hash.toHexString() + "-" + event.logIndex.toString();
-  let execution = new BatchExecution(id);
-
-  let agentId = event.address.toHexString() + "-" + event.params.agent.toHexString();
-
-  execution.syndicate = syndicateId;
-  execution.agent = agentId;
-  execution.callCount = event.params.callCount;
-  execution.assetAmount = event.params.assetAmount;
-  execution.timestamp = event.block.timestamp;
-  execution.blockNumber = event.block.number;
-  execution.txHash = event.transaction.hash;
-
-  execution.save();
-
-  // Update agent stats
-  let agent = Agent.load(agentId);
-  if (agent != null) {
-    agent.totalBatches = agent.totalBatches.plus(BigInt.fromI32(1));
-    agent.totalAssetAmount = agent.totalAssetAmount.plus(event.params.assetAmount);
-    agent.save();
-  }
 }
 
 // ── LP Events (ERC-4626) ──
@@ -197,21 +164,32 @@ export function handleDepositorRemoved(event: DepositorRemoved): void {
   depositor.save();
 }
 
-// ── Config Changes (logged but not stored as separate entities) ──
-
-export function handleSyndicateCapsUpdated(event: SyndicateCapsUpdated): void {
-  // Caps are stored on-chain, read via contract calls.
-  // We log the event for indexing but don't store caps as entities.
-}
-
-export function handleTargetAdded(event: TargetAdded): void {
-  // Target allowlist changes — indexed for event filtering.
-}
-
-export function handleTargetRemoved(event: TargetRemoved): void {
-  // Target allowlist changes — indexed for event filtering.
-}
+// ── Config Changes ──
 
 export function handleOpenDepositsUpdated(event: OpenDepositsUpdated): void {
   // Open deposits toggle — indexed for event filtering.
+}
+
+// ── Governor Integration ──
+
+export function handleGovernorUpdated(event: GovernorUpdated): void {
+  // Governor address change — indexed for event filtering.
+}
+
+export function handleRedemptionsLocked(event: RedemptionsLockedEvent): void {
+  let syndicateId = getSyndicateId();
+  let syndicate = Syndicate.load(syndicateId);
+  if (syndicate == null) return;
+
+  syndicate.redemptionsLocked = true;
+  syndicate.save();
+}
+
+export function handleRedemptionsUnlocked(event: RedemptionsUnlockedEvent): void {
+  let syndicateId = getSyndicateId();
+  let syndicate = Syndicate.load(syndicateId);
+  if (syndicate == null) return;
+
+  syndicate.redemptionsLocked = false;
+  syndicate.save();
 }

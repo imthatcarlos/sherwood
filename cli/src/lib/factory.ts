@@ -28,10 +28,6 @@ export interface CreateSyndicateParams {
   asset: Address;
   name: string;
   symbol: string;
-  maxPerTx: bigint;
-  maxDailyTotal: bigint;
-  maxBorrowRatio: bigint;
-  initialTargets: Address[];
   openDeposits: boolean;
   subdomain: string;
 }
@@ -68,12 +64,6 @@ export async function createSyndicate(params: CreateSyndicateParams): Promise<Cr
         asset: params.asset,
         name: params.name,
         symbol: params.symbol,
-        caps: {
-          maxPerTx: params.maxPerTx,
-          maxDailyTotal: params.maxDailyTotal,
-          maxBorrowRatio: params.maxBorrowRatio,
-        },
-        initialTargets: params.initialTargets,
         openDeposits: params.openDeposits,
         subdomain: params.subdomain,
       },
