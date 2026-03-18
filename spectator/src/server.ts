@@ -222,8 +222,8 @@ export function startServer(
     }
   });
 
-  server.listen(port, () => {
-    console.log(`Spectator server listening on port ${port}`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Spectator server listening on 0.0.0.0:${port}`);
   });
 
   return server;
