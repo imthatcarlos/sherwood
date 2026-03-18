@@ -1,6 +1,6 @@
 import { type Address } from "viem";
 import { type ProposalData, ProposalState } from "@/lib/governor-data";
-import { truncateAddress, formatBps } from "@/lib/contracts";
+import { truncateAddress, formatUSDC, formatBps } from "@/lib/contracts";
 
 interface AgentStatsProps {
   proposals: ProposalData[];
@@ -9,15 +9,13 @@ interface AgentStatsProps {
 interface AgentStat {
   address: Address;
   totalProposals: number;
-  executed: number;
   settled: number;
   rejected: number;
-  cancelled: number;
+  totalPnl: bigint;
   avgFeeBps: number;
 }
 
 export default function AgentStats({ proposals }: AgentStatsProps) {
-  // Aggregate per-agent stats
   const statsMap = new Map<string, AgentStat>();
 
   for (const p of proposals) {
@@ -27,10 +25,9 @@ export default function AgentStats({ proposals }: AgentStatsProps) {
       stat = {
         address: p.proposer,
         totalProposals: 0,
-        executed: 0,
         settled: 0,
         rejected: 0,
-        cancelled: 0,
+        totalPnl: 0n,
         avgFeeBps: 0,
       };
       statsMap.set(key, stat);
@@ -39,16 +36,12 @@ export default function AgentStats({ proposals }: AgentStatsProps) {
     stat.totalProposals++;
 
     switch (p.computedState) {
-      case ProposalState.Executed:
       case ProposalState.Settled:
-        stat.executed++;
-        if (p.computedState === ProposalState.Settled) stat.settled++;
+        stat.settled++;
+        if (p.pnl !== undefined) stat.totalPnl += p.pnl;
         break;
       case ProposalState.Rejected:
         stat.rejected++;
-        break;
-      case ProposalState.Cancelled:
-        stat.cancelled++;
         break;
     }
   }
@@ -66,7 +59,7 @@ export default function AgentStats({ proposals }: AgentStatsProps) {
   }
 
   const sorted = Array.from(statsMap.values()).sort(
-    (a, b) => b.settled - a.settled,
+    (a, b) => Number(b.totalPnl - a.totalPnl),
   );
 
   return (
@@ -98,23 +91,41 @@ export default function AgentStats({ proposals }: AgentStatsProps) {
               <th>Proposals</th>
               <th>Settled</th>
               <th>Rejected</th>
+              <th>Total P&L</th>
               <th>Avg Fee</th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((stat) => (
-              <tr key={stat.address}>
-                <td>{truncateAddress(stat.address)}</td>
-                <td>{stat.totalProposals}</td>
-                <td style={{ color: "var(--color-accent)" }}>
-                  {stat.settled}
-                </td>
-                <td style={{ color: stat.rejected > 0 ? "#ff4d4d" : undefined }}>
-                  {stat.rejected}
-                </td>
-                <td>{formatBps(BigInt(stat.avgFeeBps))}</td>
-              </tr>
-            ))}
+            {sorted.map((stat) => {
+              const pnlPositive = stat.totalPnl > 0n;
+              const pnlNegative = stat.totalPnl < 0n;
+              const abs = stat.totalPnl < 0n ? -stat.totalPnl : stat.totalPnl;
+              const pnlText = stat.totalPnl === 0n
+                ? "—"
+                : `${pnlPositive ? "+" : "-"}${formatUSDC(abs)}`;
+              const pnlColor = pnlPositive
+                ? "var(--color-accent)"
+                : pnlNegative
+                  ? "#ff4d4d"
+                  : "rgba(255,255,255,0.3)";
+
+              return (
+                <tr key={stat.address}>
+                  <td>{truncateAddress(stat.address)}</td>
+                  <td>{stat.totalProposals}</td>
+                  <td style={{ color: "var(--color-accent)" }}>
+                    {stat.settled}
+                  </td>
+                  <td style={{ color: stat.rejected > 0 ? "#ff4d4d" : undefined }}>
+                    {stat.rejected}
+                  </td>
+                  <td style={{ color: pnlColor, fontWeight: 600 }}>
+                    {pnlText}
+                  </td>
+                  <td>{formatBps(BigInt(stat.avgFeeBps))}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

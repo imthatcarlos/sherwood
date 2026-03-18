@@ -5,7 +5,7 @@ import {
   ProposalState,
   formatTimeRemaining,
 } from "@/lib/governor-data";
-import { truncateAddress, formatUSDC, formatBps } from "@/lib/contracts";
+import { truncateAddress, formatUSDC, formatBps, formatShares } from "@/lib/contracts";
 import VoteButton from "./VoteButton";
 
 interface ProposalCardProps {
@@ -118,7 +118,7 @@ export default function ProposalCard({
               FOR {forPct.toFixed(1)}%
             </span>
             <span>
-              {formatUSDC(totalVotes)} total votes
+              {formatShares(totalVotes)} shares voted
             </span>
             <span style={{ color: "#ff4d4d" }}>
               {againstPct.toFixed(1)}% AGAINST

@@ -510,3 +510,12 @@ export function formatUSDC(raw: bigint): string {
 export function formatBps(bps: bigint): string {
   return `${(Number(bps) / 100).toFixed(1)}%`;
 }
+
+/** Format vault shares (6 decimals) to a readable number. */
+export function formatShares(raw: bigint): string {
+  const num = Number(raw) / 1e6;
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+}

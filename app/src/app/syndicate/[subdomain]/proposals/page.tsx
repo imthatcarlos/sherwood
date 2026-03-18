@@ -120,6 +120,7 @@ function buildMockData(vault: Address): GovernorData {
       state: ProposalState.Settled,
       computedState: ProposalState.Settled,
       capitalSnapshot: 40_000_000_000n,
+      pnl: 3_200_000_000n, // +$3,200 profit
       metadata: {
         title: "Uniswap V3 ETH/USDC LP",
         description: "",
@@ -164,6 +165,7 @@ function buildMockData(vault: Address): GovernorData {
       state: ProposalState.Settled,
       computedState: ProposalState.Settled,
       capitalSnapshot: 25_000_000_000n,
+      pnl: -1_800_000_000n, // -$1,800 loss
       metadata: {
         title: "Morpho USDC Vault Deposit",
         description: "",
@@ -186,6 +188,7 @@ function buildMockData(vault: Address): GovernorData {
       state: ProposalState.Settled,
       computedState: ProposalState.Settled,
       capitalSnapshot: 20_000_000_000n,
+      pnl: 1_400_000_000n, // +$1,400 profit
       metadata: {
         title: "Moonwell USDC Supply",
         description: "",

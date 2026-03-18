@@ -10,16 +10,16 @@ interface ProposalHistoryProps {
   proposals: ProposalData[];
 }
 
-function StateBadge({ state, pnl }: { state: ProposalState; pnl: bigint }) {
+function StateBadge({ state, pnl }: { state: ProposalState; pnl?: bigint }) {
   let bg: string;
   let color: string;
 
   switch (state) {
     case ProposalState.Settled:
-      if (pnl > 0n) {
+      if (pnl !== undefined && pnl > 0n) {
         bg = "rgba(45, 212, 45, 0.2)";
         color = "var(--color-accent)";
-      } else if (pnl < 0n) {
+      } else if (pnl !== undefined && pnl < 0n) {
         bg = "rgba(255, 77, 77, 0.2)";
         color = "#ff4d4d";
       } else {
@@ -56,6 +56,14 @@ function StateBadge({ state, pnl }: { state: ProposalState; pnl: bigint }) {
       {PROPOSAL_STATE_LABELS[state]}
     </span>
   );
+}
+
+function formatPnL(pnl: bigint): { text: string; color: string } {
+  const abs = pnl < 0n ? -pnl : pnl;
+  const formatted = formatUSDC(abs);
+  if (pnl > 0n) return { text: `+${formatted}`, color: "var(--color-accent)" };
+  if (pnl < 0n) return { text: `-${formatted}`, color: "#ff4d4d" };
+  return { text: formatted, color: "rgba(255,255,255,0.5)" };
 }
 
 export default function ProposalHistory({ proposals }: ProposalHistoryProps) {
@@ -96,25 +104,36 @@ export default function ProposalHistory({ proposals }: ProposalHistoryProps) {
               <th>State</th>
               <th>Agent</th>
               <th>Capital</th>
+              <th>P&L</th>
               <th>Fee</th>
               <th>Duration</th>
             </tr>
           </thead>
           <tbody>
             {historical.map((p) => {
-              // P&L not directly available without settlement event data,
-              // but we show capital snapshot for context
+              const pnlDisplay = p.pnl !== undefined
+                ? formatPnL(p.pnl)
+                : null;
+
               return (
                 <tr key={p.id.toString()}>
                   <td>{p.id.toString()}</td>
                   <td>
-                    <StateBadge state={p.computedState} pnl={0n} />
+                    <StateBadge state={p.computedState} pnl={p.pnl} />
                   </td>
                   <td>{truncateAddress(p.proposer)}</td>
                   <td>
                     {p.capitalSnapshot > 0n
                       ? formatUSDC(p.capitalSnapshot)
                       : "—"}
+                  </td>
+                  <td
+                    style={{
+                      color: pnlDisplay?.color ?? "rgba(255,255,255,0.3)",
+                      fontWeight: pnlDisplay ? 600 : 400,
+                    }}
+                  >
+                    {pnlDisplay?.text ?? "—"}
                   </td>
                   <td>{formatBps(p.performanceFeeBps)}</td>
                   <td>{formatDuration(p.strategyDuration)}</td>

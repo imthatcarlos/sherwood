@@ -2,7 +2,7 @@
 
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { type Address } from "viem";
-import { SYNDICATE_GOVERNOR_ABI, formatUSDC } from "@/lib/contracts";
+import { SYNDICATE_GOVERNOR_ABI, formatShares } from "@/lib/contracts";
 
 interface VoteButtonProps {
   governorAddress: Address;
@@ -66,12 +66,16 @@ export default function VoteButton({
       <div
         style={{
           fontSize: "11px",
-          color: "rgba(255,255,255,0.3)",
+          color: "rgba(255,255,255,0.4)",
           fontFamily: "var(--font-jetbrains-mono), monospace",
-          padding: "0.5rem 0",
+          border: "1px solid rgba(255,255,255,0.15)",
+          display: "inline-block",
+          padding: "0.4rem 0.8rem",
+          cursor: "default",
+          letterSpacing: "0.05em",
         }}
       >
-        Connect wallet to vote
+        [ CONNECT WALLET TO VOTE ]
       </div>
     );
   }
@@ -132,7 +136,7 @@ export default function VoteButton({
             marginBottom: "0.5rem",
           }}
         >
-          Vote power: {formatUSDC(voteWeight)} shares
+          Vote power: {formatShares(voteWeight)} shares
         </div>
       )}
       <div style={{ display: "flex", gap: "0.5rem" }}>

@@ -59,6 +59,7 @@ export interface ProposalData {
   computedState: ProposalState;
   capitalSnapshot: bigint;
   metadata: ProposalMetadata | null;
+  pnl?: bigint; // P&L in deposit asset terms (positive = profit, negative = loss)
 }
 
 export interface GovernorParams {
