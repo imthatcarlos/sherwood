@@ -81,6 +81,9 @@ contract DeployTestnet is Script {
             new SyndicateFactory(address(executorLib), address(vaultImpl), L2_REGISTRAR, AGENT_REGISTRY, governorProxy);
         console.log("SyndicateFactory:", address(factory));
 
+        // Authorize factory to register new vaults on governor
+        ISyndicateGovernor(governorProxy).setFactory(address(factory));
+
         // 4. Deploy StrategyRegistry (UUPS proxy)
         StrategyRegistry registryImpl = new StrategyRegistry();
         bytes memory registryInitData = abi.encodeCall(StrategyRegistry.initialize, (deployer, deployer));

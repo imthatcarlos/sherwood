@@ -93,6 +93,9 @@ contract Deploy is Script {
             new SyndicateFactory(address(executorLib), address(vaultImpl), L2_REGISTRAR, AGENT_REGISTRY, governorProxy);
         console.log("SyndicateFactory:", address(factory));
 
+        // Authorize factory to register new vaults on governor
+        ISyndicateGovernor(governorProxy).setFactory(address(factory));
+
         // 4. Create first syndicate via factory
         // NOTE: creatorAgentId must be set to the deployer's ERC-8004 agent ID
         uint256 creatorAgentId = vm.envUint("CREATOR_AGENT_ID");
