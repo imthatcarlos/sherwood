@@ -7,6 +7,7 @@ import {SyndicateVault} from "../../src/SyndicateVault.sol";
 import {BatchExecutorLib} from "../../src/BatchExecutorLib.sol";
 import {SyndicateFactory} from "../../src/SyndicateFactory.sol";
 import {SyndicateGovernor} from "../../src/SyndicateGovernor.sol";
+import {ISyndicateGovernor} from "../../src/interfaces/ISyndicateGovernor.sol";
 import {StrategyRegistry} from "../../src/StrategyRegistry.sol";
 
 /**
@@ -59,18 +60,18 @@ contract DeployTestnet is Script {
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInitData = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (
-                deployer, // owner
-                1 days, // votingPeriod
-                1 days, // executionWindow
-                4000, // quorumBps (40%)
-                3000, // maxPerformanceFeeBps (30%)
-                1 days, // cooldownPeriod
-                1 days, // minStrategyDuration
-                7 days, // maxStrategyDuration
-                48 hours, // collaborationWindow
-                5 // maxCoProposers
-            )
+            (ISyndicateGovernor.InitParams({
+                    owner: deployer,
+                    votingPeriod: 1 days,
+                    executionWindow: 1 days,
+                    quorumBps: 4000,
+                    maxPerformanceFeeBps: 3000,
+                    cooldownPeriod: 1 days,
+                    collaborationWindow: 48 hours,
+                    maxCoProposers: 5,
+                    minStrategyDuration: 1 days,
+                    maxStrategyDuration: 7 days
+                }))
         );
         address governorProxy = address(new ERC1967Proxy(address(govImpl), govInitData));
         console.log("SyndicateGovernor:", governorProxy);

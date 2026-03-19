@@ -97,46 +97,36 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
         _disableInitializers();
     }
 
-    function initialize(
-        address owner_,
-        uint256 votingPeriod_,
-        uint256 executionWindow_,
-        uint256 quorumBps_,
-        uint256 maxPerformanceFeeBps_,
-        uint256 cooldownPeriod_,
-        uint256 minStrategyDuration_,
-        uint256 maxStrategyDuration_,
-        uint256 collaborationWindow_,
-        uint256 maxCoProposers_
-    ) external initializer {
-        if (owner_ == address(0)) revert ZeroAddress();
+    function initialize(InitParams memory p) external initializer {
+        if (p.owner == address(0)) revert ZeroAddress();
         if (
-            minStrategyDuration_ < ABSOLUTE_MIN_STRATEGY_DURATION
-                || maxStrategyDuration_ > ABSOLUTE_MAX_STRATEGY_DURATION || minStrategyDuration_ > maxStrategyDuration_
+            p.minStrategyDuration < ABSOLUTE_MIN_STRATEGY_DURATION
+                || p.maxStrategyDuration > ABSOLUTE_MAX_STRATEGY_DURATION
+                || p.minStrategyDuration > p.maxStrategyDuration
         ) revert InvalidStrategyDurationBounds();
-        if (collaborationWindow_ < MIN_COLLABORATION_WINDOW || collaborationWindow_ > MAX_COLLABORATION_WINDOW) {
+        if (p.collaborationWindow < MIN_COLLABORATION_WINDOW || p.collaborationWindow > MAX_COLLABORATION_WINDOW) {
             revert InvalidCollaborationWindow();
         }
-        if (maxCoProposers_ == 0 || maxCoProposers_ > ABSOLUTE_MAX_CO_PROPOSERS) revert InvalidMaxCoProposers();
+        if (p.maxCoProposers == 0 || p.maxCoProposers > ABSOLUTE_MAX_CO_PROPOSERS) revert InvalidMaxCoProposers();
 
-        __Ownable_init(owner_);
+        __Ownable_init(p.owner);
 
-        _validateVotingPeriod(votingPeriod_);
-        _validateExecutionWindow(executionWindow_);
-        _validateQuorumBps(quorumBps_);
-        _validateMaxPerformanceFeeBps(maxPerformanceFeeBps_);
-        _validateCooldownPeriod(cooldownPeriod_);
+        _validateVotingPeriod(p.votingPeriod);
+        _validateExecutionWindow(p.executionWindow);
+        _validateQuorumBps(p.quorumBps);
+        _validateMaxPerformanceFeeBps(p.maxPerformanceFeeBps);
+        _validateCooldownPeriod(p.cooldownPeriod);
 
         _params = GovernorParams({
-            votingPeriod: votingPeriod_,
-            executionWindow: executionWindow_,
-            quorumBps: quorumBps_,
-            maxPerformanceFeeBps: maxPerformanceFeeBps_,
-            cooldownPeriod: cooldownPeriod_,
-            collaborationWindow: collaborationWindow_,
-            maxCoProposers: maxCoProposers_,
-            minStrategyDuration: minStrategyDuration_,
-            maxStrategyDuration: maxStrategyDuration_
+            votingPeriod: p.votingPeriod,
+            executionWindow: p.executionWindow,
+            quorumBps: p.quorumBps,
+            maxPerformanceFeeBps: p.maxPerformanceFeeBps,
+            cooldownPeriod: p.cooldownPeriod,
+            collaborationWindow: p.collaborationWindow,
+            maxCoProposers: p.maxCoProposers,
+            minStrategyDuration: p.minStrategyDuration,
+            maxStrategyDuration: p.maxStrategyDuration
         });
     }
 

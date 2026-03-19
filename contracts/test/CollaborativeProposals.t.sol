@@ -56,18 +56,18 @@ contract CollaborativeProposalsTest is Test {
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (
-                owner,
-                VOTING_PERIOD,
-                EXECUTION_WINDOW,
-                QUORUM_BPS,
-                MAX_PERF_FEE_BPS,
-                COOLDOWN_PERIOD,
-                1 days,
-                7 days,
-                48 hours,
-                5
-            )
+            (ISyndicateGovernor.InitParams({
+                    owner: owner,
+                    votingPeriod: VOTING_PERIOD,
+                    executionWindow: EXECUTION_WINDOW,
+                    quorumBps: QUORUM_BPS,
+                    maxPerformanceFeeBps: MAX_PERF_FEE_BPS,
+                    cooldownPeriod: COOLDOWN_PERIOD,
+                    collaborationWindow: 48 hours,
+                    maxCoProposers: 5,
+                    minStrategyDuration: 1 days,
+                    maxStrategyDuration: 7 days
+                }))
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 

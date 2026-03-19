@@ -25,6 +25,19 @@ interface ISyndicateGovernor {
 
     // ── Structs ──
 
+    struct InitParams {
+        address owner;
+        uint256 votingPeriod;
+        uint256 executionWindow;
+        uint256 quorumBps;
+        uint256 maxPerformanceFeeBps;
+        uint256 cooldownPeriod;
+        uint256 collaborationWindow;
+        uint256 maxCoProposers;
+        uint256 minStrategyDuration;
+        uint256 maxStrategyDuration;
+    }
+
     struct GovernorParams {
         uint256 votingPeriod;
         uint256 executionWindow;
