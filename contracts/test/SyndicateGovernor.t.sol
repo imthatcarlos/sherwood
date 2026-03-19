@@ -46,6 +46,7 @@ contract SyndicateGovernorTest is Test {
     uint256 constant QUORUM_BPS = 4000; // 40%
     uint256 constant MAX_PERF_FEE_BPS = 3000; // 30%
     uint256 constant COOLDOWN_PERIOD = 1 days;
+    uint256 constant PARAM_CHANGE_DELAY = 1 days;
 
     // ── A simple target contract for testing batch execution ──
     ERC20Mock public targetToken;
@@ -80,7 +81,8 @@ contract SyndicateGovernorTest is Test {
                     collaborationWindow: 48 hours,
                     maxCoProposers: 5,
                     minStrategyDuration: 1 days,
-                    maxStrategyDuration: 7 days
+                    maxStrategyDuration: 7 days,
+                    parameterChangeDelay: PARAM_CHANGE_DELAY
                 }))
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
@@ -147,28 +149,42 @@ contract SyndicateGovernorTest is Test {
             collaborationWindow: 48 hours,
             maxCoProposers: 5,
             minStrategyDuration: 1 days,
-            maxStrategyDuration: 7 days
+            maxStrategyDuration: 7 days,
+            parameterChangeDelay: PARAM_CHANGE_DELAY
         });
     }
 
-    /// @dev Create a simple proposal: "approve USDC to target" as execute, "approve 0" as settle
-    function _createSimpleProposal(uint256 perfFeeBps, uint256 duration)
-        internal
-        returns (uint256 proposalId, BatchExecutorLib.Call[] memory calls)
-    {
-        calls = new BatchExecutorLib.Call[](2);
-        // Execute call: approve targetToken to spend vault's USDC
+    /// @dev Create execute calls (approve USDC to target)
+    function _simpleExecuteCalls() internal view returns (BatchExecutorLib.Call[] memory) {
+        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](1);
         calls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
         });
-        // Settle call: revoke approval
-        calls[1] = BatchExecutorLib.Call({
+        return calls;
+    }
+
+    /// @dev Create settlement calls (revoke approval)
+    function _simpleSettlementCalls() internal view returns (BatchExecutorLib.Call[] memory) {
+        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](1);
+        calls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
         });
+        return calls;
+    }
 
+    /// @dev Create a simple proposal: "approve USDC to target" as execute, "approve 0" as settle
+    function _createSimpleProposal(uint256 perfFeeBps, uint256 duration) internal returns (uint256 proposalId) {
         vm.prank(agent);
-        proposalId =
-            governor.propose(address(vault), "ipfs://test", perfFeeBps, duration, calls, 1, _emptyCoProposers());
+        proposalId = governor.propose(
+            address(vault),
+            "ipfs://test",
+            perfFeeBps,
+            duration,
+            _simpleExecuteCalls(),
+            _simpleSettlementCalls(),
+            _emptyCoProposers(),
+            0
+        );
 
         // Mine a block so the snapshot block is in the past for voting
         vm.warp(block.timestamp + 1);
@@ -176,7 +192,7 @@ contract SyndicateGovernorTest is Test {
 
     /// @dev Create proposal, vote it through, and return proposal ID
     function _createApprovedProposal(uint256 perfFeeBps, uint256 duration) internal returns (uint256 proposalId) {
-        (proposalId,) = _createSimpleProposal(perfFeeBps, duration);
+        proposalId = _createSimpleProposal(perfFeeBps, duration);
 
         // Both LPs vote FOR
         vm.prank(lp1);
@@ -194,13 +210,18 @@ contract SyndicateGovernorTest is Test {
         governor.executeProposal(proposalId);
     }
 
-    /// @dev Build the settle calls matching the simple proposal
+    /// @dev Build the settle calls matching the simple proposal (alias for agent settle)
     function _simpleSettleCalls() internal view returns (BatchExecutorLib.Call[] memory) {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](1);
-        calls[0] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
-        });
-        return calls;
+        return _simpleSettlementCalls();
+    }
+
+    /// @dev Queue a parameter change, warp past delay, and finalize
+    function _queueAndFinalize(bytes32 paramKey, function(uint256) external setter, uint256 newValue) internal {
+        vm.startPrank(owner);
+        setter(newValue);
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        governor.finalizeParameterChange(paramKey);
+        vm.stopPrank();
     }
 
     // ==================== INITIALIZATION ====================
@@ -262,7 +283,7 @@ contract SyndicateGovernorTest is Test {
     // ==================== PROPOSE ====================
 
     function test_propose() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         assertEq(proposalId, 1);
         assertEq(governor.proposalCount(), 1);
@@ -272,91 +293,95 @@ contract SyndicateGovernorTest is Test {
         assertEq(p.vault, address(vault));
         assertEq(p.performanceFeeBps, 1500);
         assertEq(p.strategyDuration, 7 days);
-        assertEq(p.splitIndex, 1);
         assertEq(uint256(p.state), uint256(ISyndicateGovernor.ProposalState.Pending));
 
         BatchExecutorLib.Call[] memory calls = governor.getProposalCalls(proposalId);
-        assertEq(calls.length, 2);
+        assertEq(calls.length, 2); // 1 execute + 1 settlement
     }
 
     function test_propose_notRegisteredAgent_reverts() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
-        calls[1] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
 
         vm.prank(random);
         vm.expectRevert(ISyndicateGovernor.NotRegisteredAgent.selector);
-        governor.propose(address(vault), "ipfs://test", 1500, 7 days, calls, 1, _emptyCoProposers());
+        governor.propose(address(vault), "ipfs://test", 1500, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0);
     }
 
     function test_propose_vaultNotRegistered_reverts() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
-        calls[1] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
 
         vm.prank(agent);
         vm.expectRevert(ISyndicateGovernor.VaultNotRegistered.selector);
-        governor.propose(makeAddr("fakeVault"), "ipfs://test", 1500, 7 days, calls, 1, _emptyCoProposers());
+        governor.propose(
+            makeAddr("fakeVault"), "ipfs://test", 1500, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0
+        );
     }
 
     function test_propose_performanceFeeTooHigh_reverts() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
-        calls[1] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
 
         vm.prank(agent);
         vm.expectRevert(ISyndicateGovernor.PerformanceFeeTooHigh.selector);
-        governor.propose(address(vault), "ipfs://test", MAX_PERF_FEE_BPS + 1, 7 days, calls, 1, _emptyCoProposers());
+        governor.propose(
+            address(vault), "ipfs://test", MAX_PERF_FEE_BPS + 1, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0
+        );
     }
 
     function test_propose_strategyDurationTooLong_reverts() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
-        calls[1] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
 
         vm.prank(agent);
         vm.expectRevert(ISyndicateGovernor.StrategyDurationTooLong.selector);
-        governor.propose(address(vault), "ipfs://test", 1500, 8 days, calls, 1, _emptyCoProposers());
+        governor.propose(address(vault), "ipfs://test", 1500, 8 days, execCalls, settleCalls, _emptyCoProposers(), 0);
     }
 
     function test_propose_strategyDurationTooShort_reverts() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
-        calls[1] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
 
         vm.prank(agent);
         vm.expectRevert(ISyndicateGovernor.StrategyDurationTooShort.selector);
-        governor.propose(address(vault), "ipfs://test", 1500, 12 hours, calls, 1, _emptyCoProposers());
+        governor.propose(address(vault), "ipfs://test", 1500, 12 hours, execCalls, settleCalls, _emptyCoProposers(), 0);
     }
 
-    function test_propose_invalidSplitIndex_reverts() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
-        calls[1] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+    function test_propose_emptyExecuteCalls_reverts() public {
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](0);
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
 
-        // splitIndex = 0 (no execute calls)
         vm.prank(agent);
-        vm.expectRevert(ISyndicateGovernor.InvalidSplitIndex.selector);
-        governor.propose(address(vault), "ipfs://test", 1500, 7 days, calls, 0, _emptyCoProposers());
-
-        // splitIndex = calls.length (no settle calls)
-        vm.prank(agent);
-        vm.expectRevert(ISyndicateGovernor.InvalidSplitIndex.selector);
-        governor.propose(address(vault), "ipfs://test", 1500, 7 days, calls, 2, _emptyCoProposers());
+        vm.expectRevert(ISyndicateGovernor.EmptyExecuteCalls.selector);
+        governor.propose(address(vault), "ipfs://test", 1500, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0);
     }
 
-    function test_propose_emptyCalls_reverts() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](0);
+    function test_propose_emptySettlementCalls_reverts() public {
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](0);
 
         vm.prank(agent);
-        vm.expectRevert(ISyndicateGovernor.EmptyCalls.selector);
-        governor.propose(address(vault), "ipfs://test", 1500, 7 days, calls, 1, _emptyCoProposers());
+        vm.expectRevert(ISyndicateGovernor.EmptySettlementCalls.selector);
+        governor.propose(address(vault), "ipfs://test", 1500, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0);
     }
 
     // ==================== VOTING ====================
 
     function test_vote() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         vm.prank(lp1);
         governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
@@ -374,7 +399,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_vote_doubleVote_reverts() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         vm.prank(lp1);
         governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
@@ -385,7 +410,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_vote_noShares_reverts() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         vm.prank(random);
         vm.expectRevert(ISyndicateGovernor.NoVotingPower.selector);
@@ -393,7 +418,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_vote_afterVotingPeriod_reverts() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         vm.warp(block.timestamp + VOTING_PERIOD + 1);
 
@@ -403,7 +428,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_vote_snapshotPreventsTransferVoting() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         // LP1 votes first
         vm.prank(lp1);
@@ -440,7 +465,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_proposalState_rejected_noQuorum() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         // No votes at all — warp past voting period
         vm.warp(block.timestamp + VOTING_PERIOD + 1);
@@ -449,7 +474,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_proposalState_rejected_majorityAgainst() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         vm.prank(lp1);
         governor.vote(proposalId, ISyndicateGovernor.VoteType.Against); // 60k against
@@ -461,9 +486,9 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_proposalState_rejected_abstainOnly() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
-        // Both LPs abstain — meets quorum but votesFor (0) <= votesAgainst (0) → rejected
+        // Both LPs abstain — meets quorum but votesFor (0) <= votesAgainst (0) -> rejected
         vm.prank(lp1);
         governor.vote(proposalId, ISyndicateGovernor.VoteType.Abstain);
         vm.prank(lp2);
@@ -497,19 +522,21 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_executeProposal_setsActiveBeforeExternalCalls() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({
             target: address(activeAssertTarget),
             data: abi.encodeCall(activeAssertTarget.assertActive, (address(governor), address(vault), 1)),
             value: 0
         });
-        calls[1] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
         });
 
         vm.prank(agent);
-        uint256 proposalId =
-            governor.propose(address(vault), "ipfs://test", 1500, 7 days, calls, 1, _emptyCoProposers());
+        uint256 proposalId = governor.propose(
+            address(vault), "ipfs://test", 1500, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0
+        );
         vm.warp(block.timestamp + 1);
 
         vm.prank(lp1);
@@ -523,7 +550,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_executeProposal_notApproved_reverts() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         // Don't vote, just warp — should be rejected
         vm.warp(block.timestamp + VOTING_PERIOD + 1);
@@ -534,7 +561,7 @@ contract SyndicateGovernorTest is Test {
 
     function test_executeProposal_executionWindowExpired_reverts() public {
         // Create proposal and vote it through
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
         vm.prank(lp1);
         governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
         vm.prank(lp2);
@@ -565,9 +592,8 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_executeProposal_cooldownNotElapsed_reverts() public {
-        // Use a longer cooldown to ensure the test works
-        vm.prank(owner);
-        governor.setCooldownPeriod(3 days);
+        // Queue cooldown change to 3 days, then finalize
+        _queueAndFinalize(governor.PARAM_COOLDOWN(), governor.setCooldownPeriod, 3 days);
 
         // Execute and settle first proposal (agent settles early)
         uint256 proposalId1 = _createAndExecuteProposal(1500, 7 days);
@@ -575,7 +601,7 @@ contract SyndicateGovernorTest is Test {
         governor.settleByAgent(proposalId1, _simpleSettleCalls());
 
         // Create second proposal and vote immediately
-        (uint256 proposalId2,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId2 = _createSimpleProposal(1500, 7 days);
         vm.prank(lp1);
         governor.vote(proposalId2, ISyndicateGovernor.VoteType.For);
         vm.prank(lp2);
@@ -631,17 +657,19 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_settleByAgent_precommittedFailWithoutFallback_reverts() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
         });
-        calls[1] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({
             target: address(revertingTarget), data: abi.encodeCall(revertingTarget.fail, ()), value: 0
         });
 
         vm.prank(agent);
-        uint256 proposalId =
-            governor.propose(address(vault), "ipfs://test", 1500, 7 days, calls, 1, _emptyCoProposers());
+        uint256 proposalId = governor.propose(
+            address(vault), "ipfs://test", 1500, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0
+        );
         vm.warp(block.timestamp + 1);
 
         vm.prank(lp1);
@@ -753,7 +781,7 @@ contract SyndicateGovernorTest is Test {
         governor.settleByAgent(proposalId, _simpleSettleCalls());
 
         // Agent fee: 15% of 10k = 1,500
-        // Management fee: 0.5% of (10k - 1,500) = 0.5% of 8,500 = 42.5 → 42 (truncated)
+        // Management fee: 0.5% of (10k - 1,500) = 0.5% of 8,500 = 42.5 -> 42 (truncated)
         assertEq(usdc.balanceOf(agent), agentBalBefore + 1_500e6);
         assertEq(usdc.balanceOf(owner), ownerBalBefore + 42_500000);
     }
@@ -823,16 +851,20 @@ contract SyndicateGovernorTest is Test {
         vm.prank(agent);
         governor.settleByAgent(proposalId, _simpleSettleCalls());
 
+        uint256 lp1BalBefore = usdc.balanceOf(lp1);
+
         // Now LP can withdraw
         vm.prank(lp1);
-        uint256 assets = vault.withdraw(1_000e6, lp1, lp1);
-        assertEq(assets, 1_000e6);
+        vault.withdraw(1_000e6, lp1, lp1);
+
+        // LP received the 1000 USDC
+        assertEq(usdc.balanceOf(lp1), lp1BalBefore + 1_000e6);
     }
 
     // ==================== CANCEL ====================
 
     function test_cancelProposal() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         vm.prank(agent);
         governor.cancelProposal(proposalId);
@@ -841,7 +873,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_cancelProposal_notProposer_reverts() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         vm.prank(random);
         vm.expectRevert(ISyndicateGovernor.NotProposer.selector);
@@ -849,7 +881,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_cancelProposal_afterVoting_reverts() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
         vm.warp(block.timestamp + VOTING_PERIOD + 1);
 
         vm.prank(agent);
@@ -867,7 +899,7 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_emergencyCancel_notVaultOwner_reverts() public {
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         vm.prank(random);
         vm.expectRevert(ISyndicateGovernor.NotVaultOwner.selector);
@@ -892,12 +924,19 @@ contract SyndicateGovernorTest is Test {
         governor.emergencySettle(proposalId, _simpleSettleCalls());
     }
 
-    // ==================== PARAMETER SETTERS ====================
+    // ==================== PARAMETER SETTERS (queue + finalize) ====================
 
     function test_setVotingPeriod() public {
-        vm.prank(owner);
+        vm.startPrank(owner);
         governor.setVotingPeriod(2 days);
+        vm.stopPrank();
+        // Still old value until finalized
+        assertEq(governor.getGovernorParams().votingPeriod, VOTING_PERIOD);
 
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        vm.startPrank(owner);
+        governor.finalizeParameterChange(governor.PARAM_VOTING_PERIOD());
+        vm.stopPrank();
         assertEq(governor.getGovernorParams().votingPeriod, 2 days);
     }
 
@@ -914,44 +953,32 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_setExecutionWindow() public {
-        vm.prank(owner);
-        governor.setExecutionWindow(2 days);
-
+        _queueAndFinalize(governor.PARAM_EXECUTION_WINDOW(), governor.setExecutionWindow, 2 days);
         assertEq(governor.getGovernorParams().executionWindow, 2 days);
     }
 
     function test_setQuorumBps() public {
-        vm.prank(owner);
-        governor.setQuorumBps(5000);
-
+        _queueAndFinalize(governor.PARAM_QUORUM_BPS(), governor.setQuorumBps, 5000);
         assertEq(governor.getGovernorParams().quorumBps, 5000);
     }
 
     function test_setMaxPerformanceFeeBps() public {
-        vm.prank(owner);
-        governor.setMaxPerformanceFeeBps(2000);
-
+        _queueAndFinalize(governor.PARAM_MAX_PERF_FEE(), governor.setMaxPerformanceFeeBps, 2000);
         assertEq(governor.getGovernorParams().maxPerformanceFeeBps, 2000);
     }
 
     function test_setMaxStrategyDuration() public {
-        vm.prank(owner);
-        governor.setMaxStrategyDuration(14 days);
-
+        _queueAndFinalize(governor.PARAM_MAX_STRATEGY_DURATION(), governor.setMaxStrategyDuration, 14 days);
         assertEq(governor.getGovernorParams().maxStrategyDuration, 14 days);
     }
 
     function test_setMinStrategyDuration() public {
-        vm.prank(owner);
-        governor.setMinStrategyDuration(2 hours);
-
+        _queueAndFinalize(governor.PARAM_MIN_STRATEGY_DURATION(), governor.setMinStrategyDuration, 2 hours);
         assertEq(governor.getGovernorParams().minStrategyDuration, 2 hours);
     }
 
     function test_setCooldownPeriod() public {
-        vm.prank(owner);
-        governor.setCooldownPeriod(2 days);
-
+        _queueAndFinalize(governor.PARAM_COOLDOWN(), governor.setCooldownPeriod, 2 days);
         assertEq(governor.getGovernorParams().cooldownPeriod, 2 days);
     }
 
@@ -972,6 +999,162 @@ contract SyndicateGovernorTest is Test {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, random));
         governor.setCooldownPeriod(2 days);
         vm.stopPrank();
+    }
+
+    // ==================== PARAMETER CHANGE TIMELOCK TESTS ====================
+
+    function test_queueParameterChange() public {
+        vm.prank(owner);
+        governor.setVotingPeriod(2 days);
+
+        ISyndicateGovernor.PendingChange memory change = governor.getPendingChange(governor.PARAM_VOTING_PERIOD());
+        assertTrue(change.exists);
+        assertEq(change.newValue, 2 days);
+        assertEq(change.effectiveAt, block.timestamp + PARAM_CHANGE_DELAY);
+    }
+
+    function test_finalizeParameterChange() public {
+        vm.startPrank(owner);
+        governor.setVotingPeriod(2 days);
+
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+
+        governor.finalizeParameterChange(governor.PARAM_VOTING_PERIOD());
+        vm.stopPrank();
+
+        assertEq(governor.getGovernorParams().votingPeriod, 2 days);
+
+        // Pending change should be cleared
+        ISyndicateGovernor.PendingChange memory change = governor.getPendingChange(governor.PARAM_VOTING_PERIOD());
+        assertFalse(change.exists);
+    }
+
+    function test_finalize_tooEarly_reverts() public {
+        bytes32 paramKey = governor.PARAM_VOTING_PERIOD();
+
+        vm.startPrank(owner);
+        governor.setVotingPeriod(2 days);
+
+        // Try to finalize immediately (before delay elapses)
+        vm.expectRevert(ISyndicateGovernor.ChangeNotReady.selector);
+        governor.finalizeParameterChange(paramKey);
+        vm.stopPrank();
+    }
+
+    function test_cancelParameterChange() public {
+        vm.startPrank(owner);
+        governor.setVotingPeriod(2 days);
+        governor.cancelParameterChange(governor.PARAM_VOTING_PERIOD());
+        vm.stopPrank();
+
+        ISyndicateGovernor.PendingChange memory change = governor.getPendingChange(governor.PARAM_VOTING_PERIOD());
+        assertFalse(change.exists);
+
+        // Value should not have changed
+        assertEq(governor.getGovernorParams().votingPeriod, VOTING_PERIOD);
+    }
+
+    function test_doubleQueue_reverts() public {
+        vm.prank(owner);
+        governor.setVotingPeriod(2 days);
+
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.ChangeAlreadyPending.selector);
+        governor.setVotingPeriod(3 days);
+    }
+
+    // ==================== MIN SETTLEMENT BALANCE TESTS ====================
+
+    function test_settleByAgent_belowMinSettlement_reverts() public {
+        // Propose with minSettlementBalance = 110_000e6
+        vm.prank(agent);
+        uint256 proposalId = governor.propose(
+            address(vault),
+            "ipfs://test",
+            1500,
+            7 days,
+            _simpleExecuteCalls(),
+            _simpleSettlementCalls(),
+            _emptyCoProposers(),
+            110_000e6 // minSettlementBalance
+        );
+        vm.warp(block.timestamp + 1);
+
+        vm.prank(lp1);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.prank(lp2);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.warp(block.timestamp + VOTING_PERIOD + 1);
+
+        governor.executeProposal(proposalId);
+
+        // Vault has 100k USDC, minSettlement is 110k — should revert
+        vm.prank(agent);
+        vm.expectRevert(ISyndicateGovernor.SettlementBelowMinimum.selector);
+        governor.settleByAgent(proposalId, _simpleSettleCalls());
+    }
+
+    function test_settleByAgent_meetsMinSettlement() public {
+        // Propose with minSettlementBalance = 100_000e6
+        vm.prank(agent);
+        uint256 proposalId = governor.propose(
+            address(vault),
+            "ipfs://test",
+            1500,
+            7 days,
+            _simpleExecuteCalls(),
+            _simpleSettlementCalls(),
+            _emptyCoProposers(),
+            100_000e6 // minSettlementBalance — exactly matches current balance
+        );
+        vm.warp(block.timestamp + 1);
+
+        vm.prank(lp1);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.prank(lp2);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.warp(block.timestamp + VOTING_PERIOD + 1);
+
+        governor.executeProposal(proposalId);
+
+        // Vault has exactly 100k USDC, minSettlement is 100k — should succeed
+        vm.prank(agent);
+        governor.settleByAgent(proposalId, _simpleSettleCalls());
+
+        assertEq(uint256(governor.getProposal(proposalId).state), uint256(ISyndicateGovernor.ProposalState.Settled));
+    }
+
+    function test_settleProposal_ignoresMinSettlement() public {
+        // Propose with minSettlementBalance = 200_000e6 (well above vault balance)
+        vm.prank(agent);
+        uint256 proposalId = governor.propose(
+            address(vault),
+            "ipfs://test",
+            1500,
+            7 days,
+            _simpleExecuteCalls(),
+            _simpleSettlementCalls(),
+            _emptyCoProposers(),
+            200_000e6 // minSettlementBalance — way above vault balance
+        );
+        vm.warp(block.timestamp + 1);
+
+        vm.prank(lp1);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.prank(lp2);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.warp(block.timestamp + VOTING_PERIOD + 1);
+
+        governor.executeProposal(proposalId);
+
+        // Warp past strategy duration for permissionless settle
+        vm.warp(block.timestamp + 7 days);
+
+        // Permissionless settle should ignore minSettlementBalance
+        vm.prank(random);
+        governor.settleProposal(proposalId);
+
+        assertEq(uint256(governor.getProposal(proposalId).state), uint256(ISyndicateGovernor.ProposalState.Settled));
     }
 
     // ==================== VAULT MANAGEMENT ====================
@@ -1059,7 +1242,7 @@ contract SyndicateGovernorTest is Test {
 
     function test_vote_buySharesAfterProposal_noVotingPower() public {
         // Create proposal BEFORE random buys shares
-        (uint256 proposalId,) = _createSimpleProposal(1500, 7 days);
+        uint256 proposalId = _createSimpleProposal(1500, 7 days);
 
         // Random buys shares AFTER proposal creation (after snapshot block)
         usdc.mint(random, 50_000e6);
@@ -1080,8 +1263,9 @@ contract SyndicateGovernorTest is Test {
         vm.prank(lp1);
         governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
 
+        // With _decimalsOffset=6, shares are scaled by 1e6
         uint256 lp1Weight = governor.getVoteWeight(proposalId, lp1);
-        assertEq(lp1Weight, 60_000e6);
+        assertEq(lp1Weight, 60_000e12);
     }
 
     function test_settlement_feesNeverExceedProfit() public {
@@ -1134,13 +1318,14 @@ contract SyndicateGovernorTest is Test {
         assertFalse(vault.redemptionsLocked());
 
         // But new proposals on this vault are blocked
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
-        calls[1] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({target: address(usdc), data: "", value: 0});
 
         vm.prank(agent);
         vm.expectRevert(ISyndicateGovernor.VaultNotRegistered.selector);
-        governor.propose(address(vault), "ipfs://new", 1500, 7 days, calls, 1, _emptyCoProposers());
+        governor.propose(address(vault), "ipfs://new", 1500, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0);
     }
 
     function test_multipleVaults_interleavedProposals() public {
@@ -1188,32 +1373,37 @@ contract SyndicateGovernorTest is Test {
 
         vm.warp(block.timestamp + 1);
 
-        // Create proposals on BOTH vaults
-        BatchExecutorLib.Call[] memory calls1 = new BatchExecutorLib.Call[](2);
-        calls1[0] = BatchExecutorLib.Call({
+        // Create execute + settlement calls for vault1
+        BatchExecutorLib.Call[] memory exec1 = new BatchExecutorLib.Call[](1);
+        exec1[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
         });
-        calls1[1] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory settle1 = new BatchExecutorLib.Call[](1);
+        settle1[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
         });
 
-        BatchExecutorLib.Call[] memory calls2 = new BatchExecutorLib.Call[](2);
-        calls2[0] = BatchExecutorLib.Call({
+        // Create execute + settlement calls for vault2
+        BatchExecutorLib.Call[] memory exec2 = new BatchExecutorLib.Call[](1);
+        exec2[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 30_000e6)), value: 0
         });
-        calls2[1] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory settle2 = new BatchExecutorLib.Call[](1);
+        settle2[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
         });
 
         // Propose on vault1
         vm.prank(agent);
-        uint256 pid1 =
-            governor.propose(address(vault), "ipfs://v1-strategy", 1500, 7 days, calls1, 1, _emptyCoProposers());
+        uint256 pid1 = governor.propose(
+            address(vault), "ipfs://v1-strategy", 1500, 7 days, exec1, settle1, _emptyCoProposers(), 0
+        );
 
         // Propose on vault2
         vm.prank(agent2);
-        uint256 pid2 =
-            governor.propose(address(vault2), "ipfs://v2-strategy", 2000, 5 days, calls2, 1, _emptyCoProposers());
+        uint256 pid2 = governor.propose(
+            address(vault2), "ipfs://v2-strategy", 2000, 5 days, exec2, settle2, _emptyCoProposers(), 0
+        );
 
         vm.warp(block.timestamp + 1);
 
@@ -1248,7 +1438,7 @@ contract SyndicateGovernorTest is Test {
 
         // Settle vault2 first (agent2 settles early)
         vm.prank(agent2);
-        governor.settleByAgent(pid2, calls2);
+        governor.settleByAgent(pid2, settle2);
 
         assertEq(uint256(governor.getProposal(pid2).state), uint256(ISyndicateGovernor.ProposalState.Settled));
         assertFalse(vault2.redemptionsLocked());

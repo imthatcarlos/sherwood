@@ -41,6 +41,7 @@ contract CollaborativeProposalsTest is Test {
     uint256 constant QUORUM_BPS = 4000;
     uint256 constant MAX_PERF_FEE_BPS = 3000;
     uint256 constant COOLDOWN_PERIOD = 1 days;
+    uint256 constant PARAM_CHANGE_DELAY = 1 days;
 
     function setUp() public {
         usdc = new ERC20Mock("USD Coin", "USDC", 6);
@@ -67,7 +68,8 @@ contract CollaborativeProposalsTest is Test {
                     collaborationWindow: 48 hours,
                     maxCoProposers: 5,
                     minStrategyDuration: 1 days,
-                    maxStrategyDuration: 7 days
+                    maxStrategyDuration: 7 days,
+                    parameterChangeDelay: PARAM_CHANGE_DELAY
                 }))
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
@@ -123,17 +125,15 @@ contract CollaborativeProposalsTest is Test {
         return new ISyndicateGovernor.CoProposer[](0);
     }
 
-    function _simpleCalls() internal view returns (BatchExecutorLib.Call[] memory calls) {
-        calls = new BatchExecutorLib.Call[](2);
+    function _simpleExecuteCalls() internal view returns (BatchExecutorLib.Call[] memory) {
+        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](1);
         calls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
         });
-        calls[1] = BatchExecutorLib.Call({
-            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
-        });
+        return calls;
     }
 
-    function _simpleSettleCalls() internal view returns (BatchExecutorLib.Call[] memory) {
+    function _simpleSettlementCalls() internal view returns (BatchExecutorLib.Call[] memory) {
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](1);
         calls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
@@ -148,7 +148,9 @@ contract CollaborativeProposalsTest is Test {
         coProps[1] = ISyndicateGovernor.CoProposer({agent: coAgent2, splitBps: 1000});
 
         vm.prank(leadAgent);
-        proposalId = governor.propose(address(vault), "ipfs://collab", 2000, 7 days, _simpleCalls(), 1, coProps);
+        proposalId = governor.propose(
+            address(vault), "ipfs://collab", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
     }
 
     /// @dev Create collab proposal, get all approvals, advance to Pending
@@ -186,8 +188,16 @@ contract CollaborativeProposalsTest is Test {
 
     function test_soloProposal_backwardCompatible() public {
         vm.prank(leadAgent);
-        uint256 proposalId =
-            governor.propose(address(vault), "ipfs://solo", 1500, 7 days, _simpleCalls(), 1, _emptyCoProposers());
+        uint256 proposalId = governor.propose(
+            address(vault),
+            "ipfs://solo",
+            1500,
+            7 days,
+            _simpleExecuteCalls(),
+            _simpleSettlementCalls(),
+            _emptyCoProposers(),
+            0
+        );
 
         ISyndicateGovernor.StrategyProposal memory p = governor.getProposal(proposalId);
         assertEq(uint256(p.state), uint256(ISyndicateGovernor.ProposalState.Pending));
@@ -198,8 +208,16 @@ contract CollaborativeProposalsTest is Test {
 
     function test_soloProposal_settlementGoesToProposer() public {
         vm.prank(leadAgent);
-        uint256 proposalId =
-            governor.propose(address(vault), "ipfs://solo", 1500, 7 days, _simpleCalls(), 1, _emptyCoProposers());
+        uint256 proposalId = governor.propose(
+            address(vault),
+            "ipfs://solo",
+            1500,
+            7 days,
+            _simpleExecuteCalls(),
+            _simpleSettlementCalls(),
+            _emptyCoProposers(),
+            0
+        );
 
         vm.warp(block.timestamp + 1);
 
@@ -217,7 +235,7 @@ contract CollaborativeProposalsTest is Test {
         uint256 leadBalBefore = usdc.balanceOf(leadAgent);
 
         vm.prank(leadAgent);
-        governor.settleByAgent(proposalId, _simpleSettleCalls());
+        governor.settleByAgent(proposalId, _simpleSettlementCalls());
 
         // 15% of 10k = 1500
         assertEq(usdc.balanceOf(leadAgent), leadBalBefore + 1_500e6);
@@ -255,7 +273,9 @@ contract CollaborativeProposalsTest is Test {
         vm.prank(leadAgent);
         vm.expectEmit(true, true, false, true);
         emit ISyndicateGovernor.CollaborativeProposalCreated(1, leadAgent, expectedAddrs, expectedSplits);
-        governor.propose(address(vault), "ipfs://collab", 2000, 7 days, _simpleCalls(), 1, coProps);
+        governor.propose(
+            address(vault), "ipfs://collab", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
     }
 
     // ==================== FULL CONSENT FLOW ====================
@@ -271,7 +291,7 @@ contract CollaborativeProposalsTest is Test {
         ISyndicateGovernor.StrategyProposal memory p = governor.getProposal(proposalId);
         assertEq(uint256(p.state), uint256(ISyndicateGovernor.ProposalState.Draft));
 
-        // Second co-proposer approves → should transition to Pending
+        // Second co-proposer approves -> should transition to Pending
         vm.prank(coAgent2);
         governor.approveCollaboration(proposalId);
 
@@ -381,7 +401,7 @@ contract CollaborativeProposalsTest is Test {
         uint256 co2BalBefore = usdc.balanceOf(coAgent2);
 
         vm.prank(leadAgent);
-        governor.settleByAgent(proposalId, _simpleSettleCalls());
+        governor.settleByAgent(proposalId, _simpleSettlementCalls());
 
         // Performance fee: 20% of 10k = 2000 USDC
         // coAgent1: 30% of 2000 = 600
@@ -400,7 +420,7 @@ contract CollaborativeProposalsTest is Test {
         uint256 ownerBalBefore = usdc.balanceOf(owner);
 
         vm.prank(leadAgent);
-        governor.settleByAgent(proposalId, _simpleSettleCalls());
+        governor.settleByAgent(proposalId, _simpleSettlementCalls());
 
         // Agent fee: 20% of 10k = 2000
         // Management fee: 0.5% of (10k - 2000) = 0.5% of 8000 = 40
@@ -414,7 +434,7 @@ contract CollaborativeProposalsTest is Test {
         uint256 co1BalBefore = usdc.balanceOf(coAgent1);
 
         vm.prank(leadAgent);
-        governor.settleByAgent(proposalId, _simpleSettleCalls());
+        governor.settleByAgent(proposalId, _simpleSettlementCalls());
 
         assertEq(usdc.balanceOf(leadAgent), leadBalBefore);
         assertEq(usdc.balanceOf(coAgent1), co1BalBefore);
@@ -424,13 +444,15 @@ contract CollaborativeProposalsTest is Test {
 
     function test_settlement_rounding_leadGetsRemainder() public {
         // Use splits that cause rounding: lead 60%, coAgent1 33%, coAgent2 7%
-        // Actually let's use 3333 + 3334 = 6667 → lead = 3333
+        // Actually let's use 3333 + 3334 = 6667 -> lead = 3333
         ISyndicateGovernor.CoProposer[] memory coProps = new ISyndicateGovernor.CoProposer[](2);
         coProps[0] = ISyndicateGovernor.CoProposer({agent: coAgent1, splitBps: 3333});
         coProps[1] = ISyndicateGovernor.CoProposer({agent: coAgent2, splitBps: 3334});
 
         vm.prank(leadAgent);
-        uint256 proposalId = governor.propose(address(vault), "ipfs://round", 2000, 7 days, _simpleCalls(), 1, coProps);
+        uint256 proposalId = governor.propose(
+            address(vault), "ipfs://round", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
 
         // Approve
         vm.prank(coAgent1);
@@ -457,7 +479,7 @@ contract CollaborativeProposalsTest is Test {
         uint256 co2BalBefore = usdc.balanceOf(coAgent2);
 
         vm.prank(leadAgent);
-        governor.settleByAgent(proposalId, _simpleSettleCalls());
+        governor.settleByAgent(proposalId, _simpleSettlementCalls());
 
         // Performance fee: 20% of 7e6 = 1_400_000
         uint256 agentFee = 1_400_000;
@@ -483,32 +505,38 @@ contract CollaborativeProposalsTest is Test {
         ISyndicateGovernor.CoProposer[] memory coProps = new ISyndicateGovernor.CoProposer[](2);
         coProps[0] = ISyndicateGovernor.CoProposer({agent: coAgent1, splitBps: 5000});
         coProps[1] = ISyndicateGovernor.CoProposer({agent: coAgent2, splitBps: 5000});
-        // Total co = 10000, lead = 0 → LeadSplitTooLow
+        // Total co = 10000, lead = 0 -> LeadSplitTooLow
 
         vm.prank(leadAgent);
         vm.expectRevert(ISyndicateGovernor.LeadSplitTooLow.selector);
-        governor.propose(address(vault), "ipfs://test", 2000, 7 days, _simpleCalls(), 1, coProps);
+        governor.propose(
+            address(vault), "ipfs://test", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
     }
 
     function test_validation_leadSplitBelow10Percent() public {
-        // Two co-proposers taking 91% total → lead gets 9% → should revert
+        // Two co-proposers taking 91% total -> lead gets 9% -> should revert
         ISyndicateGovernor.CoProposer[] memory coProps = new ISyndicateGovernor.CoProposer[](2);
         coProps[0] = ISyndicateGovernor.CoProposer({agent: coAgent1, splitBps: 5000});
         coProps[1] = ISyndicateGovernor.CoProposer({agent: coAgent2, splitBps: 4100}); // total 9100, lead = 900 (9%)
 
         vm.prank(leadAgent);
         vm.expectRevert(ISyndicateGovernor.LeadSplitTooLow.selector);
-        governor.propose(address(vault), "ipfs://test", 2000, 7 days, _simpleCalls(), 1, coProps);
+        governor.propose(
+            address(vault), "ipfs://test", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
     }
 
     function test_validation_leadSplitExactly10Percent() public {
-        // Two co-proposers taking 90% total → lead gets exactly 10% → should pass
+        // Two co-proposers taking 90% total -> lead gets exactly 10% -> should pass
         ISyndicateGovernor.CoProposer[] memory coProps = new ISyndicateGovernor.CoProposer[](2);
         coProps[0] = ISyndicateGovernor.CoProposer({agent: coAgent1, splitBps: 5000});
         coProps[1] = ISyndicateGovernor.CoProposer({agent: coAgent2, splitBps: 4000}); // total 9000, lead = 1000 (10%)
 
         vm.prank(leadAgent);
-        uint256 proposalId = governor.propose(address(vault), "ipfs://test", 2000, 7 days, _simpleCalls(), 1, coProps);
+        uint256 proposalId = governor.propose(
+            address(vault), "ipfs://test", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
         assertGt(proposalId, 0);
     }
 
@@ -519,7 +547,9 @@ contract CollaborativeProposalsTest is Test {
 
         vm.prank(leadAgent);
         vm.expectRevert(ISyndicateGovernor.SplitTooLow.selector);
-        governor.propose(address(vault), "ipfs://test", 2000, 7 days, _simpleCalls(), 1, coProps);
+        governor.propose(
+            address(vault), "ipfs://test", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
     }
 
     function test_validation_tooManyCoProposers() public {
@@ -545,7 +575,9 @@ contract CollaborativeProposalsTest is Test {
 
         vm.prank(leadAgent);
         vm.expectRevert(ISyndicateGovernor.TooManyCoProposers.selector);
-        governor.propose(address(vault), "ipfs://test", 2000, 7 days, _simpleCalls(), 1, coProps);
+        governor.propose(
+            address(vault), "ipfs://test", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
     }
 
     function test_validation_unregisteredAgent() public {
@@ -554,7 +586,9 @@ contract CollaborativeProposalsTest is Test {
 
         vm.prank(leadAgent);
         vm.expectRevert(ISyndicateGovernor.NotRegisteredAgent.selector);
-        governor.propose(address(vault), "ipfs://test", 2000, 7 days, _simpleCalls(), 1, coProps);
+        governor.propose(
+            address(vault), "ipfs://test", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
     }
 
     function test_validation_duplicateCoProposer() public {
@@ -564,7 +598,9 @@ contract CollaborativeProposalsTest is Test {
 
         vm.prank(leadAgent);
         vm.expectRevert(ISyndicateGovernor.DuplicateCoProposer.selector);
-        governor.propose(address(vault), "ipfs://test", 2000, 7 days, _simpleCalls(), 1, coProps);
+        governor.propose(
+            address(vault), "ipfs://test", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
     }
 
     function test_validation_leadCannotBeCoProposer() public {
@@ -573,7 +609,9 @@ contract CollaborativeProposalsTest is Test {
 
         vm.prank(leadAgent);
         vm.expectRevert(ISyndicateGovernor.DuplicateCoProposer.selector);
-        governor.propose(address(vault), "ipfs://test", 2000, 7 days, _simpleCalls(), 1, coProps);
+        governor.propose(
+            address(vault), "ipfs://test", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
     }
 
     function test_validation_maxCoProposers_succeeds() public {
@@ -596,7 +634,9 @@ contract CollaborativeProposalsTest is Test {
         // Total co = 7500, lead = 2500 (above 1000 min)
 
         vm.prank(leadAgent);
-        uint256 proposalId = governor.propose(address(vault), "ipfs://max", 2000, 7 days, _simpleCalls(), 1, coProps);
+        uint256 proposalId = governor.propose(
+            address(vault), "ipfs://max", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
 
         ISyndicateGovernor.CoProposer[] memory stored = governor.getCoProposers(proposalId);
         assertEq(stored.length, 5);
@@ -702,8 +742,12 @@ contract CollaborativeProposalsTest is Test {
     // ==================== COLLABORATION WINDOW SETTER ====================
 
     function test_setCollaborationWindow() public {
-        vm.prank(owner);
+        bytes32 paramKey = governor.PARAM_COLLAB_WINDOW();
+        vm.startPrank(owner);
         governor.setCollaborationWindow(24 hours);
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        governor.finalizeParameterChange(paramKey);
+        vm.stopPrank();
 
         // Create a new collab proposal — its deadline should use the new window
         uint256 tsBefore = block.timestamp;
@@ -745,8 +789,6 @@ contract CollaborativeProposalsTest is Test {
         assertEq(usdc.balanceOf(leadAgent), leadBalBefore + 1_200e6);
     }
 
-    // ==================== SINGLE CO-PROPOSER ====================
-
     // ==================== SETTER BOUNDARY TESTS ====================
 
     function test_setCollaborationWindow_belowMin_reverts() public {
@@ -774,8 +816,12 @@ contract CollaborativeProposalsTest is Test {
     }
 
     function test_setMaxCoProposers_succeeds() public {
-        vm.prank(owner);
+        bytes32 paramKey = governor.PARAM_MAX_CO_PROPOSERS();
+        vm.startPrank(owner);
         governor.setMaxCoProposers(3);
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        governor.finalizeParameterChange(paramKey);
+        vm.stopPrank();
         assertEq(governor.getGovernorParams().maxCoProposers, 3);
     }
 
@@ -800,7 +846,7 @@ contract CollaborativeProposalsTest is Test {
 
         vm.prank(coAgent1);
         vm.expectRevert(ISyndicateGovernor.NotProposer.selector);
-        governor.settleByAgent(proposalId, _simpleSettleCalls());
+        governor.settleByAgent(proposalId, _simpleSettlementCalls());
     }
 
     // ==================== SINGLE CO-PROPOSER ====================
@@ -810,7 +856,9 @@ contract CollaborativeProposalsTest is Test {
         coProps[0] = ISyndicateGovernor.CoProposer({agent: coAgent1, splitBps: 4000}); // lead = 60%
 
         vm.prank(leadAgent);
-        uint256 proposalId = governor.propose(address(vault), "ipfs://duo", 2000, 7 days, _simpleCalls(), 1, coProps);
+        uint256 proposalId = governor.propose(
+            address(vault), "ipfs://duo", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps, 0
+        );
 
         // Only one approval needed
         vm.prank(coAgent1);
@@ -837,7 +885,7 @@ contract CollaborativeProposalsTest is Test {
         uint256 co1BalBefore = usdc.balanceOf(coAgent1);
 
         vm.prank(leadAgent);
-        governor.settleByAgent(proposalId, _simpleSettleCalls());
+        governor.settleByAgent(proposalId, _simpleSettlementCalls());
 
         // Fee: 20% of 5k = 1000
         // coAgent1: 40% of 1000 = 400
@@ -876,10 +924,10 @@ contract CollaborativeProposalsTest is Test {
         uint256 co2BalBefore = usdc.balanceOf(coAgent2);
 
         vm.prank(leadAgent);
-        governor.settleByAgent(proposalId, _simpleSettleCalls());
+        governor.settleByAgent(proposalId, _simpleSettlementCalls());
 
         // Performance fee: 20% of 10k = 2000
-        // coAgent1 deregistered → 600 skipped, goes to lead
+        // coAgent1 deregistered -> 600 skipped, goes to lead
         // coAgent2: 10% of 2000 = 200
         // Lead remainder: 2000 - 200 = 1800
         assertEq(usdc.balanceOf(coAgent1), co1BalBefore); // no payment
@@ -903,7 +951,7 @@ contract CollaborativeProposalsTest is Test {
         vm.warp(block.timestamp + 7 days);
 
         vm.prank(owner);
-        governor.emergencySettle(proposalId, _simpleSettleCalls());
+        governor.emergencySettle(proposalId, _simpleSettlementCalls());
 
         // Same distribution: coAgent1 600, coAgent2 200, lead 1200
         assertEq(usdc.balanceOf(coAgent1), co1BalBefore + 600e6);
@@ -923,7 +971,7 @@ contract CollaborativeProposalsTest is Test {
 
         vm.prank(leadAgent);
         vm.expectRevert(ISyndicateGovernor.SettlementCausedLoss.selector);
-        governor.settleByAgent(proposalId, _simpleSettleCalls());
+        governor.settleByAgent(proposalId, _simpleSettlementCalls());
     }
 
     // ==================== ABSTAIN VOTE ON COLLABORATIVE ====================

@@ -42,6 +42,7 @@ contract SyndicateGovernorIntegrationTest is Test {
     uint256 constant QUORUM_BPS = 4000; // 40%
     uint256 constant MAX_PERF_FEE_BPS = 3000; // 30%
     uint256 constant COOLDOWN_PERIOD = 1 days;
+    uint256 constant PARAM_CHANGE_DELAY = 1 days;
 
     function setUp() public {
         // Deploy tokens
@@ -73,7 +74,8 @@ contract SyndicateGovernorIntegrationTest is Test {
                     collaborationWindow: 48 hours,
                     maxCoProposers: 5,
                     minStrategyDuration: 1 days,
-                    maxStrategyDuration: 7 days
+                    maxStrategyDuration: 7 days,
+                    parameterChangeDelay: PARAM_CHANGE_DELAY
                 }))
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
@@ -123,21 +125,22 @@ contract SyndicateGovernorIntegrationTest is Test {
         vm.warp(block.timestamp + 1);
     }
 
-    // ── Helpers ──
+    // -- Helpers --
 
     function _emptyCoProposers() internal pure returns (ISyndicateGovernor.CoProposer[] memory) {
         return new ISyndicateGovernor.CoProposer[](0);
     }
 
     function _proposeVoteApprove(
-        BatchExecutorLib.Call[] memory calls,
-        uint256 splitIndex,
+        BatchExecutorLib.Call[] memory executeCalls,
+        BatchExecutorLib.Call[] memory settlementCalls,
         uint256 feeBps,
         uint256 duration
     ) internal returns (uint256 proposalId) {
         vm.prank(agent);
-        proposalId =
-            governor.propose(address(vault), "ipfs://test", feeBps, duration, calls, splitIndex, _emptyCoProposers());
+        proposalId = governor.propose(
+            address(vault), "ipfs://test", feeBps, duration, executeCalls, settlementCalls, _emptyCoProposers(), 0
+        );
 
         // Mine a block so the snapshot block is in the past
         vm.warp(block.timestamp + 1);
@@ -150,21 +153,23 @@ contract SyndicateGovernorIntegrationTest is Test {
         vm.warp(block.timestamp + VOTING_PERIOD + 1);
     }
 
-    // ==================== FULL LIFECYCLE: PROPOSE → VOTE → EXECUTE → SETTLE ====================
+    // ==================== FULL LIFECYCLE: PROPOSE -> VOTE -> EXECUTE -> SETTLE ====================
 
     function test_fullLifecycle_proposeVoteExecuteSettle() public {
-        // 1. Agent proposes: approve + revoke
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({
+        // 1. Agent proposes: approve as execute, revoke as settle
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
         });
-        calls[1] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
         });
 
         vm.prank(agent);
-        uint256 proposalId =
-            governor.propose(address(vault), "ipfs://strategy1", 1500, 7 days, calls, 1, _emptyCoProposers());
+        uint256 proposalId = governor.propose(
+            address(vault), "ipfs://strategy1", 1500, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0
+        );
 
         // Mine a block for checkpoint
         vm.warp(block.timestamp + 1);
@@ -175,7 +180,7 @@ contract SyndicateGovernorIntegrationTest is Test {
         vm.prank(lp2);
         governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
 
-        // 3. Voting ends → Approved
+        // 3. Voting ends -> Approved
         vm.warp(block.timestamp + VOTING_PERIOD + 1);
         assertEq(uint256(governor.getProposalState(proposalId)), uint256(ISyndicateGovernor.ProposalState.Approved));
 
@@ -211,7 +216,7 @@ contract SyndicateGovernorIntegrationTest is Test {
         // Approval was revoked by settle calls
         assertEq(usdc.allowance(address(vault), address(targetToken)), 0);
 
-        // 9. Cooldown → can withdraw
+        // 9. Cooldown -> can withdraw
         vm.warp(governor.getCooldownEnd(address(vault)) + 1);
         vm.prank(lp1);
         vault.withdraw(10_000e6, lp1, lp1);
@@ -220,17 +225,19 @@ contract SyndicateGovernorIntegrationTest is Test {
     // ==================== REJECTED PROPOSAL ====================
 
     function test_fullLifecycle_rejectedProposal() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
         });
-        calls[1] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
         });
 
         vm.prank(agent);
-        uint256 proposalId =
-            governor.propose(address(vault), "ipfs://test", 1500, 7 days, calls, 1, _emptyCoProposers());
+        uint256 proposalId = governor.propose(
+            address(vault), "ipfs://test", 1500, 7 days, execCalls, settleCalls, _emptyCoProposers(), 0
+        );
 
         // Mine a block for checkpoint
         vm.warp(block.timestamp + 1);
@@ -252,15 +259,16 @@ contract SyndicateGovernorIntegrationTest is Test {
     // ==================== EMERGENCY SETTLE WITH PROFIT ====================
 
     function test_fullLifecycle_emergencySettle() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
         });
-        calls[1] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
         });
 
-        uint256 proposalId = _proposeVoteApprove(calls, 1, 1500, 7 days);
+        uint256 proposalId = _proposeVoteApprove(execCalls, settleCalls, 1500, 7 days);
         governor.executeProposal(proposalId);
 
         // Simulate profit
@@ -290,16 +298,17 @@ contract SyndicateGovernorIntegrationTest is Test {
     // ==================== SEQUENTIAL STRATEGIES ====================
 
     function test_fullLifecycle_multipleProposalsSequential() public {
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](2);
-        calls[0] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
+        execCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0
         });
-        calls[1] = BatchExecutorLib.Call({
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](1);
+        settleCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
         });
 
         // First strategy
-        uint256 pid1 = _proposeVoteApprove(calls, 1, 1500, 3 days);
+        uint256 pid1 = _proposeVoteApprove(execCalls, settleCalls, 1500, 3 days);
         governor.executeProposal(pid1);
         vm.warp(block.timestamp + 3 days);
         governor.settleProposal(pid1);
@@ -308,7 +317,7 @@ contract SyndicateGovernorIntegrationTest is Test {
         vm.warp(block.timestamp + COOLDOWN_PERIOD + 1);
 
         // Second strategy
-        uint256 pid2 = _proposeVoteApprove(calls, 1, 2000, 5 days);
+        uint256 pid2 = _proposeVoteApprove(execCalls, settleCalls, 2000, 5 days);
         governor.executeProposal(pid2);
         vm.warp(block.timestamp + 5 days);
         governor.settleProposal(pid2);
@@ -328,37 +337,36 @@ contract SyndicateGovernorIntegrationTest is Test {
         uint256 supplyAmount = 50_000e6;
         uint256 borrowAmount = 25_000e6;
 
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](7);
-
-        // Execute: supply + borrow (4 calls)
-        calls[0] = BatchExecutorLib.Call({
+        // Execute calls: supply + borrow (4 calls)
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](4);
+        execCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(mUsdc), supplyAmount)), value: 0
         });
-        calls[1] = BatchExecutorLib.Call({
+        execCalls[1] = BatchExecutorLib.Call({
             target: address(mUsdc), data: abi.encodeWithSignature("mint(uint256)", supplyAmount), value: 0
         });
         address[] memory markets = new address[](1);
         markets[0] = address(mUsdc);
-        calls[2] = BatchExecutorLib.Call({
+        execCalls[2] = BatchExecutorLib.Call({
             target: address(comptroller), data: abi.encodeCall(comptroller.enterMarkets, (markets)), value: 0
         });
-        calls[3] = BatchExecutorLib.Call({
+        execCalls[3] = BatchExecutorLib.Call({
             target: address(mUsdc), data: abi.encodeWithSignature("borrow(uint256)", borrowAmount), value: 0
         });
 
-        // Settle: approve → repay → redeem (3 calls)
-        calls[4] = BatchExecutorLib.Call({
+        // Settlement calls: approve -> repay -> redeem (3 calls)
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](3);
+        settleCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(mUsdc), borrowAmount)), value: 0
         });
-        calls[5] = BatchExecutorLib.Call({
+        settleCalls[1] = BatchExecutorLib.Call({
             target: address(mUsdc), data: abi.encodeWithSignature("repayBorrow(uint256)", borrowAmount), value: 0
         });
-        calls[6] = BatchExecutorLib.Call({
+        settleCalls[2] = BatchExecutorLib.Call({
             target: address(mUsdc), data: abi.encodeWithSignature("redeemUnderlying(uint256)", supplyAmount), value: 0
         });
 
-        // splitIndex = 4 (first 4 are execute, last 3 are settle)
-        uint256 proposalId = _proposeVoteApprove(calls, 4, 1500, 7 days);
+        uint256 proposalId = _proposeVoteApprove(execCalls, settleCalls, 1500, 7 days);
 
         // Snapshot vault balance before execution
         uint256 vaultBalBefore = usdc.balanceOf(address(vault));
@@ -376,7 +384,7 @@ contract SyndicateGovernorIntegrationTest is Test {
         // Simulate time passing (strategy duration)
         vm.warp(block.timestamp + 7 days);
 
-        // Settle — runs approve → repay → redeem
+        // Settle — runs approve -> repay -> redeem
         vm.prank(random);
         governor.settleProposal(proposalId);
 
@@ -401,37 +409,36 @@ contract SyndicateGovernorIntegrationTest is Test {
         uint256 supplyAmount = 50_000e6;
         uint256 borrowAmount = 25_000e6;
 
-        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](7);
-
-        // Execute: supply + borrow (4 calls)
-        calls[0] = BatchExecutorLib.Call({
+        // Execute calls: supply + borrow (4 calls)
+        BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](4);
+        execCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(mUsdc), supplyAmount)), value: 0
         });
-        calls[1] = BatchExecutorLib.Call({
+        execCalls[1] = BatchExecutorLib.Call({
             target: address(mUsdc), data: abi.encodeWithSignature("mint(uint256)", supplyAmount), value: 0
         });
         address[] memory markets = new address[](1);
         markets[0] = address(mUsdc);
-        calls[2] = BatchExecutorLib.Call({
+        execCalls[2] = BatchExecutorLib.Call({
             target: address(comptroller), data: abi.encodeCall(comptroller.enterMarkets, (markets)), value: 0
         });
-        calls[3] = BatchExecutorLib.Call({
+        execCalls[3] = BatchExecutorLib.Call({
             target: address(mUsdc), data: abi.encodeWithSignature("borrow(uint256)", borrowAmount), value: 0
         });
 
-        // Settle: approve → repay → redeem (3 calls)
-        calls[4] = BatchExecutorLib.Call({
+        // Settlement calls: approve -> repay -> redeem (3 calls)
+        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](3);
+        settleCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(mUsdc), borrowAmount)), value: 0
         });
-        calls[5] = BatchExecutorLib.Call({
+        settleCalls[1] = BatchExecutorLib.Call({
             target: address(mUsdc), data: abi.encodeWithSignature("repayBorrow(uint256)", borrowAmount), value: 0
         });
-        calls[6] = BatchExecutorLib.Call({
+        settleCalls[2] = BatchExecutorLib.Call({
             target: address(mUsdc), data: abi.encodeWithSignature("redeemUnderlying(uint256)", supplyAmount), value: 0
         });
 
-        // splitIndex = 4
-        uint256 proposalId = _proposeVoteApprove(calls, 4, 2000, 7 days);
+        uint256 proposalId = _proposeVoteApprove(execCalls, settleCalls, 2000, 7 days);
 
         governor.executeProposal(proposalId);
 
@@ -441,7 +448,7 @@ contract SyndicateGovernorIntegrationTest is Test {
 
         vm.warp(block.timestamp + 7 days);
 
-        // Anyone settles: repay 25k → redeem 50k → vault back to original
+        // Anyone settles: repay 25k -> redeem 50k -> vault back to original
         vm.prank(random);
         governor.settleProposal(proposalId);
 

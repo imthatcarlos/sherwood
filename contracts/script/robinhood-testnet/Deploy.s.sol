@@ -58,7 +58,8 @@ contract DeployRobinhoodTestnet is Script {
                     collaborationWindow: 48 hours,
                     maxCoProposers: 5,
                     minStrategyDuration: 1 days,
-                    maxStrategyDuration: 7 days
+                    maxStrategyDuration: 7 days,
+                    parameterChangeDelay: 1 days
                 }))
         );
         address governorProxy = address(new ERC1967Proxy(address(govImpl), govInitData));

@@ -71,7 +71,8 @@ contract SyndicateVaultTest is Test {
                     collaborationWindow: 48 hours,
                     maxCoProposers: 5,
                     minStrategyDuration: 1 days,
-                    maxStrategyDuration: 7 days
+                    maxStrategyDuration: 7 days,
+                    parameterChangeDelay: 1 days
                 }))
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
@@ -120,6 +121,13 @@ contract SyndicateVaultTest is Test {
         assertEq(vault.getExecutorImpl(), address(executorLib));
     }
 
+    // ==================== DECIMALS ====================
+
+    function test_decimals_returns12() public view {
+        // With _decimalsOffset() = 6 and USDC having 6 decimals, vault decimals = 12
+        assertEq(vault.decimals(), 12);
+    }
+
     // ==================== DEPOSITS & WITHDRAWALS ====================
 
     function test_deposit() public {
@@ -130,6 +138,8 @@ contract SyndicateVaultTest is Test {
 
         assertGt(shares, 0);
         assertEq(vault.balanceOf(lp1), shares);
+        // With _decimalsOffset=6, 10_000e6 USDC yields 10_000e12 shares
+        assertEq(shares, 10_000e12);
     }
 
     function test_deposit_autoDelegates() public {
@@ -174,6 +184,49 @@ contract SyndicateVaultTest is Test {
         vm.prank(lp1);
         vm.expectRevert(ISyndicateVault.NoShares.selector);
         vault.ragequit(lp1);
+    }
+
+    // ==================== INFLATION ATTACK MITIGATION ====================
+
+    function test_inflationAttack_mitigated() public {
+        // Classic inflation attack: attacker deposits 1 wei, donates a large amount,
+        // then tries to steal from next depositor. With _decimalsOffset=6, virtual
+        // shares/assets prevent this.
+
+        address attacker = makeAddr("attacker");
+        address victim = makeAddr("victim");
+
+        usdc.mint(attacker, 100_000e6);
+        usdc.mint(victim, 100_000e6);
+
+        // Step 1: Attacker deposits the minimum (1 USDC = 1e6)
+        vm.startPrank(attacker);
+        usdc.approve(address(vault), 1e6);
+        uint256 attackerShares = vault.deposit(1e6, attacker);
+        vm.stopPrank();
+
+        // With offset=6: 1e6 assets -> 1e12 shares (offset protects)
+        assertEq(attackerShares, 1e12);
+
+        // Step 2: Attacker donates 10k USDC directly to vault
+        vm.prank(attacker);
+        usdc.transfer(address(vault), 10_000e6);
+
+        // Step 3: Victim deposits 10k USDC
+        vm.startPrank(victim);
+        usdc.approve(address(vault), 10_000e6);
+        uint256 victimShares = vault.deposit(10_000e6, victim);
+        vm.stopPrank();
+
+        // Victim should get a fair amount of shares, not be robbed
+        // Without offset, victim could get 0 shares (inflation attack succeeds)
+        // With offset, victim gets a proportional amount
+        assertGt(victimShares, 0);
+
+        // Victim's shares should represent close to their deposited value
+        uint256 victimAssets = vault.previewRedeem(victimShares);
+        // Victim should get back at least 99% of their deposit (rounding dust is OK)
+        assertGt(victimAssets, 9_900e6);
     }
 
     // ==================== AGENT REGISTRATION ====================
@@ -528,7 +581,8 @@ contract SyndicateVaultTest is Test {
         vm.warp(block.timestamp + 1);
 
         uint256 pastVotes = vault.getPastVotes(lp1, depositTime);
-        assertEq(pastVotes, 10_000e6);
+        // With _decimalsOffset=6, 10_000e6 USDC yields 10_000e12 shares
+        assertEq(pastVotes, 10_000e12);
     }
 
     function test_getPastTotalSupply_afterDeposit() public {
@@ -542,6 +596,7 @@ contract SyndicateVaultTest is Test {
         vm.warp(block.timestamp + 1);
 
         uint256 pastSupply = vault.getPastTotalSupply(depositTime);
-        assertEq(pastSupply, 10_000e6);
+        // With _decimalsOffset=6, 10_000e6 USDC yields 10_000e12 shares
+        assertEq(pastSupply, 10_000e12);
     }
 }

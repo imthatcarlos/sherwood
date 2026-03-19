@@ -317,6 +317,13 @@ contract SyndicateVault is
         return super.decimals();
     }
 
+    /// @dev Mitigate ERC-4626 first-depositor share price inflation attack.
+    ///      Offset of 6 matches USDC's 6 decimals, creating 1e6 virtual shares per virtual asset.
+    ///      Vault shares become 12-decimal tokens (6 USDC + 6 offset).
+    function _decimalsOffset() internal pure override returns (uint8) {
+        return 6;
+    }
+
     /// @dev Block deposits when paused or depositor not approved. Track totalDeposited.
     ///      Auto-delegate to self on first deposit so shareholders get voting power.
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares)

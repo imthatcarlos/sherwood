@@ -36,6 +36,7 @@ interface ISyndicateGovernor {
         uint256 maxCoProposers;
         uint256 minStrategyDuration;
         uint256 maxStrategyDuration;
+        uint256 parameterChangeDelay; // NEW: Change A
     }
 
     struct GovernorParams {
@@ -56,7 +57,7 @@ interface ISyndicateGovernor {
         address vault;
         string metadataURI;
         uint256 performanceFeeBps;
-        uint256 splitIndex;
+        uint256 splitIndex; // DEPRECATED: kept for UUPS storage compat, always 0 for new proposals
         uint256 strategyDuration;
         uint256 votesFor;
         uint256 votesAgainst;
@@ -73,6 +74,12 @@ interface ISyndicateGovernor {
         uint256 splitBps;
     }
 
+    struct PendingChange {
+        uint256 newValue;
+        uint256 effectiveAt;
+        bool exists;
+    }
+
     // ── Errors ──
 
     error VaultNotRegistered();
@@ -81,8 +88,8 @@ interface ISyndicateGovernor {
     error PerformanceFeeTooHigh();
     error StrategyDurationTooLong();
     error StrategyDurationTooShort();
-    error InvalidSplitIndex();
-    error EmptyCalls();
+    error EmptyExecuteCalls();
+    error EmptySettlementCalls();
     error NotWithinVotingPeriod();
     error NoVotingPower();
     error AlreadyVoted();
@@ -104,6 +111,7 @@ interface ISyndicateGovernor {
     error ZeroAddress();
     error NotVaultOwner();
     error SettlementCausedLoss();
+    error SettlementBelowMinimum();
     error StrategyDurationNotElapsed();
 
     // ── Collaborative proposal errors ──
@@ -121,6 +129,13 @@ interface ISyndicateGovernor {
     error InvalidMaxCoProposers();
     error Reentrancy();
 
+    // ── Timelock errors ──
+    error ChangeAlreadyPending();
+    error NoChangePending();
+    error ChangeNotReady();
+    error InvalidParameterChangeDelay();
+    error InvalidParameterKey();
+
     // ── Events ──
 
     event ProposalCreated(
@@ -129,8 +144,9 @@ interface ISyndicateGovernor {
         address indexed vault,
         uint256 performanceFeeBps,
         uint256 strategyDuration,
-        uint256 splitIndex,
-        uint256 callCount,
+        uint256 executeCallCount,
+        uint256 settlementCallCount,
+        uint256 minSettlementBalance,
         string metadataURI
     );
 
@@ -171,6 +187,11 @@ interface ISyndicateGovernor {
     event CollaborationWindowUpdated(uint256 oldValue, uint256 newValue);
     event MaxCoProposersUpdated(uint256 oldValue, uint256 newValue);
 
+    // ── Timelock events ──
+    event ParameterChangeQueued(bytes32 indexed paramKey, uint256 newValue, uint256 effectiveAt);
+    event ParameterChangeFinalized(bytes32 indexed paramKey, uint256 oldValue, uint256 newValue);
+    event ParameterChangeCancelled(bytes32 indexed paramKey);
+
     // ── Functions ──
 
     function propose(
@@ -178,9 +199,10 @@ interface ISyndicateGovernor {
         string calldata metadataURI,
         uint256 performanceFeeBps,
         uint256 strategyDuration,
-        BatchExecutorLib.Call[] calldata calls,
-        uint256 splitIndex,
-        CoProposer[] calldata coProposers
+        BatchExecutorLib.Call[] calldata executeCalls,
+        BatchExecutorLib.Call[] calldata settlementCalls,
+        CoProposer[] calldata coProposers,
+        uint256 minSettlementBalance
     ) external returns (uint256 proposalId);
 
     function vote(uint256 proposalId, VoteType support) external;
@@ -202,7 +224,7 @@ interface ISyndicateGovernor {
     function approveCollaboration(uint256 proposalId) external;
     function rejectCollaboration(uint256 proposalId) external;
 
-    // ── Setters ──
+    // ── Setters (queue-based with timelock) ──
 
     function addVault(address vault) external;
     function removeVault(address vault) external;
@@ -217,11 +239,18 @@ interface ISyndicateGovernor {
     function setCollaborationWindow(uint256 newCollaborationWindow) external;
     function setMaxCoProposers(uint256 newMaxCoProposers) external;
 
+    // ── Timelock functions ──
+
+    function finalizeParameterChange(bytes32 paramKey) external;
+    function cancelParameterChange(bytes32 paramKey) external;
+
     // ── Views ──
 
     function getProposal(uint256 proposalId) external view returns (StrategyProposal memory);
     function getProposalState(uint256 proposalId) external view returns (ProposalState);
     function getProposalCalls(uint256 proposalId) external view returns (BatchExecutorLib.Call[] memory);
+    function getExecuteCalls(uint256 proposalId) external view returns (BatchExecutorLib.Call[] memory);
+    function getSettlementCalls(uint256 proposalId) external view returns (BatchExecutorLib.Call[] memory);
     function getVoteWeight(uint256 proposalId, address voter) external view returns (uint256);
     function hasVoted(uint256 proposalId, address voter) external view returns (bool);
     function proposalCount() external view returns (uint256);
@@ -232,4 +261,6 @@ interface ISyndicateGovernor {
     function getCapitalSnapshot(uint256 proposalId) external view returns (uint256);
     function isRegisteredVault(address vault) external view returns (bool);
     function getCoProposers(uint256 proposalId) external view returns (CoProposer[] memory);
+    function getMinSettlementBalance(uint256 proposalId) external view returns (uint256);
+    function getPendingChange(bytes32 paramKey) external view returns (PendingChange memory);
 }

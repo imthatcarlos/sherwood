@@ -51,7 +51,8 @@ contract SyndicateFactoryTest is Test {
                     collaborationWindow: 48 hours,
                     maxCoProposers: 5,
                     minStrategyDuration: 1 days,
-                    maxStrategyDuration: 7 days
+                    maxStrategyDuration: 7 days,
+                    parameterChangeDelay: 1 days
                 }))
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
