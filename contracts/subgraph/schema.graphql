@@ -33,14 +33,13 @@ type VaultLookup @entity(immutable: true) {
 }
 
 """
-Agent — a registered PKP wallet that can execute strategies.
+Agent — a registered agent wallet that can execute strategies.
 """
 type Agent @entity(immutable: false) {
-  id: ID! # vault-pkpAddress
+  id: ID! # vault-agentAddress
   syndicate: Syndicate!
   agentId: BigInt!
-  pkpAddress: Bytes!
-  operatorEOA: Bytes!
+  agentAddress: Bytes!
   active: Boolean!
   registeredAt: BigInt!
 

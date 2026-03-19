@@ -34,7 +34,7 @@ Solidity smart contracts for agent-managed investment syndicates on Base. Built 
 
 - **Vault is the identity** — all DeFi positions (Moonwell supply/borrow, Uniswap LP, etc.) live on the vault address.
 - **Delegatecall pattern** — vault calls the shared `BatchExecutorLib` via delegatecall. The lib is stateless; execution context is the vault.
-- **Two-layer permissions** — on-chain caps (vault enforces maxPerTx, maxDailyTotal, maxBorrowRatio) + off-chain policies (Lit Actions).
+- **Two-layer permissions** — on-chain caps (vault enforces maxPerTx, maxDailyTotal, maxBorrowRatio) + off-chain policies (agent software).
 - **UUPS upgradeable** — vault implementation can be upgraded. Never reorder storage slots.
 
 ## Quick Start

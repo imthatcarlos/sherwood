@@ -33,8 +33,7 @@ export interface AgentIdentity {
 
 export interface AgentInfo {
   agentId: bigint;
-  pkpAddress: Address;
-  operatorEOA: Address;
+  agentAddress: Address;
   active: boolean;
   identity: AgentIdentity | null;
 }
@@ -164,7 +163,7 @@ async function fetchSubgraphAgents(
     if (!response.ok) return [];
     const result = await response.json();
     const agents = result?.data?.syndicate?.agents || [];
-    // IDs are "{vault}-{pkpAddress}" format
+    // IDs are "{vault}-{agentAddress}" format
     return agents.map((a: { id: string }) => {
       const parts = a.id.split("-");
       return (parts.length > 1 ? parts.slice(1).join("-") : a.id) as Address;
@@ -174,7 +173,7 @@ async function fetchSubgraphAgents(
   }
 }
 
-/** On-chain agent discovery via vault.getAgentOperators(). */
+/** On-chain agent discovery via vault.getAgentAddresses(). */
 async function fetchOnChainAgents(
   chainId: number,
   vault: Address,
@@ -184,7 +183,7 @@ async function fetchOnChainAgents(
     return (await client.readContract({
       address: vault,
       abi: SYNDICATE_VAULT_ABI,
-      functionName: "getAgentOperators",
+      functionName: "getAgentAddresses",
     })) as Address[];
   } catch {
     return [];
@@ -317,7 +316,7 @@ async function resolveOnChain(
     (assetInfoResults[1].result as string | undefined) ?? "ETH";
 
   // Step 3: Fetch agent configs
-  // Try subgraph first, fall back to on-chain getAgentOperators
+  // Try subgraph first, fall back to on-chain getAgentAddresses
   let agentAddresses: Address[];
   if (entry.subgraphUrl) {
     agentAddresses = await fetchSubgraphAgents(
@@ -346,15 +345,13 @@ async function resolveOnChain(
       if (r.status !== "success" || !r.result) continue;
       const cfg = r.result as {
         agentId: bigint;
-        pkpAddress: Address;
-        operatorEOA: Address;
+        agentAddress: Address;
         active: boolean;
       };
       if (!cfg.active) continue;
       agents.push({
         agentId: cfg.agentId,
-        pkpAddress: cfg.pkpAddress,
-        operatorEOA: cfg.operatorEOA,
+        agentAddress: cfg.agentAddress,
         active: cfg.active,
         identity: null,
       });

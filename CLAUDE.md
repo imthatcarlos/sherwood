@@ -6,13 +6,13 @@
 
 1. Create a feature branch: `git checkout -b <type>/<short-description>`
    - Types: `feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`
-   - Examples: `feat/vault-lit-integration`, `fix/usdc-decimals`, `test/vault-ragequit`
+   - Examples: `feat/vault-agent-registry`, `fix/usdc-decimals`, `test/vault-ragequit`
 
 2. Make atomic commits with conventional commit messages:
    - `feat: add syndicate-level caps to vault contract`
    - `fix: account for USDC 6 decimals in deposit math`
    - `test: vault ragequit returns pro-rata shares`
-   - `docs: update README with Lit integration architecture`
+   - `docs: update README with vault architecture`
 
 3. Push the branch and create a PR with the template (auto-loaded from `.github/`)
 
@@ -27,7 +27,7 @@
 
 ```
 contracts/   Foundry — Solidity smart contracts
-cli/         TypeScript CLI (viem, Lit SDK)
+cli/         TypeScript CLI (viem, Commander)
 app/         Next.js dashboard
 ```
 
@@ -41,7 +41,7 @@ app/         Next.js dashboard
 
 ## CLI
 
-- TypeScript, viem for chain interaction, Lit SDK for agent permissions
+- TypeScript, viem for chain interaction, Commander for CLI
 - Provider pattern: each DeFi protocol = a provider with standard interface
 - `npm run typecheck` before every PR
 - **Distribution**: Published to npm as `@sherwoodagent/cli` (`npm i -g @sherwoodagent/cli`). Standalone binary via GitHub releases as secondary (no chat/XMTP support).
@@ -105,7 +105,7 @@ Causes and fixes (try in order):
 
 - Agents and syndicate creators must have an ERC-8004 identity NFT (standard ERC-721)
 - `SyndicateFactory.createSyndicate()` requires `creatorAgentId` — verifies NFT ownership on-chain
-- `SyndicateVault.registerAgent()` requires `agentId` — NFT must be owned by `operatorEOA` or vault `owner`
+- `SyndicateVault.registerAgent()` requires `agentId` — NFT must be owned by `agentAddress` or vault `owner`
 - Verification at registration time only (not per-execution) — keeps gas costs low
 - `AgentConfig` struct stores `agentId` for reference/display
 
@@ -131,7 +131,7 @@ Agents mint their ERC-8004 identity via the Agent0 SDK (`@agent0lab/agent0-ts`).
 ### EAS CLI Commands
 - `sherwood syndicate join --subdomain <name> --message "..."` — agent requests to join
 - `sherwood syndicate requests` — creator views pending requests
-- `sherwood syndicate approve --agent-id <id> --pkp <addr> --eoa <addr> ...` — creator approves + registers
+- `sherwood syndicate approve --agent-id <id> --wallet <addr>` — creator approves + registers
 - `sherwood syndicate reject --attestation <uid>` — creator rejects by revoking attestation
 
 ## Testing
@@ -150,6 +150,6 @@ Agents mint their ERC-8004 identity via the Agent0 SDK (`@agent0lab/agent0-ts`).
 ## Safety
 
 - All vault contracts are UUPS upgradeable — never change storage layout order
-- Two-layer permission model: on-chain caps (vault) + off-chain policies (Lit Actions)
-- Agent wallets are Lit PKPs, not raw EOAs
+- Two-layer permission model: on-chain caps (vault) + off-chain policies (agent software)
+- Agent wallets are standard EOAs
 - Syndicate-level caps are hard limits — no agent can bypass them

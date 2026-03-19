@@ -98,8 +98,7 @@ export const SYNDICATE_VAULT_ABI = [
     stateMutability: "nonpayable",
     inputs: [
       { name: "agentId", type: "uint256" },
-      { name: "pkpAddress", type: "address" },
-      { name: "operatorEOA", type: "address" },
+      { name: "agentAddress", type: "address" },
     ],
     outputs: [],
   },
@@ -107,7 +106,7 @@ export const SYNDICATE_VAULT_ABI = [
     name: "removeAgent",
     type: "function",
     stateMutability: "nonpayable",
-    inputs: [{ name: "pkpAddress", type: "address" }],
+    inputs: [{ name: "agentAddress", type: "address" }],
     outputs: [],
   },
   // Views
@@ -115,15 +114,14 @@ export const SYNDICATE_VAULT_ABI = [
     name: "getAgentConfig",
     type: "function",
     stateMutability: "view",
-    inputs: [{ name: "pkpAddress", type: "address" }],
+    inputs: [{ name: "agentAddress", type: "address" }],
     outputs: [
       {
         name: "",
         type: "tuple",
         components: [
           { name: "agentId", type: "uint256" },
-          { name: "pkpAddress", type: "address" },
-          { name: "operatorEOA", type: "address" },
+          { name: "agentAddress", type: "address" },
           { name: "active", type: "bool" },
         ],
       },
@@ -140,7 +138,7 @@ export const SYNDICATE_VAULT_ABI = [
     name: "isAgent",
     type: "function",
     stateMutability: "view",
-    inputs: [{ name: "pkpAddress", type: "address" }],
+    inputs: [{ name: "agentAddress", type: "address" }],
     outputs: [{ name: "", type: "bool" }],
   },
   {
@@ -158,7 +156,7 @@ export const SYNDICATE_VAULT_ABI = [
     outputs: [{ name: "", type: "uint256" }],
   },
   {
-    name: "getAgentOperators",
+    name: "getAgentAddresses",
     type: "function",
     stateMutability: "view",
     inputs: [],
@@ -249,14 +247,13 @@ export const SYNDICATE_VAULT_ABI = [
     type: "event",
     inputs: [
       { name: "agentId", type: "uint256", indexed: true },
-      { name: "pkpAddress", type: "address", indexed: true },
-      { name: "operatorEOA", type: "address", indexed: true },
+      { name: "agentAddress", type: "address", indexed: true },
     ],
   },
   {
     name: "AgentRemoved",
     type: "event",
-    inputs: [{ name: "pkpAddress", type: "address", indexed: true }],
+    inputs: [{ name: "agentAddress", type: "address", indexed: true }],
   },
   {
     name: "Ragequit",

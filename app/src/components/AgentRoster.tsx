@@ -23,7 +23,7 @@ export default function AgentRoster({ agents }: AgentRosterProps) {
       ) : (
         <div className="flex flex-col gap-3">
           {agents.map((agent) => (
-            <div key={agent.operatorEOA} className="agent-card">
+            <div key={agent.agentAddress} className="agent-card">
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <div className="font-[family-name:var(--font-jetbrains-mono)] text-xs text-white">
@@ -50,7 +50,7 @@ export default function AgentRoster({ agents }: AgentRosterProps) {
                       marginTop: "2px",
                     }}
                   >
-                    {truncateAddress(agent.operatorEOA)}
+                    {truncateAddress(agent.agentAddress)}
                   </div>
                   {agent.identity?.description && (
                     <div

@@ -39,13 +39,12 @@ function getSyndicateId(): string {
 export function handleAgentRegistered(event: AgentRegistered): void {
   let syndicateId = getSyndicateId();
 
-  let id = event.address.toHexString() + "-" + event.params.pkpAddress.toHexString();
+  let id = event.address.toHexString() + "-" + event.params.agentAddress.toHexString();
   let agent = new Agent(id);
 
   agent.syndicate = syndicateId;
   agent.agentId = event.params.agentId;
-  agent.pkpAddress = event.params.pkpAddress;
-  agent.operatorEOA = event.params.operatorEOA;
+  agent.agentAddress = event.params.agentAddress;
   agent.active = true;
   agent.registeredAt = event.block.timestamp;
   agent.totalBatches = BigInt.zero();
@@ -55,7 +54,7 @@ export function handleAgentRegistered(event: AgentRegistered): void {
 }
 
 export function handleAgentRemoved(event: AgentRemoved): void {
-  let id = event.address.toHexString() + "-" + event.params.pkpAddress.toHexString();
+  let id = event.address.toHexString() + "-" + event.params.agentAddress.toHexString();
   let agent = Agent.load(id);
   if (agent == null) return;
 

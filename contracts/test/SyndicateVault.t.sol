@@ -25,10 +25,8 @@ contract SyndicateVaultTest is Test {
     address public owner = makeAddr("owner");
     address public lp1 = makeAddr("lp1");
     address public lp2 = makeAddr("lp2");
-    address public agentPkp = makeAddr("agentPkp");
-    address public agentEoa = makeAddr("agentEoa");
-    address public agentPkp2 = makeAddr("agentPkp2");
-    address public agentEoa2 = makeAddr("agentEoa2");
+    address public agentWallet = makeAddr("agentWallet");
+    address public agentWallet2 = makeAddr("agentWallet2");
 
     uint256 public agent1NftId;
     uint256 public agent2NftId;
@@ -50,8 +48,8 @@ contract SyndicateVaultTest is Test {
         agentRegistry = new MockAgentRegistry();
 
         // Mint ERC-8004 identity NFTs for agents
-        agent1NftId = agentRegistry.mint(agentEoa);
-        agent2NftId = agentRegistry.mint(agentEoa2);
+        agent1NftId = agentRegistry.mint(agentWallet);
+        agent2NftId = agentRegistry.mint(agentWallet2);
 
         // Deploy vault via proxy with executor lib
         SyndicateVault impl = new SyndicateVault();
@@ -82,9 +80,9 @@ contract SyndicateVaultTest is Test {
         // Fund swap router
         weth.mint(address(swapRouter), 1_000e18);
 
-        // Register agent (NFT owned by agentEoa)
+        // Register agent
         vm.prank(owner);
-        vault.registerAgent(agent1NftId, agentPkp, agentEoa);
+        vault.registerAgent(agent1NftId, agentWallet);
     }
 
     // ==================== INITIALIZATION ====================
@@ -156,13 +154,12 @@ contract SyndicateVaultTest is Test {
     // ==================== AGENT REGISTRATION ====================
 
     function test_registerAgent() public view {
-        assertTrue(vault.isAgent(agentPkp));
+        assertTrue(vault.isAgent(agentWallet));
         assertEq(vault.getAgentCount(), 1);
 
-        ISyndicateVault.AgentConfig memory config = vault.getAgentConfig(agentPkp);
+        ISyndicateVault.AgentConfig memory config = vault.getAgentConfig(agentWallet);
         assertEq(config.agentId, agent1NftId);
-        assertEq(config.pkpAddress, agentPkp);
-        assertEq(config.operatorEOA, agentEoa);
+        assertEq(config.agentAddress, agentWallet);
         assertTrue(config.active);
     }
 
@@ -171,10 +168,10 @@ contract SyndicateVaultTest is Test {
         uint256 ownerNftId = agentRegistry.mint(owner);
 
         vm.prank(owner);
-        vault.registerAgent(ownerNftId, agentPkp2, agentEoa2);
+        vault.registerAgent(ownerNftId, agentWallet2);
 
-        assertTrue(vault.isAgent(agentPkp2));
-        ISyndicateVault.AgentConfig memory config = vault.getAgentConfig(agentPkp2);
+        assertTrue(vault.isAgent(agentWallet2));
+        ISyndicateVault.AgentConfig memory config = vault.getAgentConfig(agentWallet2);
         assertEq(config.agentId, ownerNftId);
     }
 
@@ -183,23 +180,23 @@ contract SyndicateVaultTest is Test {
         address random = makeAddr("random");
         uint256 randomNftId = agentRegistry.mint(random);
 
-        // Try to register with NFT not owned by operatorEOA or vault owner
+        // Try to register with NFT not owned by agentAddress or vault owner
         vm.prank(owner);
         vm.expectRevert(ISyndicateVault.NotAgentOwner.selector);
-        vault.registerAgent(randomNftId, agentPkp2, agentEoa2);
+        vault.registerAgent(randomNftId, agentWallet2);
     }
 
     function test_registerAgent_notOwner_reverts() public {
         vm.prank(lp1);
         vm.expectRevert();
-        vault.registerAgent(agent2NftId, agentPkp2, agentEoa2);
+        vault.registerAgent(agent2NftId, agentWallet2);
     }
 
     function test_removeAgent() public {
         vm.prank(owner);
-        vault.removeAgent(agentPkp);
+        vault.removeAgent(agentWallet);
 
-        assertFalse(vault.isAgent(agentPkp));
+        assertFalse(vault.isAgent(agentWallet));
         assertEq(vault.getAgentCount(), 0);
     }
 
@@ -227,7 +224,7 @@ contract SyndicateVaultTest is Test {
     function test_executeBatch_notOwner_reverts() public {
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](0);
 
-        vm.prank(agentPkp);
+        vm.prank(agentWallet);
         vm.expectRevert();
         vault.executeBatch(calls);
     }
@@ -448,48 +445,48 @@ contract SyndicateVaultTest is Test {
         assertEq(vault.totalDeposited(), 30_000e6);
     }
 
-    // ==================== GET AGENT OPERATORS ====================
+    // ==================== GET AGENT ADDRESSES ====================
 
-    function test_getAgentOperators_single() public view {
-        address[] memory operators = vault.getAgentOperators();
-        assertEq(operators.length, 1);
-        assertEq(operators[0], agentEoa);
+    function test_getAgentAddresses_single() public view {
+        address[] memory agents = vault.getAgentAddresses();
+        assertEq(agents.length, 1);
+        assertEq(agents[0], agentWallet);
     }
 
-    function test_getAgentOperators_multiple() public {
+    function test_getAgentAddresses_multiple() public {
         vm.prank(owner);
-        vault.registerAgent(agent2NftId, agentPkp2, agentEoa2);
+        vault.registerAgent(agent2NftId, agentWallet2);
 
-        address[] memory operators = vault.getAgentOperators();
-        assertEq(operators.length, 2);
+        address[] memory agents = vault.getAgentAddresses();
+        assertEq(agents.length, 2);
         // Order depends on EnumerableSet iteration order
         bool found1 = false;
         bool found2 = false;
-        for (uint256 i = 0; i < operators.length; i++) {
-            if (operators[i] == agentEoa) found1 = true;
-            if (operators[i] == agentEoa2) found2 = true;
+        for (uint256 i = 0; i < agents.length; i++) {
+            if (agents[i] == agentWallet) found1 = true;
+            if (agents[i] == agentWallet2) found2 = true;
         }
         assertTrue(found1);
         assertTrue(found2);
     }
 
-    function test_getAgentOperators_afterRemoval() public {
+    function test_getAgentAddresses_afterRemoval() public {
         vm.startPrank(owner);
-        vault.registerAgent(agent2NftId, agentPkp2, agentEoa2);
-        vault.removeAgent(agentPkp);
+        vault.registerAgent(agent2NftId, agentWallet2);
+        vault.removeAgent(agentWallet);
         vm.stopPrank();
 
-        address[] memory operators = vault.getAgentOperators();
-        assertEq(operators.length, 1);
-        assertEq(operators[0], agentEoa2);
+        address[] memory agents = vault.getAgentAddresses();
+        assertEq(agents.length, 1);
+        assertEq(agents[0], agentWallet2);
     }
 
-    function test_getAgentOperators_empty() public {
+    function test_getAgentAddresses_empty() public {
         vm.prank(owner);
-        vault.removeAgent(agentPkp);
+        vault.removeAgent(agentWallet);
 
-        address[] memory operators = vault.getAgentOperators();
-        assertEq(operators.length, 0);
+        address[] memory agents = vault.getAgentAddresses();
+        assertEq(agents.length, 0);
     }
 
     // ==================== ERC20VOTES ====================

@@ -15,7 +15,7 @@ All queries below can be sent as POST requests to this endpoint with `{ "query":
 | Entity | Description |
 |--------|-------------|
 | **Syndicate** | A syndicate and its vault. Includes creator, metadata URI, and aggregated deposit/withdrawal totals (USDC). |
-| **Agent** | A registered agent (PKP wallet). Includes caps, lifetime stats (total batches executed, total USDC moved). |
+| **Agent** | A registered agent wallet. Includes caps, lifetime stats (total batches executed, total USDC moved). |
 | **Deposit** | An LP deposit into a vault. USDC amount, shares received, timestamp. |
 | **Withdrawal** | An LP withdrawal from a vault. USDC amount, shares burned, timestamp. |
 | **BatchExecution** | A batch of protocol calls executed by an agent. Call count, USDC amount, linked agent. |
@@ -53,8 +53,7 @@ All queries below can be sent as POST requests to this endpoint with `{ "query":
     totalDeposits
     totalWithdrawals
     agents(first: 50) {
-      pkpAddress
-      operatorEOA
+      agentAddress
       active
       totalBatches
       totalAssetAmount
@@ -68,7 +67,7 @@ All queries below can be sent as POST requests to this endpoint with `{ "query":
       txHash
     }
     batchExecutions(first: 10, orderBy: timestamp, orderDirection: desc) {
-      agent { pkpAddress }
+      agent { agentAddress }
       callCount
       assetAmount
       timestamp
@@ -117,8 +116,7 @@ All queries below can be sent as POST requests to this endpoint with `{ "query":
 ```graphql
 {
   agents(where: { active: true }, orderBy: totalAssetAmount, orderDirection: desc) {
-    pkpAddress
-    operatorEOA
+    agentAddress
     syndicate { id vault }
     totalBatches
     totalAssetAmount
@@ -181,10 +179,9 @@ All queries below can be sent as POST requests to this endpoint with `{ "query":
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | ID | `{vault}-{pkpAddress}` |
+| `id` | ID | `{vault}-{agentAddress}` |
 | `syndicate` | Syndicate | Parent syndicate |
-| `pkpAddress` | Bytes | Lit PKP wallet address |
-| `operatorEOA` | Bytes | Operator EOA that controls the PKP |
+| `agentAddress` | Bytes | Agent wallet address |
 | `maxPerTx` | BigInt | Max USDC per transaction (6 decimals) |
 | `dailyLimit` | BigInt | Max daily USDC spend (6 decimals) |
 | `active` | Boolean | Whether the agent is currently registered |
