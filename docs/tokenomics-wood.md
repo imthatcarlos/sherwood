@@ -64,9 +64,9 @@ Vault depositors/strategies claim WOOD via Merkle flow (snapshot → tree → ro
        ↓
 More vault TVL + strategy activity → higher shareToken utility and trading
        ↓
-LPs earn swap fees (and optional LP-targeted bribes), not scheduled WOOD emissions
+LPs earn swap fees, not scheduled WOOD emissions
        ↓
-Trading fees + voter bribes → veWOOD voters who voted for that syndicate
+Trading fees → veWOOD voters who voted for that syndicate
        ↓
 Higher voter + depositor yield → more people lock WOOD / deposit into vaults
        ↓
@@ -133,7 +133,7 @@ One gauge per syndicate. Receives WOOD emissions proportional to votes.
 - The syndicate vault rewards buffer (for vault depositors/strategies)
 - Gauge streams epoch emissions into the vault rewards buffer; rewards are distributed to depositors via Merkle claims
 
-**LPs do not receive scheduled WOOD emissions.** Uniswap LPs earn swap fees from pool trading activity, plus any separate LP-targeted incentives/bribes if offered.
+**LPs do not receive scheduled WOOD emissions.** Uniswap LPs earn swap fees from pool trading activity only.
 
 ### 5. Uniswap V3 Pools (shareToken/WOOD)
 
@@ -154,7 +154,7 @@ Each syndicate vault produces share tokens (e.g., `swUSDC`, `swETH`). For each s
 - `FeeCollector` contract claims fees from registered `shareToken/WOOD` LP positions at epoch flip
 - Collected fees distributed to veWOOD voters who voted for that syndicate
 
-**LP earnings scope:** LPs in `shareToken/WOOD` pools earn Uniswap swap fees (and optional LP incentives), but not scheduled WOOD emissions.
+**LP earnings scope:** LPs in `shareToken/WOOD` pools earn Uniswap swap fees, but not scheduled WOOD emissions.
 
 ### 6. Fee Distribution (FeeDistributor.sol)
 
@@ -167,21 +167,7 @@ At each epoch boundary:
 
 **Fee tokens:** Fees are in `shareToken` + `WOOD` (both sides of the pair). Distributed as-is (no conversion).
 
-### 7. Voter Incentives / Bribes (BribeVault.sol)
-
-External parties can deposit tokens as incentives for voters of specific syndicates:
-
-**Who would bribe?**
-- **Syndicate agents** — buy WOOD and bribe to attract more votes → more emissions → more TVL for their vault
-- **Protocols** — e.g., Moonwell wants syndicates to supply their markets, so they bribe voters of syndicates running Moonwell strategies
-- **Anyone** — permissionless
-
-**Mechanics:**
-- Deposit any ERC-20 token into `BribeVault` earmarked for a specific syndicate's gauge
-- veWOOD voters who voted for that syndicate in the current epoch claim bribes proportionally
-- Bribes are claimable after the epoch ends
-
-### 8. Vault Rewards Distribution (Merkle Flow)
+### 7. Vault Rewards Distribution (Merkle Flow)
 
 Scheduled WOOD emissions for a voted syndicate are paid into that syndicate vault rewards buffer, then distributed to vault depositors/strategies through a Merkle claim flow:
 
@@ -199,7 +185,7 @@ This makes depositor payout deterministic and auditable while keeping per-user d
 | Allocation | Amount | % | Form |
 |------------|--------|---|------|
 | Genesis liquidity | 50M | 10% | WOOD (for pool bootstrapping) |
-| Voter incentives (epoch 1-4) | 40M | 8% | WOOD (bootstrap voting) |
+| Early voter rewards (epoch 1-4) | 40M | 8% | WOOD (bootstrap voting) |
 | Protocol treasury | 100M | 20% | veWOOD (auto-max-locked) |
 | Team | 95M | 19% | veWOOD (auto-max-locked, 1yr cliff) |
 | Early syndicate creators | 50M | 10% | veWOOD (airdrop to existing agents) |
@@ -229,7 +215,6 @@ Year 2:   Voter-controlled (est. 7-10M/week)
 | `Minter.sol` | Emission schedule, epoch flipping, rebase calculation | WoodToken, Voter, VotingEscrow |
 | `FeeCollector.sol` | Harvests Uniswap V3 swap fees from registered LP positions | Uniswap V3 NonfungiblePositionManager |
 | `FeeDistributor.sol` | Distributes collected fees to veWOOD voters | Voter, VotingEscrow |
-| `BribeVault.sol` | External incentives (bribes) for syndicate voters | Voter |
 | `VaultRewardsMerkleDistributor.sol` | Stores epoch Merkle roots and processes vault depositor WOOD claims | SyndicateGauge, Vault |
 | `RewardsDistributor.sol` | veWOOD rebase (anti-dilution) distribution | VotingEscrow, Minter |
 
@@ -284,8 +269,8 @@ Thursday 00:00 UTC — Epoch N starts
 │
 ├── Users vote for syndicates (any time during epoch)
 ├── Vault depositors/strategies claim WOOD via Merkle proofs
-├── LPs provide liquidity for swap fees / fee capture (no scheduled WOOD emissions)
-├── Voters claim epoch N-1 fees + bribes
+├── LPs provide liquidity for swap fees (no scheduled WOOD emissions)
+├── Voters claim epoch N-1 fees
 │
 Wednesday 23:59 UTC — Epoch N ends
 ```
@@ -316,9 +301,8 @@ Wednesday 23:59 UTC — Epoch N ends
 4. `SyndicateGauge.sol` — gauge receiving emissions + vault rewards buffer streaming
 5. `Minter.sol` — emission schedule
 6. `FeeCollector.sol` + `FeeDistributor.sol` — fee routing
-7. `BribeVault.sol` — incentive layer
-8. `VaultRewardsMerkleDistributor.sol` — depositor claims (`snapshot → tree → root → claim`)
-9. `RewardsDistributor.sol` — rebase
+7. `VaultRewardsMerkleDistributor.sol` — depositor claims (`snapshot → tree → root → claim`)
+8. `RewardsDistributor.sol` — rebase
 
 ## References
 
