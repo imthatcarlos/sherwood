@@ -37,8 +37,6 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     uint256 public constant MIN_QUORUM_BPS = 1000; // 10%
     uint256 public constant MAX_QUORUM_BPS = 10000; // 100%
     uint256 public constant MAX_PERFORMANCE_FEE_CAP = 5000; // 50%
-    uint256 public constant DEFAULT_MIN_STRATEGY_DURATION = 1 days;
-    uint256 public constant DEFAULT_MAX_STRATEGY_DURATION = 7 days;
     uint256 public constant ABSOLUTE_MIN_STRATEGY_DURATION = 1 hours;
     uint256 public constant ABSOLUTE_MAX_STRATEGY_DURATION = 30 days;
     uint256 public constant MIN_COOLDOWN_PERIOD = 1 hours;
@@ -46,9 +44,7 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
 
     // ── Collaborative proposal constants (safety bounds) ──
 
-    uint256 public constant DEFAULT_MAX_CO_PROPOSERS = 5;
     uint256 public constant MIN_SPLIT_BPS = 100; // 1%
-    uint256 public constant DEFAULT_COLLABORATION_WINDOW = 48 hours;
     uint256 public constant MIN_COLLABORATION_WINDOW = 1 hours;
     uint256 public constant MAX_COLLABORATION_WINDOW = 7 days;
     uint256 public constant ABSOLUTE_MAX_CO_PROPOSERS = 10;
@@ -118,13 +114,19 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
         uint256 maxPerformanceFeeBps_,
         uint256 cooldownPeriod_,
         uint256 minStrategyDuration_,
-        uint256 maxStrategyDuration_
+        uint256 maxStrategyDuration_,
+        uint256 collaborationWindow_,
+        uint256 maxCoProposers_
     ) external initializer {
         if (owner_ == address(0)) revert ZeroAddress();
         if (
             minStrategyDuration_ < ABSOLUTE_MIN_STRATEGY_DURATION
                 || maxStrategyDuration_ > ABSOLUTE_MAX_STRATEGY_DURATION || minStrategyDuration_ > maxStrategyDuration_
         ) revert InvalidStrategyDurationBounds();
+        if (collaborationWindow_ < MIN_COLLABORATION_WINDOW || collaborationWindow_ > MAX_COLLABORATION_WINDOW) {
+            revert InvalidCollaborationWindow();
+        }
+        if (maxCoProposers_ == 0 || maxCoProposers_ > ABSOLUTE_MAX_CO_PROPOSERS) revert InvalidMaxCoProposers();
 
         __Ownable_init(owner_);
 
@@ -142,8 +144,8 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
             cooldownPeriod: cooldownPeriod_
         });
 
-        _collaborationWindow = DEFAULT_COLLABORATION_WINDOW;
-        _maxCoProposers = DEFAULT_MAX_CO_PROPOSERS;
+        _collaborationWindow = collaborationWindow_;
+        _maxCoProposers = maxCoProposers_;
         _minStrategyDuration = minStrategyDuration_;
         _maxStrategyDuration = maxStrategyDuration_;
     }

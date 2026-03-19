@@ -67,7 +67,9 @@ contract DeployTestnet is Script {
                 3000, // maxPerformanceFeeBps (30%)
                 1 days, // cooldownPeriod
                 1 days, // minStrategyDuration
-                7 days // maxStrategyDuration
+                7 days, // maxStrategyDuration
+                48 hours, // collaborationWindow
+                5 // maxCoProposers
             )
         );
         address governorProxy = address(new ERC1967Proxy(address(govImpl), govInitData));
