@@ -48,9 +48,9 @@ contract CollaborativeProposalsTest is Test {
         executorLib = new BatchExecutorLib();
         agentRegistry = new MockAgentRegistry();
 
-        leadNftId = agentRegistry.mint(leadAgentEoa);
-        coNftId1 = agentRegistry.mint(coAgent1Eoa);
-        coNftId2 = agentRegistry.mint(coAgent2Eoa);
+        leadNftId = agentRegistry.mint(leadAgent);
+        coNftId1 = agentRegistry.mint(coAgent1);
+        coNftId2 = agentRegistry.mint(coAgent2);
 
         // Deploy vault
         // Deploy governor first
@@ -92,11 +92,11 @@ contract CollaborativeProposalsTest is Test {
 
         // Register agents
         vm.startPrank(owner);
-        vault.registerAgent(leadNftId, leadAgent, leadAgentEoa);
-        vault.registerAgent(coNftId1, coAgent1, coAgent1Eoa);
+        vault.registerAgent(leadNftId, leadAgent);
+        vault.registerAgent(coNftId1, coAgent1);
         vm.stopPrank();
         vm.startPrank(owner);
-        vault.registerAgent(coNftId2, coAgent2, coAgent2Eoa);
+        vault.registerAgent(coNftId2, coAgent2);
         governor.addVault(address(vault));
         vm.stopPrank();
 
@@ -529,10 +529,10 @@ contract CollaborativeProposalsTest is Test {
         address co5 = makeAddr("co5");
         address co6 = makeAddr("co6");
         vm.startPrank(owner);
-        vault.registerAgent(agentRegistry.mint(makeAddr("co3Eoa")), co3, makeAddr("co3Eoa"));
-        vault.registerAgent(agentRegistry.mint(makeAddr("co4Eoa")), co4, makeAddr("co4Eoa"));
-        vault.registerAgent(agentRegistry.mint(makeAddr("co5Eoa")), co5, makeAddr("co5Eoa"));
-        vault.registerAgent(agentRegistry.mint(makeAddr("co6Eoa")), co6, makeAddr("co6Eoa"));
+        vault.registerAgent(agentRegistry.mint(co3), co3);
+        vault.registerAgent(agentRegistry.mint(co4), co4);
+        vault.registerAgent(agentRegistry.mint(co5), co5);
+        vault.registerAgent(agentRegistry.mint(co6), co6);
         vm.stopPrank();
 
         ISyndicateGovernor.CoProposer[] memory coProps = new ISyndicateGovernor.CoProposer[](6);
@@ -582,9 +582,9 @@ contract CollaborativeProposalsTest is Test {
         address co4 = makeAddr("co4");
         address co5 = makeAddr("co5");
         vm.startPrank(owner);
-        vault.registerAgent(agentRegistry.mint(makeAddr("co3Eoa")), co3, makeAddr("co3Eoa"));
-        vault.registerAgent(agentRegistry.mint(makeAddr("co4Eoa")), co4, makeAddr("co4Eoa"));
-        vault.registerAgent(agentRegistry.mint(makeAddr("co5Eoa")), co5, makeAddr("co5Eoa"));
+        vault.registerAgent(agentRegistry.mint(co3), co3);
+        vault.registerAgent(agentRegistry.mint(co4), co4);
+        vault.registerAgent(agentRegistry.mint(co5), co5);
         vm.stopPrank();
 
         ISyndicateGovernor.CoProposer[] memory coProps = new ISyndicateGovernor.CoProposer[](5);

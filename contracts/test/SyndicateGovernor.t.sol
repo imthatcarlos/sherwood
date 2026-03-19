@@ -34,7 +34,6 @@ contract SyndicateGovernorTest is Test {
 
     address public owner = makeAddr("owner");
     address public agent = makeAddr("agent");
-    address public agentEoa = makeAddr("agentEoa");
     address public lp1 = makeAddr("lp1");
     address public lp2 = makeAddr("lp2");
     address public random = makeAddr("random");
@@ -65,7 +64,7 @@ contract SyndicateGovernorTest is Test {
 
         // Deploy ERC-8004 registry
         agentRegistry = new MockAgentRegistry();
-        agentNftId = agentRegistry.mint(agentEoa);
+        agentNftId = agentRegistry.mint(agent);
 
         // Deploy governor first (vault requires governor at init)
         SyndicateGovernor govImpl = new SyndicateGovernor();
@@ -106,7 +105,7 @@ contract SyndicateGovernorTest is Test {
 
         // Register agent on vault
         vm.prank(owner);
-        vault.registerAgent(agentNftId, agent, agentEoa);
+        vault.registerAgent(agentNftId, agent);
 
         // Register vault on governor
         vm.prank(owner);
@@ -1149,8 +1148,7 @@ contract SyndicateGovernorTest is Test {
         address lp3 = makeAddr("lp3");
         address lp4 = makeAddr("lp4");
         address agent2 = makeAddr("agent2");
-        address agent2Eoa = makeAddr("agent2Eoa");
-        uint256 agent2NftId = agentRegistry.mint(agent2Eoa);
+        uint256 agent2NftId = agentRegistry.mint(agent2);
 
         SyndicateVault vaultImpl2 = new SyndicateVault();
         bytes memory vault2Init = abi.encodeCall(
@@ -1171,7 +1169,7 @@ contract SyndicateGovernorTest is Test {
 
         vm.startPrank(owner);
         governor.addVault(address(vault2));
-        vault2.registerAgent(agent2NftId, agent2, agent2Eoa);
+        vault2.registerAgent(agent2NftId, agent2);
         vm.stopPrank();
 
         // Fund and deposit into vault2

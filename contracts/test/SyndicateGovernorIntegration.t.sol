@@ -31,7 +31,6 @@ contract SyndicateGovernorIntegrationTest is Test {
 
     address public owner = makeAddr("owner");
     address public agent = makeAddr("agent");
-    address public agentEoa = makeAddr("agentEoa");
     address public lp1 = makeAddr("lp1");
     address public lp2 = makeAddr("lp2");
     address public random = makeAddr("random");
@@ -58,7 +57,7 @@ contract SyndicateGovernorIntegrationTest is Test {
 
         // Deploy ERC-8004 registry
         agentRegistry = new MockAgentRegistry();
-        agentNftId = agentRegistry.mint(agentEoa);
+        agentNftId = agentRegistry.mint(agent);
 
         // Deploy governor first
         SyndicateGovernor govImpl = new SyndicateGovernor();
@@ -97,9 +96,9 @@ contract SyndicateGovernorIntegrationTest is Test {
         );
         vault = SyndicateVault(payable(address(new ERC1967Proxy(address(vaultImpl), vaultInit))));
 
-        // Register agent and vault
+        // Register agent and wire up
         vm.startPrank(owner);
-        vault.registerAgent(agentNftId, agent, agentEoa);
+        vault.registerAgent(agentNftId, agent);
         governor.addVault(address(vault));
         vm.stopPrank();
 

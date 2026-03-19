@@ -14,8 +14,8 @@ const MAX_BLOCK_RANGE = 10_000n;
 // ── Event signatures (parseAbiItem format for getLogs) ──
 
 const VAULT_EVENTS = [
-  parseAbiItem("event AgentRegistered(uint256 indexed agentId, address indexed pkpAddress, address indexed operatorEOA)"),
-  parseAbiItem("event AgentRemoved(address indexed pkpAddress)"),
+  parseAbiItem("event AgentRegistered(uint256 indexed agentId, address indexed agentAddress)"),
+  parseAbiItem("event AgentRemoved(address indexed agentAddress)"),
   parseAbiItem("event Ragequit(address indexed lp, uint256 shares, uint256 assets)"),
   parseAbiItem("event DepositorApproved(address indexed depositor)"),
   parseAbiItem("event DepositorRemoved(address indexed depositor)"),

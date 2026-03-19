@@ -68,7 +68,7 @@ export function registerVeniceCommands(program: Command): void {
         [assetAddress, totalDeposited, agents] = await Promise.all([
           client.readContract({ address: vaultAddress, abi: SYNDICATE_VAULT_ABI, functionName: "asset" }) as Promise<Address>,
           client.readContract({ address: vaultAddress, abi: SYNDICATE_VAULT_ABI, functionName: "totalDeposited" }) as Promise<bigint>,
-          client.readContract({ address: vaultAddress, abi: SYNDICATE_VAULT_ABI, functionName: "getAgentOperators" }) as Promise<Address[]>,
+          client.readContract({ address: vaultAddress, abi: SYNDICATE_VAULT_ABI, functionName: "getAgentAddresses" }) as Promise<Address[]>,
         ]);
 
         [assetDecimals, assetSymbol, assetBalance] = await Promise.all([
@@ -286,7 +286,7 @@ export function registerVeniceCommands(program: Command): void {
         const [assetAddress, totalDeposited, agents] = await Promise.all([
           client.readContract({ address: vaultAddress, abi: SYNDICATE_VAULT_ABI, functionName: "asset" }) as Promise<Address>,
           client.readContract({ address: vaultAddress, abi: SYNDICATE_VAULT_ABI, functionName: "totalDeposited" }) as Promise<bigint>,
-          client.readContract({ address: vaultAddress, abi: SYNDICATE_VAULT_ABI, functionName: "getAgentOperators" }) as Promise<Address[]>,
+          client.readContract({ address: vaultAddress, abi: SYNDICATE_VAULT_ABI, functionName: "getAgentAddresses" }) as Promise<Address[]>,
         ]);
 
         const [assetDecimals, assetSymbol, assetBalance] = await Promise.all([

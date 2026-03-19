@@ -113,14 +113,13 @@ contract Deploy is Script {
         );
         console.log("Syndicate #%d vault:", syndicateId, vaultProxy);
 
-        // 5. Register deployer as agent (dev mode — PKP and EOA are both deployer)
+        // 5. Register deployer as agent (dev mode — deployer acts as agent wallet)
         // NOTE: agentId must be set to the deployer's ERC-8004 agent ID
         uint256 agentId = creatorAgentId;
         SyndicateVault(payable(vaultProxy))
             .registerAgent(
                 agentId, // ERC-8004 identity
-                deployer, // pkpAddress (in dev, deployer acts as agent)
-                deployer // operatorEOA
+                deployer // agentAddress (in dev, deployer acts as agent)
             );
         console.log("Registered deployer as agent");
 

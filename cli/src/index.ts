@@ -270,8 +270,7 @@ syndicate
         const creatorAddress = getAccount().address;
         await vaultLib.registerAgent(
           BigInt(agentIdStr),
-          creatorAddress,        // pkp = creator EOA (direct execution)
-          creatorAddress,        // operator = creator EOA
+          creatorAddress,        // agentAddress = creator EOA (direct execution)
         );
       } catch (regErr) {
         // Non-fatal — creator can register later via `syndicate add`
@@ -514,8 +513,7 @@ syndicate
   .description("Register an agent on a syndicate vault (creator only)")
   .option("--vault <address>", "Vault address (default: from config)")
   .requiredOption("--agent-id <id>", "Agent's ERC-8004 identity token ID")
-  .requiredOption("--pkp <address>", "Agent PKP address")
-  .requiredOption("--eoa <address>", "Operator EOA address")
+  .requiredOption("--wallet <address>", "Agent wallet address")
   .action(async (opts) => {
     const spinner = ora("Verifying creator...").start();
     try {
@@ -534,8 +532,7 @@ syndicate
       spinner.text = "Registering agent...";
       const hash = await vaultLib.registerAgent(
         BigInt(opts.agentId),
-        opts.pkp as Address,
-        opts.eoa as Address,
+        opts.wallet as Address,
       );
       spinner.succeed(`Agent registered: ${hash}`);
       console.log(chalk.dim(`  ${getExplorerUrl(hash)}`));
@@ -545,10 +542,10 @@ syndicate
         const xmtp = await loadXmtp();
         const xmtpClient = await xmtp.getXmtpClient();
         const group = await xmtp.getGroup(xmtpClient, subdomain);
-        await xmtp.addMember(group, opts.pkp);
+        await xmtp.addMember(group, opts.wallet);
         await xmtp.sendEnvelope(group, {
           type: "AGENT_REGISTERED",
-          agent: { erc8004Id: Number(opts.agentId), address: opts.pkp },
+          agent: { erc8004Id: Number(opts.agentId), address: opts.wallet },
           syndicate: subdomain,
           timestamp: Math.floor(Date.now() / 1000),
         });
@@ -726,7 +723,7 @@ syndicate
       }
 
       console.log(G("  To approve:"));
-      console.log(DIM(`    sherwood syndicate approve --agent-id <id> --pkp <addr> --eoa <addr>`));
+      console.log(DIM(`    sherwood syndicate approve --agent-id <id> --wallet <addr>`));
       console.log(G("  To reject:"));
       console.log(DIM(`    sherwood syndicate reject --attestation <uid>`));
       console.log();
@@ -743,8 +740,7 @@ syndicate
   .option("--vault <address>", "Vault address (default: from config)")
   .option("--subdomain <name>", "Syndicate subdomain (alternative to --vault)")
   .requiredOption("--agent-id <id>", "Agent's ERC-8004 identity token ID")
-  .requiredOption("--pkp <address>", "Agent PKP address")
-  .requiredOption("--eoa <address>", "Operator EOA address")
+  .requiredOption("--wallet <address>", "Agent wallet address")
   .action(async (opts) => {
     const spinner = ora("Verifying creator...").start();
     try {
@@ -770,8 +766,7 @@ syndicate
       try {
         const regHash = await vaultLib.registerAgent(
           BigInt(opts.agentId),
-          opts.pkp as Address,
-          opts.eoa as Address,
+          opts.wallet as Address,
         );
         console.log(DIM(`  Agent registered: ${getExplorerUrl(regHash)}`));
       } catch (regErr) {
@@ -800,7 +795,7 @@ syndicate
           syndicateId,
           BigInt(opts.agentId),
           vaultAddress,
-          opts.eoa as Address,
+          opts.wallet as Address,
         );
         approvalUid = result.uid;
       }
@@ -811,10 +806,10 @@ syndicate
         const xmtp = await loadXmtp();
         const xmtpClient = await xmtp.getXmtpClient();
         const group = await xmtp.getGroup(xmtpClient, subdomain);
-        await xmtp.addMember(group, opts.pkp);
+        await xmtp.addMember(group, opts.wallet);
         await xmtp.sendEnvelope(group, {
           type: "AGENT_REGISTERED",
-          agent: { erc8004Id: Number(opts.agentId), address: opts.pkp },
+          agent: { erc8004Id: Number(opts.agentId), address: opts.wallet },
           syndicate: subdomain,
           timestamp: Math.floor(Date.now() / 1000),
         });
@@ -829,8 +824,7 @@ syndicate
       console.log(LABEL("  ◆ Agent Approved"));
       SEP();
       console.log(W(`  Agent ID:     #${opts.agentId}`));
-      console.log(W(`  PKP:          ${G(opts.pkp)}`));
-      console.log(W(`  EOA:          ${G(opts.eoa)}`));
+      console.log(W(`  Wallet:       ${G(opts.wallet)}`));
       console.log(W(`  Approval:     ${DIM(approvalUid)}`));
       console.log(W(`  EAS Scan:     ${DIM(easLib.getEasScanUrl(approvalUid))}`));
       SEP();

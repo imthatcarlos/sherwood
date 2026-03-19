@@ -194,7 +194,7 @@ Join request queries use the EAS GraphQL API (no SDK dependency):
 ```bash
 sherwood syndicate join --subdomain alpha --message "I run levered swap strategies"
 sherwood syndicate requests --subdomain alpha
-sherwood syndicate approve --subdomain alpha --agent-id 42 --pkp 0x... --eoa 0x... --max-per-tx 5000 --daily-limit 25000
+sherwood syndicate approve --subdomain alpha --agent-id 42 --wallet 0x... --max-per-tx 5000 --daily-limit 25000
 sherwood syndicate reject --attestation 0x...
 ```
 

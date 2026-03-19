@@ -234,15 +234,15 @@ export async function approveDepositors(depositors: Address[]): Promise<Hex> {
 }
 
 /**
- * Check if a PKP address is a registered agent on the vault.
+ * Check if an address is a registered agent on the vault.
  */
-export async function isAgent(pkpAddress: Address): Promise<boolean> {
+export async function isAgent(agentAddress: Address): Promise<boolean> {
   const client = getPublicClient();
   return client.readContract({
     address: getVaultAddress(),
     abi: SYNDICATE_VAULT_ABI,
     functionName: "isAgent",
-    args: [pkpAddress],
+    args: [agentAddress],
   }) as Promise<boolean>;
 }
 
@@ -314,8 +314,7 @@ export async function getBalance(address?: Address): Promise<{
  */
 export async function registerAgent(
   agentId: bigint,
-  pkpAddress: Address,
-  operatorEOA: Address,
+  agentAddress: Address,
 ): Promise<Hex> {
   const wallet = getWalletClient();
   const client = getPublicClient();
@@ -326,7 +325,7 @@ export async function registerAgent(
     address: getVaultAddress(),
     abi: SYNDICATE_VAULT_ABI,
     functionName: "registerAgent",
-    args: [agentId, pkpAddress, operatorEOA],
+    args: [agentId, agentAddress],
   });
 
   await client.waitForTransactionReceipt({ hash });

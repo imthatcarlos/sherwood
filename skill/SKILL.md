@@ -154,7 +154,7 @@ Verify: `sherwood syndicate info 1`
 
 ```bash
 sherwood syndicate add \
-  --agent-id 42 --pkp 0x... --eoa 0x...
+  --agent-id 42 --wallet 0x...
 ```
 
 ### Approve depositors

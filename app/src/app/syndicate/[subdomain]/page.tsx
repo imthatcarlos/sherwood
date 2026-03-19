@@ -58,8 +58,7 @@ export default async function SyndicateDetailPage({
   for (const agent of data.agents) {
     const displayName = agent.identity?.name || `Agent #${agent.agentId.toString()}`;
     agentNames[agent.agentId.toString()] = displayName;
-    addressNames[agent.pkpAddress.toLowerCase()] = displayName;
-    addressNames[agent.operatorEOA.toLowerCase()] = displayName;
+    addressNames[agent.agentAddress.toLowerCase()] = displayName;
   }
   // Add creator only if not already mapped via agent identity
   const creatorKey = data.creator.toLowerCase();

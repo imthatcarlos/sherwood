@@ -113,7 +113,7 @@ export async function createJoinRequest(
 
 /**
  * Create an AGENT_APPROVED attestation.
- * Attester: the syndicate creator. Recipient: the agent's operator EOA.
+ * Attester: the syndicate creator. Recipient: the agent wallet.
  */
 export async function createApproval(
   syndicateId: bigint,
