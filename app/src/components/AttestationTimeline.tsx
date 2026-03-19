@@ -47,7 +47,7 @@ export default function AttestationTimeline({
           No attestations yet
         </div>
       ) : (
-        <div className="flex flex-col">
+        <div className="flex flex-col" style={{ maxHeight: "480px", overflowY: "auto" }}>
           {attestations.map((att) => (
             <div key={att.uid} className="attestation-item">
               <div className="flex items-start gap-3">

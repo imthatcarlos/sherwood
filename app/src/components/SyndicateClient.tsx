@@ -3,7 +3,7 @@
 import { useAccount, useReadContract } from "wagmi";
 import { formatUnits, type Address } from "viem";
 import SyndicateHeader, { type TabId } from "./SyndicateHeader";
-import { SYNDICATE_VAULT_ABI, formatUSDC } from "@/lib/contracts";
+import { SYNDICATE_VAULT_ABI, formatAsset } from "@/lib/contracts";
 
 interface SyndicateClientProps {
   name: string;
@@ -11,6 +11,9 @@ interface SyndicateClientProps {
   vault: Address;
   creator: Address;
   paused: boolean;
+  chainId: number;
+  assetDecimals: number;
+  assetSymbol: string;
   activeTab?: TabId;
 }
 
@@ -20,6 +23,9 @@ export default function SyndicateClient({
   vault,
   creator,
   paused,
+  chainId,
+  assetDecimals,
+  assetSymbol,
   activeTab = "vault",
 }: SyndicateClientProps) {
   const { address, isConnected } = useAccount();
@@ -42,6 +48,8 @@ export default function SyndicateClient({
     query: { enabled: !!userShares && userShares > 0n },
   });
 
+  const isUSD = assetSymbol === "USDC" || assetSymbol === "USDT";
+
   return (
     <>
       <SyndicateHeader
@@ -50,6 +58,7 @@ export default function SyndicateClient({
         vault={vault}
         creator={creator}
         paused={paused}
+        chainId={chainId}
         activeTab={activeTab}
       />
 
@@ -59,13 +68,17 @@ export default function SyndicateClient({
           <div className="stat-item">
             <div className="stat-label">Your Shares</div>
             <div className="stat-value">
-              {parseFloat(formatUnits(userShares, 6)).toLocaleString()}
+              {parseFloat(formatUnits(userShares, assetDecimals)).toLocaleString()}
             </div>
           </div>
           <div className="stat-item">
             <div className="stat-label">Your Value</div>
             <div className="stat-value" style={{ color: "var(--color-accent)" }}>
-              {userAssets ? formatUSDC(userAssets) : "—"}
+              {userAssets
+                ? isUSD
+                  ? formatAsset(userAssets, assetDecimals, "USD")
+                  : `${formatAsset(userAssets, assetDecimals)} ${assetSymbol}`
+                : "—"}
             </div>
           </div>
         </div>

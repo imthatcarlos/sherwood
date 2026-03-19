@@ -305,6 +305,9 @@ export default async function ProposalsPage({
             vault={data.vault}
             creator={data.creator}
             paused={data.paused}
+            chainId={data.chainId}
+            assetDecimals={data.assetDecimals}
+            assetSymbol={data.assetSymbol}
             activeTab="proposals"
           />
 

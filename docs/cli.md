@@ -20,7 +20,10 @@ cd cli && npm install && npm run build
 
 | Flag | Effect |
 |------|--------|
-| `--testnet` | Use Base Sepolia instead of Base mainnet |
+| `--chain <network>` | Target network: `base` (default), `base-sepolia`, `robinhood-testnet` |
+| `--testnet` | Alias for `--chain base-sepolia` (deprecated) |
+
+Testnets require `ENABLE_TESTNET=true` in your environment. See [Deployments](deployments.md) for chain details and feature availability.
 
 ## Commands
 
@@ -36,6 +39,7 @@ Save settings to `~/.sherwood/config.json`.
 |--------|-------------|
 | `--private-key <key>` | Wallet private key (0x-prefixed) |
 | `--vault <address>` | Default SyndicateVault address |
+| `--rpc <url>` | Custom RPC URL for the current chain (saved per-network) |
 
 ### `sherwood config show`
 
@@ -83,7 +87,8 @@ Create a new syndicate. Deploys an ERC-4626 vault via the factory, registers an 
 | `--borrow-ratio <bps>` | No | Max borrow ratio in basis points (7500 = 75%). Default: 7500 |
 | `--targets <addresses>` | No | Comma-separated contract addresses to allowlist |
 | `--metadata-uri <uri>` | No | Override metadata URI (skips IPFS upload) |
-| `--asset <address>` | No | Underlying asset address. Default: USDC |
+| `--asset <symbol-or-address>` | No | Vault asset: `USDC`, `WETH`, or a `0x` address. Default: USDC (WETH on chains without USDC) |
+| `-y, --yes` | No | Skip confirmation prompt (non-interactive mode for agent use) |
 | `--public-chat` | No | Enable public chat — adds dashboard spectator to XMTP group |
 
 ### `sherwood syndicate list`
@@ -394,3 +399,4 @@ State stored in `~/.sherwood/config.json`:
 | `veniceApiKey` | Venice API key (from `venice provision`) |
 | `dbEncryptionKey` | XMTP database encryption key (auto-generated) |
 | `groupCache` | Local cache of subdomain → XMTP group ID |
+| `rpc` | Per-network custom RPC URLs (set via `config set --rpc`) |

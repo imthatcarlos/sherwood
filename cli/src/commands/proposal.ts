@@ -12,7 +12,7 @@ import chalk from "chalk";
 import ora from "ora";
 import { readFileSync } from "node:fs";
 import { getAccount } from "../lib/client.js";
-import { getExplorerUrl } from "../lib/network.js";
+import { getExplorerUrl, getNetwork } from "../lib/network.js";
 import { uploadMetadata } from "../lib/ipfs.js";
 import type { SyndicateMetadata } from "../lib/ipfs.js";
 import { fetchMetadata } from "../lib/ipfs.js";
@@ -102,7 +102,7 @@ export function registerProposalCommands(program: Command): void {
               schema: "sherwood/proposal/v1",
               name: opts.name,
               description: opts.description,
-              chain: "base",
+              chain: getNetwork(),
               strategies: [],
               terms: { ragequitEnabled: true },
               links: {},

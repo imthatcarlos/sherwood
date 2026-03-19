@@ -37,17 +37,17 @@ interface RawAttestation {
   revoked: boolean;
 }
 
-function getEasGraphqlUrl(): string {
-  const addresses = getAddresses();
-  return `${addresses.easExplorer}/graphql`;
-}
-
 export async function fetchSyndicateAttestations(
   creator: Address,
   syndicateId: bigint,
+  chainId?: number,
 ): Promise<AttestationItem[]> {
-  const addresses = getAddresses();
-  const url = getEasGraphqlUrl();
+  const addresses = getAddresses(chainId);
+
+  // Graceful degradation: no EAS on this chain
+  if (!addresses.easExplorer) return [];
+
+  const url = `${addresses.easExplorer}/graphql`;
 
   const query = `
     query SyndicateAttestations($joinSchema: String!, $approveSchema: String!, $creator: String!) {

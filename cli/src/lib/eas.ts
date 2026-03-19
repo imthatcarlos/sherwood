@@ -8,7 +8,7 @@
 import type { Address, Hex } from "viem";
 import { encodeAbiParameters, parseAbiParameters, decodeAbiParameters } from "viem";
 import { getPublicClient, getWalletClient, getAccount } from "./client.js";
-import { getChain, getNetwork } from "./network.js";
+import { getChain, getNetwork, getChainConfig } from "./network.js";
 import { EAS_CONTRACTS, EAS_SCHEMAS } from "./addresses.js";
 import { EAS_ABI } from "./abis.js";
 
@@ -32,13 +32,20 @@ function assertSchemasRegistered() {
 // ── GraphQL ──
 
 function getEasGraphqlUrl(): string {
-  return getNetwork() === "base"
-    ? "https://base.easscan.org/graphql"
-    : "https://base-sepolia.easscan.org/graphql";
+  const url = getChainConfig().easGraphqlUrl;
+  if (!url) {
+    throw new Error(
+      `EAS is not available on ${getNetwork()}. Attestation operations require a chain with EAS (e.g. base, base-sepolia).`,
+    );
+  }
+  return url;
 }
 
 export function getEasScanUrl(uid: Hex): string {
-  const host = getNetwork() === "base" ? "base.easscan.org" : "base-sepolia.easscan.org";
+  const host = getChainConfig().easScanHost;
+  if (!host) {
+    throw new Error(`EAS scan is not available on ${getNetwork()}.`);
+  }
   return `https://${host}/attestation/view/${uid}`;
 }
 

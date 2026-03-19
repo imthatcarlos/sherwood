@@ -299,10 +299,10 @@ export default function LiveFeed({
           {isLive ? "● REAL-TIME" : "● OFFLINE"}
         </span>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0, maxHeight: "480px" }}>
         {displayFeed.map((item) => (
           <div
-            className="feed-item"
+            className={`feed-item ${item.dimmed ? "" : "feed-item-enter"}`}
             key={item.id}
             style={
               item.dimmed

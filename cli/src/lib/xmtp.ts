@@ -21,7 +21,7 @@ import {
   getCachedGroupId,
 } from "./config.js";
 import { getTextRecord } from "./ens.js";
-import { getNetwork } from "./network.js";
+import { getChainConfig } from "./network.js";
 import type { ChatEnvelope } from "./types.js";
 import { getAccount } from "./client.js";
 
@@ -84,7 +84,7 @@ function getXmtpBinaryPath(): string {
 // ── Environment ──
 
 function getXmtpEnv(): string {
-  return getNetwork() === "base" ? "production" : "dev";
+  return getChainConfig().xmtpEnv;
 }
 
 function getXmtpEnvFile(): string {
