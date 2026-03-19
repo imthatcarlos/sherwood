@@ -80,7 +80,7 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     /// @notice Set of registered vault addresses
     EnumerableSet.AddressSet private _registeredVaults;
 
-    // ── New storage for collaborative proposals (appended — UUPS safe) ──
+    // ── Collaborative proposal storage ──
 
     /// @notice Proposal ID → co-proposers array
     mapping(uint256 => CoProposer[]) private _coProposers;
