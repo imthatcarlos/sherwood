@@ -29,15 +29,32 @@ Before running this skill, ensure:
 
 ### Step 1: Research Target Tokens
 
-Help the user find a token to buy with the borrowed USDC. Use a combination of web search and DexScreener to identify candidates.
+Help the user find a token to buy with the borrowed USDC. Use `sherwood research` for paid on-chain analytics (x402 micropayments) and DexScreener for free pool data.
 
 #### Option A: User Already Has a Token Address
 
-If the user provides a token address, skip to Step 2.
+If the user provides a token address, run research on it and skip to Step 2:
 
-#### Option B: Search by Keyword
+```bash
+sherwood research token <address> --provider nansen --yes
+```
 
-Use DexScreener to find tokens on Base traded on Uniswap:
+#### Option B: Research by Symbol
+
+Use Sherwood research to get deep analytics:
+
+```bash
+# Market overview — price, volume, market cap, on-chain metrics
+sherwood research market <SYMBOL> --provider messari --yes
+
+# Smart money flows — are labeled wallets accumulating?
+sherwood research smart-money --token <SYMBOL> --provider nansen --yes
+
+# Full token profile
+sherwood research token <SYMBOL> --provider nansen --yes
+```
+
+Complement with DexScreener for free pool-level data (liquidity, pair age):
 
 ```bash
 curl -s "https://api.dexscreener.com/latest/dex/search?q=<keyword>" | \
@@ -61,17 +78,10 @@ For broad discovery, use web search:
 "trending tokens Base chain 2026" OR "top performing Base tokens"
 ```
 
-Then verify found tokens on DexScreener:
+Then run research on promising candidates:
 
 ```bash
-curl -s "https://api.dexscreener.com/token-pairs/v1/base/<address>" | \
-  jq '[.[] | select(.dexId == "uniswap")][0] | {
-    name: .baseToken.name,
-    symbol: .baseToken.symbol,
-    price: .priceUsd,
-    liquidity: .liquidity.usd,
-    volume24h: .volume.h24
-  }'
+sherwood research token <address> --provider nansen --yes
 ```
 
 #### Present Options
@@ -104,8 +114,17 @@ Evaluate tokens before recommending:
 | Pool TVL   | >$1M     | $100k-$1M  | <$100k    |
 | 24h Volume | >$500k   | $50k-$500k | <$50k     |
 | Age        | >30 days | 7-30 days   | <7 days   |
+| SM Netflow | Positive | Neutral     | Negative  |
 
 **Always warn about high-risk tokens** and require explicit confirmation via AskUserQuestion before proceeding.
+
+#### Record Research (if posting to syndicate)
+
+If the agent is operating in a syndicate, post the research to create an on-chain audit trail. Subsequent `TRADE_EXECUTED` messages can reference the attestation UID:
+
+```bash
+sherwood research token <address> --provider nansen --post <syndicate> --yes
+```
 
 ---
 

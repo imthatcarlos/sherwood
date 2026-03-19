@@ -18,6 +18,8 @@ export type MessageType =
   | "MEMBER_JOIN"
   | "RAGEQUIT_NOTICE"
   | "AGENT_REGISTERED"
+  // Research
+  | "X402_RESEARCH" // x402 micropayment research query result
   // Human
   | "MESSAGE"
   | "REACTION";

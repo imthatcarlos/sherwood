@@ -102,6 +102,11 @@ const SCHEMAS = [
     definition: "uint256 syndicateId, uint256 agentId, address vault",
     revocable: true,
   },
+  {
+    name: "X402_RESEARCH",
+    definition: "string provider, string queryType, string prompt, string costUsdc, string resultUri",
+    revocable: false,
+  },
 ];
 
 // ── Main ──

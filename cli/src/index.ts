@@ -1027,8 +1027,9 @@ strategy
 program
   .command("providers")
   .description("List available DeFi providers")
-  .action(() => {
-    const providers = [new MoonwellProvider(), new UniswapProvider()];
+  .action(async () => {
+    const { MessariProvider, NansenProvider } = await import("./providers/research/index.js");
+    const providers = [new MoonwellProvider(), new UniswapProvider(), new MessariProvider(), new NansenProvider()];
     for (const p of providers) {
       const info = p.info();
       console.log(`\n${info.name} (${info.type})`);
@@ -1065,6 +1066,10 @@ registerAllowanceCommands(program);
 
 // ── Identity commands ──
 registerIdentityCommands(program);
+
+// ── Research commands ──
+const { registerResearchCommands } = await import("./commands/research.js");
+registerResearchCommands(program);
 
 // ── Config commands ──
 const configCmd = program.command("config");

@@ -36,9 +36,10 @@ All commands below use `sherwood` as shorthand. Add `--testnet` for Base Sepolia
                   syndicate join (request to join existing syndicate via EAS)
 3. Configure   →  approve depositors, register agents
                   syndicate requests → syndicate approve/reject (EAS join flow)
-4. Operate     →  execute strategies, disburse allowances, fund Venice
-5. Monitor     →  vault info, balance, chat
-6. Session     →  session check (catch up on messages + on-chain events)
+4. Research    →  research token/market/smart-money/wallet (x402 micropayments)
+5. Operate     →  execute strategies, disburse allowances, fund Venice
+6. Monitor     →  vault info, balance, chat
+7. Session     →  session check (catch up on messages + on-chain events)
                   session check --stream (persistent real-time awareness)
 ```
 
@@ -138,7 +139,38 @@ sherwood syndicate update-metadata --id 1 --name "New Name" --description "Updat
 
 ---
 
-## Phase 4: Strategy Execution
+## Phase 4: Research & Strategy Execution
+
+### Research (x402 micropayments)
+
+Before proposing or executing a strategy, agents should research the target assets. Research queries are paid per-call with USDC from the agent's wallet via x402 micropayments — no API keys needed.
+
+```bash
+# Token due diligence
+sherwood research token ETH --provider messari
+sherwood research token 0xABC... --provider nansen
+
+# Smart money analysis
+sherwood research smart-money --token WETH --provider nansen
+
+# Market overview
+sherwood research market ETH --provider messari
+
+# Wallet due diligence (e.g. before approving an agent)
+sherwood research wallet 0xDEF... --provider nansen
+```
+
+Add `--post <syndicate>` to record the research on-chain: pins the full result to IPFS, creates an EAS attestation (provider, query, cost, IPFS URI), and posts a lightweight notification to the syndicate XMTP chat.
+
+```bash
+sherwood research token WETH --provider nansen --post alpha
+```
+
+Add `--yes` to skip the cost confirmation prompt (for automated agent use).
+
+**Providers:**
+- **Messari** — market metrics, asset profiles, on-chain analytics (34,000+ assets)
+- **Nansen** — token screener, smart money flows, wallet profiler (18+ chains)
 
 ### Levered swap (Moonwell + Uniswap)
 
@@ -305,9 +337,10 @@ User wants to...
 ├── Join a fund      → Phase 2: syndicate join → creator approves (auto-adds to chat)
 ├── Review requests  → Phase 3: syndicate requests → syndicate approve/reject
 ├── Configure vault  → Phase 3: register agents → approve depositors
-├── Trade            → Phase 4: delegate to `levered-swap` skill
+├── Research         → Phase 4: sherwood research (token/market/smart-money/wallet)
+├── Trade            → Phase 4: research first, then delegate to `levered-swap` skill
 ├── Pay agents / AI  → Phase 5: allowance disburse / venice fund
 ├── Check status     → Phase 6: vault info, balance, syndicate list
 ├── Communicate      → Phase 6: chat commands
-└── Catch up / stay aware → Phase 6: session check / session check --stream
+└── Catch up / stay aware → Phase 7: session check / session check --stream
 ```

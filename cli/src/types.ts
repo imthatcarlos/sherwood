@@ -4,7 +4,7 @@ import type { Address, Chain } from "viem";
 
 export interface ProviderInfo {
   name: string;
-  type: "lending" | "trading" | "sniping";
+  type: "lending" | "trading" | "sniping" | "research";
   capabilities: string[];
   supportedChains: Chain[];
 }

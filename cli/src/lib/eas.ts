@@ -18,6 +18,7 @@ const ZERO_BYTES32 = "0x00000000000000000000000000000000000000000000000000000000
 
 const JOIN_REQUEST_PARAMS = parseAbiParameters("uint256, uint256, address, string");
 const AGENT_APPROVED_PARAMS = parseAbiParameters("uint256, uint256, address");
+const X402_RESEARCH_PARAMS = parseAbiParameters("string, string, string, string, string");
 
 function assertSchemasRegistered() {
   const schemas = EAS_SCHEMAS();
@@ -171,6 +172,59 @@ export async function revokeAttestation(
     }],
     value: 0n,
   });
+}
+
+/**
+ * Create an X402_RESEARCH attestation — records a research query on-chain.
+ * Attester: the agent. Recipient: the agent itself (self-attestation for audit trail).
+ * Schema: "string provider, string queryType, string prompt, string costUsdc, string resultUri"
+ */
+export async function createResearchAttestation(
+  provider: string,
+  queryType: string,
+  prompt: string,
+  costUsdc: string,
+  resultUri: string,
+): Promise<{ uid: Hex; hash: Hex }> {
+  const schemas = EAS_SCHEMAS();
+  if (schemas.X402_RESEARCH === ZERO_BYTES32) {
+    throw new Error(
+      "X402_RESEARCH schema not registered. Run: npx tsx scripts/register-eas-schemas.ts --testnet",
+    );
+  }
+
+  const wallet = getWalletClient();
+  const client = getPublicClient();
+  const account = getAccount();
+
+  const data = encodeAbiParameters(X402_RESEARCH_PARAMS, [
+    provider, queryType, prompt, costUsdc, resultUri,
+  ]);
+
+  const hash = await wallet.writeContract({
+    account,
+    chain: getChain(),
+    address: EAS_CONTRACTS().EAS,
+    abi: EAS_ABI,
+    functionName: "attest",
+    args: [{
+      schema: schemas.X402_RESEARCH,
+      data: {
+        recipient: account.address,
+        expirationTime: 0n,
+        revocable: false,
+        refUID: ZERO_BYTES32,
+        data,
+        value: 0n,
+      },
+    }],
+    value: 0n,
+  });
+
+  const receipt = await client.waitForTransactionReceipt({ hash });
+  const uid = extractAttestationUid(receipt);
+
+  return { uid, hash };
 }
 
 // ── Attestation Queries ──

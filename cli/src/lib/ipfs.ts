@@ -47,7 +47,36 @@ function getPinataGateway(): string {
 }
 
 /**
- * Upload JSON metadata to IPFS via Pinata.
+ * Pin arbitrary JSON to IPFS via Pinata.
+ * Used for research results and other generic JSON payloads.
+ * Returns the IPFS URI (ipfs://Qm...).
+ */
+export async function pinJSON(content: Record<string, unknown>, name: string): Promise<string> {
+  const apiKey = getPinataApiKey();
+
+  const response = await fetch("https://api.pinata.cloud/pinning/pinJSONToIPFS", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      pinataContent: content,
+      pinataMetadata: { name },
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Pinata upload failed (${response.status}): ${text}`);
+  }
+
+  const result = (await response.json()) as { IpfsHash: string };
+  return `ipfs://${result.IpfsHash}`;
+}
+
+/**
+ * Upload syndicate metadata to IPFS via Pinata.
  * Returns the IPFS URI (ipfs://Qm...).
  */
 export async function uploadMetadata(metadata: SyndicateMetadata): Promise<string> {

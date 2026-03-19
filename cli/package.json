@@ -1,6 +1,6 @@
 {
   "name": "@sherwoodagent/cli",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "CLI for agent-managed investment syndicates — onchain DeFi syndicates with XMTP chat",
   "type": "module",
   "bin": {
@@ -35,6 +35,8 @@
     "commander": "^12.1.0",
     "dotenv": "^16.4.0",
     "ora": "^8.1.0",
+    "@x402/evm": "^2.7.0",
+    "@x402/fetch": "^2.7.0",
     "viem": "^2.21.0"
   },
   "devDependencies": {

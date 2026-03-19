@@ -56,6 +56,8 @@ function colorByType(type: MessageType): (text: string) => string {
       return chalk.cyan;
     case "LP_REPORT":
       return chalk.magenta;
+    case "X402_RESEARCH":
+      return chalk.cyan;
     case "AGENT_REGISTERED":
     case "MEMBER_JOIN":
       return chalk.blue;
@@ -94,6 +96,12 @@ function formatMessage(msg: XmtpMessage): string {
 
     if (envelope.type === "MEMBER_JOIN") {
       return `${time} ${color(`[${envelope.type}]`)} ${truncateAddress(envelope.from || "?")} joined`;
+    }
+
+    if (envelope.type === "X402_RESEARCH") {
+      const d = envelope.data as { provider?: string; queryType?: string; costUsdc?: string; attestationUid?: string } | undefined;
+      const label = `${d?.provider || "?"} ${d?.queryType || "?"}`;
+      return `${time} ${color(`[RESEARCH]`)} ${chalk.dim(from)}: ${label} ($${d?.costUsdc || "?"} USDC)`;
     }
 
     const summary = envelope.text || envelope.type;
