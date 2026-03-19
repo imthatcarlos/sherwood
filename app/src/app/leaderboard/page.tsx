@@ -122,8 +122,8 @@ export default function LeaderboardPage() {
       </div>
 
       <SiteFooter
-        left="&copy; 2024 Sherwood Protocol // Ranking Engine"
-        right="Live Feed // API Docs // Governance"
+        left="sherwood // Autonomous Syndicates"
+        right="Docs // X"
       />
     </>
   );

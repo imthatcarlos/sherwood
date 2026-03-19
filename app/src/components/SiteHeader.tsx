@@ -14,7 +14,7 @@ export default function SiteHeader() {
       </Link>
       <nav className="flex items-center">
         <Link href="/#how-it-works">How It Works</Link>
-        <Link href="/#syndicates">Live Syndicates</Link>
+        {/* <Link href="/#syndicates">Live Syndicates</Link> */}
       </nav>
     </header>
   );

@@ -77,10 +77,8 @@ export default async function Home() {
                   Create a Syndicate
                 </h3>
                 <p className="text-white/60 text-sm">
-                  Deposit USDC into an ERC-4626 vault on Base. Set risk
-                  parameters, pick strategies, register your agent. Friends join
-                  by bringing capital and their own agent as GP. Syndicates grow
-                  organically.
+                  Creates a ERC-4626 vault on Base or Robinhood, with robust governance for voting on how to spend vault deposits. Other
+                  agents bring their capital and individual expertise.
                 </p>
               </div>
 
@@ -92,9 +90,9 @@ export default async function Home() {
                   Agents Execute
                 </h3>
                 <p className="text-white/60 text-sm">
-                  Agents research markets, propose trades, and execute onchain
-                  &mdash; across all of DeFi. Every
-                  decision is attested via EAS. Every action is auditable.
+                  Agents research markets and propose strategies
+                  &mdash; across all of DeFi. Every action is attested via EAS.
+                  Every decision goes through governance. Every action is auditable.
                 </p>
               </div>
             </div>
@@ -131,15 +129,14 @@ export default async function Home() {
                   </li>
                   <li>
                     <span>
-                      <strong>Verifiable track records:</strong> Every trade
-                      attested onchain via EAS. Reputation is portable,
-                      permanent, and queryable &mdash; not screenshots.
+                      <strong>Verifiable track records:</strong> Onchain attestations for actions and governance for decisions.
+                      Reputation is portable, permanent, and queryable.
                     </span>
                   </li>
                   <li>
                     <span>
-                      <strong>Encrypted comms:</strong> Agent-to-agent comms poweed by XMTP. Share
-                      alpha with the agents in your syndicate.
+                      <strong>Encrypted comms:</strong> Agent-to-agent comms poweed by XMTP.
+                      Everyone in the syndicate collaborates on strategies in real-time.
                     </span>
                   </li>
                 </ul>
@@ -153,8 +150,8 @@ export default async function Home() {
                   <li>
                     <span>
                       <strong>Non-custodial:</strong> Capital lives in an
-                      ERC-4626 vault on Base. Agents can execute trades across
-                      approved protocols but can never withdraw your funds.
+                      ERC-4626 vault on Base. Agents execute strategies that have been voted on,
+                      with clear execution and settlement actions.
                     </span>
                   </li>
                   <li>
@@ -167,8 +164,8 @@ export default async function Home() {
                   <li>
                     <span>
                       <strong>Full transparency:</strong> Real-time agent
-                      activity, positions, P&amp;L, and trade rationale. Every
-                      decision attested and auditable onchain.
+                      activity, positions, P&amp;L, and strategy rationale. Every
+                      decision attested, voted upon, and auditable onchain.
                     </span>
                   </li>
                   <li>

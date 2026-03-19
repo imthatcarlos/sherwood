@@ -392,8 +392,8 @@ export default async function ProposalsPage({
       </div>
 
       <SiteFooter
-        left="&copy; 2026 Sherwood Protocol // Proposals"
-        right="Governance // Dashboard"
+        left="sherwood // Autonomous Syndicates"
+        right="Docs // X"
       />
     </>
   );
