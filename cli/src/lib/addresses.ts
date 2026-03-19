@@ -2,12 +2,19 @@
  * Contract addresses by network.
  *
  * All exports are functions — they resolve at call time based on the
- * current network set via setNetwork(). This ensures --testnet works
+ * current network set via setNetwork(). This ensures --chain works
  * even when modules are imported before the flag is parsed.
+ *
+ * Zero addresses = protocol not deployed on that chain. Strategies that
+ * need them will fail at execution time with a clear allowlist error.
  */
 
 import type { Address } from "viem";
-import { getNetwork } from "./network.js";
+import { type Network, getNetwork } from "./network.js";
+
+const ZERO: Address = "0x0000000000000000000000000000000000000000";
+const ZERO_BYTES32 =
+  "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
 
 // ── Base Mainnet ──
 
@@ -42,28 +49,26 @@ const BASE_INFRA = {
 } as const;
 
 // ── Base Sepolia ──
-// Zero addresses = protocol not deployed on testnet. Strategies that need them
-// (e.g. levered-swap) will fail at execution time with a clear allowlist error.
 
 const BASE_SEPOLIA_TOKENS = {
   USDC: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as Address, // Circle test USDC
   WETH: "0x4200000000000000000000000000000000000006" as Address, // Canonical bridged WETH
-  cbETH: "0x0000000000000000000000000000000000000000" as Address,
-  wstETH: "0x0000000000000000000000000000000000000000" as Address,
-  cbBTC: "0x0000000000000000000000000000000000000000" as Address,
-  DAI: "0x0000000000000000000000000000000000000000" as Address,
-  AERO: "0x0000000000000000000000000000000000000000" as Address,
+  cbETH: ZERO,
+  wstETH: ZERO,
+  cbBTC: ZERO,
+  DAI: ZERO,
+  AERO: ZERO,
 } as const;
 
 const BASE_SEPOLIA_MOONWELL = {
-  COMPTROLLER: "0x0000000000000000000000000000000000000000" as Address,
-  mUSDC: "0x0000000000000000000000000000000000000000" as Address,
-  mWETH: "0x0000000000000000000000000000000000000000" as Address,
-  mCbETH: "0x0000000000000000000000000000000000000000" as Address,
-  mWstETH: "0x0000000000000000000000000000000000000000" as Address,
-  mCbBTC: "0x0000000000000000000000000000000000000000" as Address,
-  mDAI: "0x0000000000000000000000000000000000000000" as Address,
-  mAERO: "0x0000000000000000000000000000000000000000" as Address,
+  COMPTROLLER: ZERO,
+  mUSDC: ZERO,
+  mWETH: ZERO,
+  mCbETH: ZERO,
+  mWstETH: ZERO,
+  mCbBTC: ZERO,
+  mDAI: ZERO,
+  mAERO: ZERO,
 } as const;
 
 const BASE_SEPOLIA_UNISWAP = {
@@ -75,11 +80,45 @@ const BASE_SEPOLIA_INFRA = {
   MULTICALL3: "0xcA11bde05977b3631167028862bE2a173976CA11" as Address, // Deterministic, same everywhere
 } as const;
 
+// ── Robinhood L2 Testnet (Arbitrum Orbit, chain 46630) ──
+// No Moonwell, no Uniswap, no Venice, no ENS/Durin, no ERC-8004, no EAS.
+// USDC: Circle testnet, WETH: canonical bridged.
+
+const ROBINHOOD_TESTNET_TOKENS = {
+  USDC: ZERO, // no Circle USDC on Robinhood L2
+  WETH: "0x7943e237c7F95DA44E0301572D358911207852Fa" as Address,
+  cbETH: ZERO,
+  wstETH: ZERO,
+  cbBTC: ZERO,
+  DAI: ZERO,
+  AERO: ZERO,
+} as const;
+
+const ROBINHOOD_TESTNET_MOONWELL = {
+  COMPTROLLER: ZERO,
+  mUSDC: ZERO,
+  mWETH: ZERO,
+  mCbETH: ZERO,
+  mWstETH: ZERO,
+  mCbBTC: ZERO,
+  mDAI: ZERO,
+  mAERO: ZERO,
+} as const;
+
+const ROBINHOOD_TESTNET_UNISWAP = {
+  SWAP_ROUTER: ZERO,
+  QUOTER_V2: ZERO,
+} as const;
+
+const ROBINHOOD_TESTNET_INFRA = {
+  MULTICALL3: "0xcA11bde05977b3631167028862bE2a173976CA11" as Address, // Deterministic, same everywhere
+} as const;
+
 // ── ENS / Durin ──
 
 const BASE_ENS = {
-  L2_REGISTRAR: "0x0000000000000000000000000000000000000000" as Address, // TODO: set after mainnet deploy
-  L2_REGISTRY: "0x0000000000000000000000000000000000000000" as Address, // TODO: set after mainnet deploy
+  L2_REGISTRAR: ZERO, // TODO: set after mainnet deploy
+  L2_REGISTRY: ZERO, // TODO: set after mainnet deploy
 } as const;
 
 const BASE_SEPOLIA_ENS = {
@@ -87,30 +126,48 @@ const BASE_SEPOLIA_ENS = {
   L2_REGISTRY: "0x06eb7b85b59bc3e50fe4837be776cdd26de602cf" as Address,
 } as const;
 
+const ROBINHOOD_TESTNET_ENS = {
+  L2_REGISTRAR: ZERO,
+  L2_REGISTRY: ZERO,
+} as const;
+
 // ── ERC-8004 Agent Identity ──
 
 const BASE_AGENT_REGISTRY = {
   IDENTITY_REGISTRY: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432" as Address,
-  REPUTATION_REGISTRY: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63" as Address,
+  REPUTATION_REGISTRY:
+    "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63" as Address,
 } as const;
 
 const BASE_SEPOLIA_AGENT_REGISTRY = {
   IDENTITY_REGISTRY: "0x8004A818BFB912233c491871b3d84c89A494BD9e" as Address,
-  REPUTATION_REGISTRY: "0x8004B663056A597Dffe9eCcC1965A193B7388713" as Address,
+  REPUTATION_REGISTRY:
+    "0x8004B663056A597Dffe9eCcC1965A193B7388713" as Address,
+} as const;
+
+const ROBINHOOD_TESTNET_AGENT_REGISTRY = {
+  IDENTITY_REGISTRY: ZERO,
+  REPUTATION_REGISTRY: ZERO,
 } as const;
 
 // ── Sherwood Protocol (our deployed contracts) ──
 
 const BASE_SHERWOOD = {
-  FACTORY: "0x0000000000000000000000000000000000000000" as Address, // TODO: set after mainnet deploy
-  STRATEGY_REGISTRY: "0x0000000000000000000000000000000000000000" as Address, // TODO: set after mainnet deploy
-  GOVERNOR: "0x0000000000000000000000000000000000000000" as Address, // TODO: set after mainnet deploy
+  FACTORY: ZERO, // TODO: set after mainnet deploy
+  STRATEGY_REGISTRY: ZERO, // TODO: set after mainnet deploy
+  GOVERNOR: ZERO, // TODO: set after mainnet deploy
 } as const;
 
 const BASE_SEPOLIA_SHERWOOD = {
   FACTORY: "0x60bf54dDce61ece85BE5e66CBaA17cC312DEa6C8" as Address,
   STRATEGY_REGISTRY: "0xf1e6E9bd1a735B54F383b18ad6603Ddd566C71cE" as Address,
   GOVERNOR: "0xB478cdb99260F46191C9e5Da405F7E70eEA23dE4" as Address,
+} as const;
+
+const ROBINHOOD_TESTNET_SHERWOOD = {
+  FACTORY: "0xD348524c66e209DfcC76b9a3208a05B82F6948D6" as Address,
+  STRATEGY_REGISTRY: "0xC6744E4941f4810fDadB72c795aD3EE7cb55D925" as Address,
+  GOVERNOR: "0x866996c808E6244216a3d0df15464FCF5d495394" as Address,
 } as const;
 
 // ── Venice (VVV governance + sVVV staking + DIEM compute) ──
@@ -122,9 +179,15 @@ const BASE_VENICE = {
 } as const;
 
 const BASE_SEPOLIA_VENICE = {
-  VVV: "0x0000000000000000000000000000000000000000" as Address,
-  STAKING: "0x0000000000000000000000000000000000000000" as Address,
-  DIEM: "0x0000000000000000000000000000000000000000" as Address,
+  VVV: ZERO,
+  STAKING: ZERO,
+  DIEM: ZERO,
+} as const;
+
+const ROBINHOOD_TESTNET_VENICE = {
+  VVV: ZERO,
+  STAKING: ZERO,
+  DIEM: ZERO,
 } as const;
 
 // ── EAS (Ethereum Attestation Service) — Base predeploys ──
@@ -139,58 +202,134 @@ const BASE_SEPOLIA_EAS = {
   SCHEMA_REGISTRY: "0x4200000000000000000000000000000000000020" as Address,
 } as const;
 
+const ROBINHOOD_TESTNET_EAS = {
+  EAS: ZERO,
+  SCHEMA_REGISTRY: ZERO,
+} as const;
+
 // ── EAS Schema UIDs (populated after running scripts/register-eas-schemas.ts) ──
 
 const BASE_EAS_SCHEMAS = {
-  SYNDICATE_JOIN_REQUEST: "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
-  AGENT_APPROVED: "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
-  X402_RESEARCH: "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
+  SYNDICATE_JOIN_REQUEST: ZERO_BYTES32,
+  AGENT_APPROVED: ZERO_BYTES32,
+  X402_RESEARCH: ZERO_BYTES32,
 } as const;
 
 const BASE_SEPOLIA_EAS_SCHEMAS = {
-  SYNDICATE_JOIN_REQUEST: "0x1e7ce17b16233977ba913b156033e98f52029f4bee273a4abefe6c15ce11d5ef" as `0x${string}`,
-  AGENT_APPROVED: "0x1013f7b38f433b2a93fc5ac162482813081c64edd67cea9b5a90698531ddb607" as `0x${string}`,
-  X402_RESEARCH: "0x86c67f0a59acb3093ecbeb6c4d1d4352e4a48143672e92ef9dd2fdfc8a9ca708" as `0x${string}`,
+  SYNDICATE_JOIN_REQUEST:
+    "0x1e7ce17b16233977ba913b156033e98f52029f4bee273a4abefe6c15ce11d5ef" as `0x${string}`,
+  AGENT_APPROVED:
+    "0x1013f7b38f433b2a93fc5ac162482813081c64edd67cea9b5a90698531ddb607" as `0x${string}`,
+  X402_RESEARCH:
+    "0x86c67f0a59acb3093ecbeb6c4d1d4352e4a48143672e92ef9dd2fdfc8a9ca708" as `0x${string}`,
 } as const;
+
+const ROBINHOOD_TESTNET_EAS_SCHEMAS = {
+  SYNDICATE_JOIN_REQUEST: ZERO_BYTES32,
+  AGENT_APPROVED: ZERO_BYTES32,
+  X402_RESEARCH: ZERO_BYTES32,
+} as const;
+
+// ── Registries (map-based lookup) ──
+
+const TOKEN_REGISTRY: Record<Network, typeof BASE_TOKENS> = {
+  base: BASE_TOKENS,
+  "base-sepolia": BASE_SEPOLIA_TOKENS,
+  "robinhood-testnet": ROBINHOOD_TESTNET_TOKENS,
+};
+
+const MOONWELL_REGISTRY: Record<Network, typeof BASE_MOONWELL> = {
+  base: BASE_MOONWELL,
+  "base-sepolia": BASE_SEPOLIA_MOONWELL,
+  "robinhood-testnet": ROBINHOOD_TESTNET_MOONWELL,
+};
+
+const UNISWAP_REGISTRY: Record<Network, typeof BASE_UNISWAP> = {
+  base: BASE_UNISWAP,
+  "base-sepolia": BASE_SEPOLIA_UNISWAP,
+  "robinhood-testnet": ROBINHOOD_TESTNET_UNISWAP,
+};
+
+const INFRA_REGISTRY: Record<Network, typeof BASE_INFRA> = {
+  base: BASE_INFRA,
+  "base-sepolia": BASE_SEPOLIA_INFRA,
+  "robinhood-testnet": ROBINHOOD_TESTNET_INFRA,
+};
+
+const ENS_REGISTRY: Record<Network, typeof BASE_ENS> = {
+  base: BASE_ENS,
+  "base-sepolia": BASE_SEPOLIA_ENS,
+  "robinhood-testnet": ROBINHOOD_TESTNET_ENS,
+};
+
+const AGENT_REGISTRY_MAP: Record<Network, typeof BASE_AGENT_REGISTRY> = {
+  base: BASE_AGENT_REGISTRY,
+  "base-sepolia": BASE_SEPOLIA_AGENT_REGISTRY,
+  "robinhood-testnet": ROBINHOOD_TESTNET_AGENT_REGISTRY,
+};
+
+const SHERWOOD_REGISTRY: Record<Network, typeof BASE_SHERWOOD> = {
+  base: BASE_SHERWOOD,
+  "base-sepolia": BASE_SEPOLIA_SHERWOOD,
+  "robinhood-testnet": ROBINHOOD_TESTNET_SHERWOOD,
+};
+
+const VENICE_REGISTRY: Record<Network, typeof BASE_VENICE> = {
+  base: BASE_VENICE,
+  "base-sepolia": BASE_SEPOLIA_VENICE,
+  "robinhood-testnet": ROBINHOOD_TESTNET_VENICE,
+};
+
+const EAS_CONTRACT_REGISTRY: Record<Network, typeof BASE_EAS> = {
+  base: BASE_EAS,
+  "base-sepolia": BASE_SEPOLIA_EAS,
+  "robinhood-testnet": ROBINHOOD_TESTNET_EAS,
+};
+
+const EAS_SCHEMA_REGISTRY: Record<Network, typeof BASE_EAS_SCHEMAS> = {
+  base: BASE_EAS_SCHEMAS,
+  "base-sepolia": BASE_SEPOLIA_EAS_SCHEMAS,
+  "robinhood-testnet": ROBINHOOD_TESTNET_EAS_SCHEMAS,
+};
 
 // ── Exports (functions, resolved at call time) ──
 
 export function TOKENS() {
-  return getNetwork() === "base" ? BASE_TOKENS : BASE_SEPOLIA_TOKENS;
+  return TOKEN_REGISTRY[getNetwork()];
 }
 
 export function MOONWELL() {
-  return getNetwork() === "base" ? BASE_MOONWELL : BASE_SEPOLIA_MOONWELL;
+  return MOONWELL_REGISTRY[getNetwork()];
 }
 
 export function UNISWAP() {
-  return getNetwork() === "base" ? BASE_UNISWAP : BASE_SEPOLIA_UNISWAP;
+  return UNISWAP_REGISTRY[getNetwork()];
 }
 
 export function INFRA() {
-  return getNetwork() === "base" ? BASE_INFRA : BASE_SEPOLIA_INFRA;
+  return INFRA_REGISTRY[getNetwork()];
 }
 
 export function ENS() {
-  return getNetwork() === "base" ? BASE_ENS : BASE_SEPOLIA_ENS;
+  return ENS_REGISTRY[getNetwork()];
 }
 
 export function AGENT_REGISTRY() {
-  return getNetwork() === "base" ? BASE_AGENT_REGISTRY : BASE_SEPOLIA_AGENT_REGISTRY;
+  return AGENT_REGISTRY_MAP[getNetwork()];
 }
 
 export function VENICE() {
-  return getNetwork() === "base" ? BASE_VENICE : BASE_SEPOLIA_VENICE;
+  return VENICE_REGISTRY[getNetwork()];
 }
 
 export function SHERWOOD() {
-  return getNetwork() === "base" ? BASE_SHERWOOD : BASE_SEPOLIA_SHERWOOD;
+  return SHERWOOD_REGISTRY[getNetwork()];
 }
 
 export function EAS_CONTRACTS() {
-  return getNetwork() === "base" ? BASE_EAS : BASE_SEPOLIA_EAS;
+  return EAS_CONTRACT_REGISTRY[getNetwork()];
 }
 
 export function EAS_SCHEMAS() {
-  return getNetwork() === "base" ? BASE_EAS_SCHEMAS : BASE_SEPOLIA_EAS_SCHEMAS;
+  return EAS_SCHEMA_REGISTRY[getNetwork()];
 }

@@ -1,44 +1,65 @@
 /**
  * Shared contract config for the dashboard app.
  *
+ * Multichain — the app reads from all chains in CHAINS simultaneously.
  * ABIs are subsets of cli/src/lib/abis.ts — keep in sync if contracts change.
- * Addresses are hardcoded per chain (no CLI network module dependency).
  */
 
-import { createPublicClient, http, type Address, type Chain } from "viem";
+import {
+  createPublicClient,
+  defineChain,
+  http,
+  type Address,
+  type Chain,
+  type PublicClient,
+} from "viem";
 import { base, baseSepolia } from "viem/chains";
 
-// ── Chain config ──────────────────────────────────────────
+// ── Robinhood L2 Testnet chain definition ────────────────
 
-const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || process.env.CHAIN_ID || "84532", 10);
+export const robinhoodTestnet = defineChain({
+  id: 46630,
+  name: "Robinhood Chain Testnet",
+  nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.testnet.chain.robinhood.com"] },
+  },
+  blockExplorers: {
+    default: {
+      name: "Blockscout",
+      url: "https://explorer.testnet.chain.robinhood.com",
+    },
+  },
+  contracts: {
+    multicall3: {
+      address: "0xcA11bde05977b3631167028862bE2a173976CA11",
+    },
+  },
+  testnet: true,
+});
 
-export function getChain(): Chain {
-  return CHAIN_ID === 8453 ? base : baseSepolia;
+// ── Per-chain RPC ────────────────────────────────────────
+
+const RPC_CONFIG: Record<number, { envSuffix: string; fallback: string }> = {
+  8453: { envSuffix: "BASE", fallback: "https://mainnet.base.org" },
+  84532: { envSuffix: "BASE_SEPOLIA", fallback: "https://sepolia.base.org" },
+  46630: {
+    envSuffix: "ROBINHOOD_TESTNET",
+    fallback: "https://rpc.testnet.chain.robinhood.com",
+  },
+};
+
+/** Resolve RPC URL: NEXT_PUBLIC_RPC_URL_{BASE|BASE_SEPOLIA|ROBINHOOD_TESTNET} > fallback */
+export function getRpcUrl(chainId: number): string {
+  const cfg = RPC_CONFIG[chainId];
+  if (!cfg) return RPC_CONFIG[84532].fallback;
+  const envVal = process.env[`NEXT_PUBLIC_RPC_URL_${cfg.envSuffix}`];
+  return envVal || cfg.fallback;
 }
 
-export function getChainId(): number {
-  return CHAIN_ID;
-}
+// ── Chain addresses ──────────────────────────────────────
 
-// ── Public client (server-side viem reads) ────────────────
-
-let _client: ReturnType<typeof createPublicClient> | null = null;
-
-export function getPublicClient() {
-  if (!_client) {
-    const chain = getChain();
-    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || undefined;
-    _client = createPublicClient({
-      chain,
-      transport: http(rpcUrl),
-    });
-  }
-  return _client;
-}
-
-// ── Addresses by chain ────────────────────────────────────
-
-interface ChainAddresses {
+export interface ChainAddresses {
   factory: Address;
   usdc: Address;
   l2Registry: Address;
@@ -53,16 +74,20 @@ interface ChainAddresses {
   easExplorer: string;
 }
 
+const ZERO: Address = "0x0000000000000000000000000000000000000000";
+const ZERO_BYTES32 =
+  "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
+
 const BASE_ADDRESSES: ChainAddresses = {
-  factory: "0x0000000000000000000000000000000000000000",
+  factory: ZERO, // TODO: set after mainnet deploy
   usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  l2Registry: "0x0000000000000000000000000000000000000000",
+  l2Registry: ZERO,
   identityRegistry: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
   eas: "0x4200000000000000000000000000000000000021",
   schemaRegistry: "0x4200000000000000000000000000000000000020",
   easSchemas: {
-    joinRequest: "0x0000000000000000000000000000000000000000000000000000000000000000",
-    agentApproved: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    joinRequest: ZERO_BYTES32,
+    agentApproved: ZERO_BYTES32,
   },
   blockExplorer: "https://basescan.org",
   easExplorer: "https://base.easscan.org",
@@ -76,15 +101,91 @@ const BASE_SEPOLIA_ADDRESSES: ChainAddresses = {
   eas: "0x4200000000000000000000000000000000000021",
   schemaRegistry: "0x4200000000000000000000000000000000000020",
   easSchemas: {
-    joinRequest: "0x1e7ce17b16233977ba913b156033e98f52029f4bee273a4abefe6c15ce11d5ef",
-    agentApproved: "0x1013f7b38f433b2a93fc5ac162482813081c64edd67cea9b5a90698531ddb607",
+    joinRequest:
+      "0x1e7ce17b16233977ba913b156033e98f52029f4bee273a4abefe6c15ce11d5ef",
+    agentApproved:
+      "0x1013f7b38f433b2a93fc5ac162482813081c64edd67cea9b5a90698531ddb607",
   },
   blockExplorer: "https://sepolia.basescan.org",
   easExplorer: "https://base-sepolia.easscan.org",
 };
 
-export function getAddresses(): ChainAddresses {
-  return CHAIN_ID === 8453 ? BASE_ADDRESSES : BASE_SEPOLIA_ADDRESSES;
+const ROBINHOOD_TESTNET_ADDRESSES: ChainAddresses = {
+  factory: "0xD348524c66e209DfcC76b9a3208a05B82F6948D6",
+  usdc: ZERO,
+  l2Registry: ZERO,
+  identityRegistry: ZERO,
+  eas: ZERO,
+  schemaRegistry: ZERO,
+  easSchemas: {
+    joinRequest: ZERO_BYTES32,
+    agentApproved: ZERO_BYTES32,
+  },
+  blockExplorer: "https://explorer.testnet.chain.robinhood.com",
+  easExplorer: "",
+};
+
+// ── Chain registry ───────────────────────────────────────
+
+export interface ChainEntry {
+  chain: Chain;
+  addresses: ChainAddresses;
+  subgraphUrl: string | null;
+}
+
+/** All active chains the app reads from. */
+export const CHAINS: Record<number, ChainEntry> = {
+  84532: {
+    chain: baseSepolia,
+    addresses: BASE_SEPOLIA_ADDRESSES,
+    subgraphUrl:
+      "https://api.studio.thegraph.com/query/18207/sherwood-sepolia/version/latest",
+  },
+  46630: {
+    chain: robinhoodTestnet,
+    addresses: ROBINHOOD_TESTNET_ADDRESSES,
+    subgraphUrl: null,
+  },
+  // 8453: { chain: base, addresses: BASE_ADDRESSES, subgraphUrl: null }, // uncomment after mainnet deploy
+};
+
+// ── Public clients (one per chain, server-side) ──────────
+
+const _clients: Record<number, PublicClient> = {};
+
+export function getPublicClient(chainId?: number): PublicClient {
+  // Legacy single-chain call — default to first chain in registry
+  const id = chainId ?? Number(Object.keys(CHAINS)[0]);
+  if (!_clients[id]) {
+    const entry = CHAINS[id];
+    if (!entry) throw new Error(`Unknown chain: ${id}`);
+    _clients[id] = createPublicClient({
+      chain: entry.chain,
+      transport: http(getRpcUrl(id)),
+    });
+  }
+  return _clients[id];
+}
+
+// ── Legacy helpers (backwards compat for wagmi/Providers) ─
+
+const DEFAULT_CHAIN_ID = parseInt(
+  process.env.NEXT_PUBLIC_CHAIN_ID || "84532",
+  10,
+);
+
+export function getChain(): Chain {
+  return CHAINS[DEFAULT_CHAIN_ID]?.chain ?? baseSepolia;
+}
+
+export function getChainId(): number {
+  return DEFAULT_CHAIN_ID;
+}
+
+/** Get addresses for a specific chain. */
+export function getAddresses(chainId?: number): ChainAddresses {
+  const id = chainId ?? DEFAULT_CHAIN_ID;
+  return CHAINS[id]?.addresses ?? BASE_SEPOLIA_ADDRESSES;
 }
 
 // ── ABIs ──────────────────────────────────────────────────
@@ -118,6 +219,27 @@ export const SYNDICATE_FACTORY_ABI = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "getActiveSyndicates",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "tuple[]",
+        components: [
+          { name: "id", type: "uint256" },
+          { name: "vault", type: "address" },
+          { name: "creator", type: "address" },
+          { name: "metadataURI", type: "string" },
+          { name: "createdAt", type: "uint256" },
+          { name: "active", type: "bool" },
+          { name: "subdomain", type: "string" },
+        ],
+      },
+    ],
   },
 ] as const;
 
@@ -476,12 +598,27 @@ export function truncateAddress(address: string): string {
 
 /** Format a raw uint256 USDC amount (6 decimals) to a display string. */
 export function formatUSDC(raw: bigint): string {
-  const num = Number(raw) / 1e6;
+  return formatAsset(raw, 6, "USD");
+}
+
+/** Format a raw uint256 token amount with the given decimals. */
+export function formatAsset(
+  raw: bigint,
+  decimals: number,
+  currency?: string,
+): string {
+  const num = Number(raw) / 10 ** decimals;
+  if (currency === "USD") {
+    return num.toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
   return num.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: decimals <= 6 ? 2 : 4,
+    maximumFractionDigits: decimals <= 6 ? 2 : 4,
   });
 }
 
@@ -490,11 +627,22 @@ export function formatBps(bps: bigint): string {
   return `${(Number(bps) / 100).toFixed(1)}%`;
 }
 
-/** Format vault shares (6 decimals) to a readable number. */
-export function formatShares(raw: bigint): string {
-  const num = Number(raw) / 1e6;
+/** Format vault shares to a readable number. */
+export function formatShares(raw: bigint, decimals: number = 6): string {
+  const num = Number(raw) / 10 ** decimals;
   return num.toLocaleString("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   });
 }
+
+// ── Chain badge config ───────────────────────────────────
+
+export const CHAIN_BADGES: Record<
+  number,
+  { label: string; bg: string; color: string }
+> = {
+  8453: { label: "BASE", bg: "rgba(59,130,246,0.2)", color: "#3b82f6" },
+  84532: { label: "BASE SEPOLIA", bg: "rgba(59,130,246,0.2)", color: "#3b82f6" },
+  46630: { label: "ROBINHOOD", bg: "rgba(234,179,8,0.2)", color: "#eab308" },
+};

@@ -6,5 +6,8 @@ export default defineConfig({
     exclude: ["src/**/*.integration.test.ts", "src/**/*.e2e.test.ts"],
     environment: "node",
     testTimeout: 10_000,
+    env: {
+      ENABLE_TESTNET: "true",
+    },
   },
 });

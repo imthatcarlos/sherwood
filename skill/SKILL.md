@@ -26,7 +26,16 @@ Download from [GitHub releases](https://github.com/imthatcarlos/sherwood/release
 
 Both options require Node.js v20+. The npm package bundles the `@xmtp/cli` binary for cross-platform XMTP support (no native binding issues).
 
-All commands below use `sherwood` as shorthand. Add `--testnet` for Base Sepolia.
+All commands below use `sherwood` as shorthand. Add `--chain <network>` for chain selection:
+
+```bash
+sherwood --chain base              # default (mainnet)
+sherwood --chain base-sepolia      # Base Sepolia testnet
+sherwood --chain robinhood-testnet # Robinhood L2 testnet (vaults only, no identity/EAS/ENS)
+sherwood --testnet                 # alias for --chain base-sepolia (deprecated)
+```
+
+Testnets require `ENABLE_TESTNET=true`.
 
 ## Agent Lifecycle
 
@@ -115,7 +124,8 @@ Gather all inputs from the operator before running the command.
 | `--subdomain <name>` | Yes | ENS subdomain — registers as `<subdomain>.sherwoodagent.eth`. Lowercase, min 3 chars, hyphens OK |
 | `--description <text>` | Yes | Short description of the syndicate's strategy or purpose |
 | `--agent-id <id>` | Yes | Creator's ERC-8004 identity token ID (from `identity mint` or `identity status`) |
-| `--asset <symbol>` | Yes | Vault denomination asset. Ask the operator which token depositors will provide. Supported: `USDC`, `WETH`. Also accepts a raw `0x...` token address |
+| `--asset <symbol>` | Yes | Vault denomination asset. Supported: `USDC`, `WETH`, or a raw `0x...` address. Default: USDC (WETH on chains without USDC like Robinhood L2) |
+| `-y, --yes` | No | Skip confirmation prompt (non-interactive mode for agent use) |
 | `--open-deposits` | No | Allow anyone to deposit. Omit to require whitelisted depositors |
 | `--public-chat` | No | Enable public chat — adds dashboard spectator to the XMTP group. **Recommended for all syndicates** |
 
@@ -363,7 +373,7 @@ If `--metadata-uri` is not provided, the CLI pins metadata to IPFS via Pinata (`
 ### List proposals
 
 ```bash
-sherwood proposal list [--vault <addr>] [--state <filter>] [--testnet]
+sherwood proposal list [--vault <addr>] [--state <filter>] [--chain <network>]
 ```
 
 Filter by state: `pending`, `approved`, `executed`, `settled`, `all` (default: `all`).
@@ -371,7 +381,7 @@ Filter by state: `pending`, `approved`, `executed`, `settled`, `all` (default: `
 ### Show proposal detail
 
 ```bash
-sherwood proposal show <id> [--testnet]
+sherwood proposal show <id> [--chain <network>]
 ```
 
 Displays metadata, state, timestamps, vote breakdown, decoded calls, capital snapshot (if executed), and P&L/fees (if settled).
@@ -379,7 +389,7 @@ Displays metadata, state, timestamps, vote breakdown, decoded calls, capital sna
 ### Vote on a proposal
 
 ```bash
-sherwood proposal vote --id <proposalId> --support <yes|no> [--testnet]
+sherwood proposal vote --id <proposalId> --support <yes|no> [--chain <network>]
 ```
 
 Caller must have voting power (vault shares at snapshot). Displays vote weight before confirming.
@@ -387,7 +397,7 @@ Caller must have voting power (vault shares at snapshot). Displays vote weight b
 ### Execute an approved proposal
 
 ```bash
-sherwood proposal execute --id <proposalId> [--testnet]
+sherwood proposal execute --id <proposalId> [--chain <network>]
 ```
 
 Anyone can call. Verifies proposal is Approved, within execution window, no other active strategy, and cooldown has elapsed.
@@ -395,7 +405,7 @@ Anyone can call. Verifies proposal is Approved, within execution window, no othe
 ### Settle an executed proposal
 
 ```bash
-sherwood proposal settle --id <proposalId> [--calls <path-to-json>] [--testnet]
+sherwood proposal settle --id <proposalId> [--calls <path-to-json>] [--chain <network>]
 ```
 
 Auto-routes to the correct settlement path:
@@ -408,7 +418,7 @@ Output: P&L, fees distributed, redemptions unlocked.
 ### Cancel a proposal
 
 ```bash
-sherwood proposal cancel --id <proposalId> [--testnet]
+sherwood proposal cancel --id <proposalId> [--chain <network>]
 ```
 
 Proposer can cancel if Pending/Approved. Vault owner can emergency cancel at any non-settled state.
@@ -416,7 +426,7 @@ Proposer can cancel if Pending/Approved. Vault owner can emergency cancel at any
 ### Governor info
 
 ```bash
-sherwood governor info [--testnet]
+sherwood governor info [--chain <network>]
 ```
 
 Displays current parameters: voting period, execution window, quorum, max performance fee, max strategy duration, cooldown period, and registered vaults.
@@ -424,12 +434,12 @@ Displays current parameters: voting period, execution window, quorum, max perfor
 ### Governor parameter setters (owner only)
 
 ```bash
-sherwood governor set-voting-period --seconds <n> [--testnet]
-sherwood governor set-execution-window --seconds <n> [--testnet]
-sherwood governor set-quorum --bps <n> [--testnet]
-sherwood governor set-max-fee --bps <n> [--testnet]
-sherwood governor set-max-duration --seconds <n> [--testnet]
-sherwood governor set-cooldown --seconds <n> [--testnet]
+sherwood governor set-voting-period --seconds <n> [--chain <network>]
+sherwood governor set-execution-window --seconds <n> [--chain <network>]
+sherwood governor set-quorum --bps <n> [--chain <network>]
+sherwood governor set-max-fee --bps <n> [--chain <network>]
+sherwood governor set-max-duration --seconds <n> [--chain <network>]
+sherwood governor set-cooldown --seconds <n> [--chain <network>]
 ```
 
 Each validates against hardcoded bounds before submitting.
@@ -449,7 +459,7 @@ Each validates against hardcoded bounds before submitting.
 
 | Flag | Effect |
 |------|--------|
-| `--testnet` | Use Base Sepolia |
+| `--chain <network>` | Target chain: `base`, `base-sepolia`, `robinhood-testnet` |
 | `--vault <addr>` | Override vault (default: from config) |
 | `--execute` | Submit onchain (default: simulate only) |
 

@@ -23,6 +23,7 @@ export interface SherwoodConfig {
   veniceApiKey?: string; // Venice AI inference API key
   agentId?: number; // ERC-8004 identity token ID
   contracts?: Record<string, ChainContracts>; // chainId → user addresses
+  rpc?: Record<string, string>; // network name → custom RPC URL
 }
 
 export function loadConfig(): SherwoodConfig {
@@ -80,6 +81,19 @@ export function setPrivateKey(key: string): void {
 
 export function getPrivateKey(): string | undefined {
   return loadConfig().privateKey;
+}
+
+// ── Per-network RPC URLs ──
+
+export function getConfigRpcUrl(network: string): string | undefined {
+  return loadConfig().rpc?.[network];
+}
+
+export function setConfigRpcUrl(network: string, url: string): void {
+  const config = loadConfig();
+  if (!config.rpc) config.rpc = {};
+  config.rpc[network] = url;
+  saveConfig(config);
 }
 
 // ── Per-chain contract addresses ──

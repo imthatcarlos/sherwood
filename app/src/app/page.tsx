@@ -3,6 +3,7 @@ import ForestBackground from "@/components/ForestBackground";
 import SiteHeader from "@/components/SiteHeader";
 import CopyButton from "@/components/CopyButton";
 import { getActiveSyndicates } from "@/lib/syndicates";
+import { CHAIN_BADGES } from "@/lib/contracts";
 
 export default async function Home() {
   const syndicates = await getActiveSyndicates();
@@ -198,6 +199,7 @@ export default async function Home() {
                   <thead>
                     <tr>
                       <th>Syndicate</th>
+                      <th>Chain</th>
                       <th>Strategy</th>
                       <th>TVL</th>
                       <th>Agents</th>
@@ -205,32 +207,41 @@ export default async function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {syndicates.map((s) => (
-                      <tr key={s.id}>
-                        <td>
-                          <Link href={`/syndicate/${s.subdomain}`} className="text-inherit no-underline hover:text-[var(--color-accent)]">
-                            {s.name}{" "}
-                            <span className="text-white/30">
-                              // 0x{s.vault.slice(2, 6)}
+                    {syndicates.map((s) => {
+                      const badge = CHAIN_BADGES[s.chainId] || CHAIN_BADGES[84532];
+                      return (
+                        <tr key={`${s.chainId}-${s.id}`}>
+                          <td>
+                            <Link href={`/syndicate/${s.subdomain}`} className="text-inherit no-underline hover:text-[var(--color-accent)]">
+                              {s.name}{" "}
+                              <span className="text-white/30">
+                                // 0x{s.vault.slice(2, 6)}
+                              </span>
+                            </Link>
+                          </td>
+                          <td>
+                            <span
+                              className="glitch-tag text-[9px] px-1.5 py-0.5"
+                              style={{ background: badge.bg, color: badge.color }}
+                            >
+                              {badge.label}
                             </span>
-                          </Link>
-                        </td>
-                        <td>{s.strategy}</td>
-                        <td className="tabular-nums">
-                          ${s.tvl.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </td>
-                        <td className="tabular-nums">{s.agentCount}</td>
-                        <td>
-                          {s.status === "EXECUTING" ? (
-                            <span className="status-live">EXECUTING</span>
-                          ) : s.status === "IDLE" ? (
-                            <span className="text-white/40">IDLE</span>
-                          ) : (
-                            <span className="text-white/40">NO AGENTS</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td>{s.strategy}</td>
+                          <td className="tabular-nums">{s.tvl}</td>
+                          <td className="tabular-nums">{s.agentCount}</td>
+                          <td>
+                            {s.status === "EXECUTING" ? (
+                              <span className="status-live">EXECUTING</span>
+                            ) : s.status === "IDLE" ? (
+                              <span className="text-white/40">IDLE</span>
+                            ) : (
+                              <span className="text-white/40">NO AGENTS</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
