@@ -1,21 +1,28 @@
 /**
  * Server-side data fetching for the syndicate detail page.
  *
- * Resolves a subdomain to on-chain syndicate data via multicall,
- * then hydrates with IPFS metadata and ENS text records.
+ * Multichain — tries all chains in CHAINS to resolve a subdomain,
+ * then hydrates with on-chain data, IPFS metadata, and ENS text records.
  */
 
 import { type Address, namehash } from "viem";
 import {
+  CHAINS,
+  type ChainEntry,
   getPublicClient,
   getAddresses,
   SYNDICATE_FACTORY_ABI,
   SYNDICATE_VAULT_ABI,
+  ERC20_ABI,
   IDENTITY_REGISTRY_ABI,
   L2_REGISTRY_ABI,
-  formatUSDC,
+  formatAsset,
+  formatBps,
 } from "./contracts";
-import { fetchSyndicateAttestations, type AttestationItem } from "./eas-queries";
+import {
+  fetchSyndicateAttestations,
+  type AttestationItem,
+} from "./eas-queries";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -64,6 +71,9 @@ export interface SyndicatePageData {
   active: boolean;
   subdomain: string;
 
+  // Chain
+  chainId: number;
+
   // Vault data
   totalAssets: bigint;
   totalSupply: bigint;
@@ -75,7 +85,12 @@ export interface SyndicatePageData {
   redemptionsLocked: boolean;
   managementFeeBps: bigint;
 
-  // Agent data (from subgraph PKPs + on-chain getAgentConfig)
+  // Asset info
+  assetAddress: Address;
+  assetDecimals: number;
+  assetSymbol: string;
+
+  // Agent data
   agents: AgentInfo[];
 
   // IPFS metadata
@@ -123,32 +138,15 @@ async function fetchMetadata(
   }
 }
 
-// ── Subgraph query for agent PKP addresses ─────────────────
+// ── Agent discovery ─────────────────────────────────────────
 
-const SUBGRAPH_URLS: Record<string, string> = {
-  "84532":
-    "https://api.studio.thegraph.com/query/18207/sherwood-sepolia/version/latest",
-};
-
-function getSubgraphUrl(): string | undefined {
-  if (process.env.SUBGRAPH_URL) return process.env.SUBGRAPH_URL;
-  const chainId = process.env.CHAIN_ID || "84532";
-  return SUBGRAPH_URLS[chainId];
-}
-
-interface SubgraphAgent {
-  id: string;
-  active: boolean;
-}
-
+/** Subgraph-based agent discovery (for chains with subgraph). */
 async function fetchSubgraphAgents(
+  subgraphUrl: string,
   syndicateId: string,
-): Promise<SubgraphAgent[]> {
-  const url = getSubgraphUrl();
-  if (!url) return [];
-
+): Promise<Address[]> {
   try {
-    const response = await fetch(url, {
+    const response = await fetch(subgraphUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -165,7 +163,29 @@ async function fetchSubgraphAgents(
     });
     if (!response.ok) return [];
     const result = await response.json();
-    return result?.data?.syndicate?.agents || [];
+    const agents = result?.data?.syndicate?.agents || [];
+    // IDs are "{vault}-{pkpAddress}" format
+    return agents.map((a: { id: string }) => {
+      const parts = a.id.split("-");
+      return (parts.length > 1 ? parts.slice(1).join("-") : a.id) as Address;
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** On-chain agent discovery via vault.getAgentOperators(). */
+async function fetchOnChainAgents(
+  chainId: number,
+  vault: Address,
+): Promise<Address[]> {
+  const client = getPublicClient(chainId);
+  try {
+    return (await client.readContract({
+      address: vault,
+      abi: SYNDICATE_VAULT_ABI,
+      functionName: "getAgentOperators",
+    })) as Address[];
   } catch {
     return [];
   }
@@ -176,51 +196,99 @@ async function fetchSubgraphAgents(
 export async function resolveSyndicateBySubdomain(
   subdomain: string,
 ): Promise<SyndicatePageData | null> {
-  const client = getPublicClient();
-  const addresses = getAddresses();
+  // Try all chains in parallel — first non-null wins
+  const attempts = await Promise.all(
+    Object.entries(CHAINS).map(async ([chainIdStr, entry]) => {
+      const chainId = Number(chainIdStr);
+      const client = getPublicClient(chainId);
 
-  // Step 1: Resolve subdomain → syndicateId
-  let syndicateId: bigint;
-  try {
-    syndicateId = (await client.readContract({
-      address: addresses.factory,
-      abi: SYNDICATE_FACTORY_ABI,
-      functionName: "subdomainToSyndicate",
-      args: [subdomain],
-    })) as bigint;
-  } catch {
-    return null;
-  }
+      try {
+        const syndicateId = (await client.readContract({
+          address: entry.addresses.factory,
+          abi: SYNDICATE_FACTORY_ABI,
+          functionName: "subdomainToSyndicate",
+          args: [subdomain],
+        })) as bigint;
 
-  if (syndicateId === 0n) return null;
+        if (!syndicateId || syndicateId === 0n) return null;
+        return { chainId, entry, syndicateId };
+      } catch {
+        return null;
+      }
+    }),
+  );
 
-  // Step 2: Get factory record
-  let factoryRecord: readonly [bigint, Address, Address, string, bigint, boolean, string];
+  const match = attempts.find((a) => a !== null);
+  if (!match) return null;
+
+  return resolveOnChain(match.chainId, match.entry, subdomain, match.syndicateId);
+}
+
+async function resolveOnChain(
+  chainId: number,
+  entry: ChainEntry,
+  subdomain: string,
+  syndicateId: bigint,
+): Promise<SyndicatePageData | null> {
+  const client = getPublicClient(chainId);
+  const addresses = entry.addresses;
+
+  // Step 1: Get factory record
+  let factoryRecord: readonly [
+    bigint,
+    Address,
+    Address,
+    string,
+    bigint,
+    boolean,
+    string,
+  ];
   try {
     factoryRecord = (await client.readContract({
       address: addresses.factory,
       abi: SYNDICATE_FACTORY_ABI,
       functionName: "syndicates",
       args: [syndicateId],
-    })) as readonly [bigint, Address, Address, string, bigint, boolean, string];
+    })) as typeof factoryRecord;
   } catch {
     return null;
   }
 
   const [, vault, creator, metadataURI, createdAt, active] = factoryRecord;
 
-  // Step 3: Multicall vault reads
+  // Step 2: Multicall vault reads + asset address
   const vaultResults = await client.multicall({
     contracts: [
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "totalAssets" },
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "totalSupply" },
-      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "totalDeposited" },
-      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "getAgentCount" },
-      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "openDeposits" },
+      {
+        address: vault,
+        abi: SYNDICATE_VAULT_ABI,
+        functionName: "totalDeposited",
+      },
+      {
+        address: vault,
+        abi: SYNDICATE_VAULT_ABI,
+        functionName: "getAgentCount",
+      },
+      {
+        address: vault,
+        abi: SYNDICATE_VAULT_ABI,
+        functionName: "openDeposits",
+      },
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "owner" },
       { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "paused" },
-      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "redemptionsLocked" },
-      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "managementFeeBps" },
+      {
+        address: vault,
+        abi: SYNDICATE_VAULT_ABI,
+        functionName: "redemptionsLocked",
+      },
+      {
+        address: vault,
+        abi: SYNDICATE_VAULT_ABI,
+        functionName: "managementFeeBps",
+      },
+      { address: vault, abi: SYNDICATE_VAULT_ABI, functionName: "asset" },
     ],
   });
 
@@ -233,25 +301,44 @@ export async function resolveSyndicateBySubdomain(
   const paused = (vaultResults[6].result as boolean) ?? false;
   const redemptionsLocked = (vaultResults[7].result as boolean) ?? false;
   const managementFeeBps = (vaultResults[8].result as bigint) ?? 0n;
+  const assetAddress = (vaultResults[9].result as Address) ?? addresses.usdc;
 
-  // Step 4: Fetch agent configs
-  // Try subgraph first for PKP addresses, fall back to event logs
-  const subgraphAgents = await fetchSubgraphAgents(syndicateId.toString());
-  let agents: AgentInfo[] = [];
-
-  // Get PKP addresses from subgraph — IDs are "{vault}-{pkpAddress}" format
-  const pkpAddresses: Address[] = subgraphAgents.map((a) => {
-    const parts = a.id.split("-");
-    // Extract PKP address (last part after vault address)
-    return (parts.length > 1 ? parts.slice(1).join("-") : a.id) as Address;
+  // Step 2b: Get asset decimals + symbol
+  const assetInfoResults = await client.multicall({
+    contracts: [
+      { address: assetAddress, abi: ERC20_ABI, functionName: "decimals" },
+      { address: assetAddress, abi: ERC20_ABI, functionName: "symbol" },
+    ],
   });
 
-  if (pkpAddresses.length > 0) {
-    const agentCalls = pkpAddresses.map((pkp) => ({
+  const assetDecimals =
+    (assetInfoResults[0].result as number | undefined) ?? 18;
+  const assetSymbol =
+    (assetInfoResults[1].result as string | undefined) ?? "ETH";
+
+  // Step 3: Fetch agent configs
+  // Try subgraph first, fall back to on-chain getAgentOperators
+  let agentAddresses: Address[];
+  if (entry.subgraphUrl) {
+    agentAddresses = await fetchSubgraphAgents(
+      entry.subgraphUrl,
+      syndicateId.toString(),
+    );
+    // Fall through to on-chain if subgraph returned nothing but agentCount > 0
+    if (agentAddresses.length === 0 && agentCount > 0n) {
+      agentAddresses = await fetchOnChainAgents(chainId, vault);
+    }
+  } else {
+    agentAddresses = await fetchOnChainAgents(chainId, vault);
+  }
+
+  let agents: AgentInfo[] = [];
+  if (agentAddresses.length > 0) {
+    const agentCalls = agentAddresses.map((addr) => ({
       address: vault,
       abi: SYNDICATE_VAULT_ABI,
       functionName: "getAgentConfig" as const,
-      args: [pkp],
+      args: [addr],
     }));
 
     const agentResults = await client.multicall({ contracts: agentCalls });
@@ -274,9 +361,10 @@ export async function resolveSyndicateBySubdomain(
     }
   }
 
-  // Step 4b: Resolve ERC-8004 identities for each agent
-  if (agents.length > 0) {
+  // Step 3b: Resolve ERC-8004 identities
+  if (agents.length > 0 && addresses.identityRegistry !== "0x0000000000000000000000000000000000000000") {
     const identities = await resolveAgentIdentities(
+      chainId,
       agents.map((a) => a.agentId),
       addresses.identityRegistry,
     );
@@ -285,12 +373,25 @@ export async function resolveSyndicateBySubdomain(
     }
   }
 
-  // Step 5: Parallel off-chain reads
+  // Step 4: Parallel off-chain reads
   const [metadata, xmtpGroupId, attestations] = await Promise.all([
     fetchMetadata(metadataURI),
-    fetchXmtpGroupId(subdomain, addresses.l2Registry),
-    fetchSyndicateAttestations(creator, syndicateId),
+    fetchXmtpGroupId(chainId, subdomain, addresses.l2Registry),
+    fetchSyndicateAttestations(creator, syndicateId, chainId),
   ]);
+
+  // Format display values based on asset
+  const isUSD = assetSymbol === "USDC" || assetSymbol === "USDT";
+  const tvlFormatted = formatAsset(
+    totalAssets,
+    assetDecimals,
+    isUSD ? "USD" : undefined,
+  );
+  const depositedFormatted = formatAsset(
+    totalDeposited,
+    assetDecimals,
+    isUSD ? "USD" : undefined,
+  );
 
   return {
     syndicateId,
@@ -300,6 +401,7 @@ export async function resolveSyndicateBySubdomain(
     createdAt,
     active,
     subdomain,
+    chainId,
     totalAssets,
     totalSupply,
     totalDeposited,
@@ -309,14 +411,19 @@ export async function resolveSyndicateBySubdomain(
     paused,
     redemptionsLocked,
     managementFeeBps,
+    assetAddress,
+    assetDecimals,
+    assetSymbol,
     agents,
     metadata,
     xmtpGroupId,
     attestations,
     display: {
-      tvl: formatUSDC(totalAssets),
-      totalDeposited: formatUSDC(totalDeposited),
-      managementFee: `${(Number(managementFeeBps) / 100).toFixed(1)}%`,
+      tvl: isUSD ? tvlFormatted : `${tvlFormatted} ${assetSymbol}`,
+      totalDeposited: isUSD
+        ? depositedFormatted
+        : `${depositedFormatted} ${assetSymbol}`,
+      managementFee: formatBps(managementFeeBps),
     },
   };
 }
@@ -324,16 +431,12 @@ export async function resolveSyndicateBySubdomain(
 // ── ERC-8004 Agent Identity Resolution ─────────────────────
 
 async function resolveAgentIdentities(
+  chainId: number,
   agentIds: bigint[],
   registryAddress: Address,
 ): Promise<(AgentIdentity | null)[]> {
-  if (registryAddress === "0x0000000000000000000000000000000000000000") {
-    return agentIds.map(() => null);
-  }
+  const client = getPublicClient(chainId);
 
-  const client = getPublicClient();
-
-  // Multicall tokenURI for all agents
   const uriCalls = agentIds.map((id) => ({
     address: registryAddress,
     abi: IDENTITY_REGISTRY_ABI,
@@ -343,7 +446,6 @@ async function resolveAgentIdentities(
 
   const uriResults = await client.multicall({ contracts: uriCalls });
 
-  // Resolve each URI to metadata in parallel
   return Promise.all(
     uriResults.map(async (r) => {
       if (r.status !== "success" || !r.result) return null;
@@ -359,23 +461,26 @@ async function parseAgentMetadata(uri: string): Promise<AgentIdentity | null> {
     let json: Record<string, unknown>;
 
     if (uri.startsWith("data:application/json;base64,")) {
-      // Base64-encoded JSON data URI
       const b64 = uri.slice("data:application/json;base64,".length);
       const decoded = atob(b64);
       json = JSON.parse(decoded);
     } else if (uri.startsWith("data:application/json,")) {
-      // URL-encoded JSON data URI
       const raw = uri.slice("data:application/json,".length);
       json = JSON.parse(decodeURIComponent(raw));
-    } else if (uri.startsWith("ipfs://") || uri.startsWith("Qm") || uri.startsWith("bafy")) {
-      // IPFS URI — resolve via Pinata gateway
+    } else if (
+      uri.startsWith("ipfs://") ||
+      uri.startsWith("Qm") ||
+      uri.startsWith("bafy")
+    ) {
       const cid = uri.startsWith("ipfs://") ? uri.slice(7) : uri;
-      const gateway = process.env.PINATA_GATEWAY || "https://sherwood.mypinata.cloud";
-      const res = await fetch(`${gateway}/ipfs/${cid}`, { next: { revalidate: 300 } });
+      const gateway =
+        process.env.PINATA_GATEWAY || "https://sherwood.mypinata.cloud";
+      const res = await fetch(`${gateway}/ipfs/${cid}`, {
+        next: { revalidate: 300 },
+      });
       if (!res.ok) return null;
       json = await res.json();
     } else if (uri.startsWith("http")) {
-      // HTTP URI
       const res = await fetch(uri, { next: { revalidate: 300 } });
       if (!res.ok) return null;
       json = await res.json();
@@ -395,12 +500,14 @@ async function parseAgentMetadata(uri: string): Promise<AgentIdentity | null> {
 // ── ENS text record ────────────────────────────────────────
 
 async function fetchXmtpGroupId(
+  chainId: number,
   subdomain: string,
   l2Registry: Address,
 ): Promise<string | null> {
-  if (l2Registry === "0x0000000000000000000000000000000000000000") return null;
+  if (l2Registry === "0x0000000000000000000000000000000000000000")
+    return null;
 
-  const client = getPublicClient();
+  const client = getPublicClient(chainId);
   const node = namehash(`${subdomain}.sherwoodagent.eth`);
 
   try {

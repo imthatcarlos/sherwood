@@ -1,25 +1,23 @@
 /**
  * Server-side syndicate data fetching.
  *
- * Queries the subgraph for active syndicates, then fetches
- * IPFS metadata from Pinata to hydrate names + strategies.
+ * Multichain — fetches syndicates from ALL chains in CHAINS simultaneously.
+ * Uses subgraph where available, falls back to on-chain factory.getActiveSyndicates().
  */
+
+import { type Address } from "viem";
+import {
+  CHAINS,
+  type ChainEntry,
+  getPublicClient,
+  SYNDICATE_FACTORY_ABI,
+  SYNDICATE_VAULT_ABI,
+  ERC20_ABI,
+  formatAsset,
+} from "./contracts";
 
 const PINATA_GATEWAY =
   process.env.PINATA_GATEWAY || "https://sherwood.mypinata.cloud";
-
-// ── Subgraph URLs by chain ──────────────────────────────────
-
-const SUBGRAPH_URLS: Record<string, string> = {
-  "84532": "https://api.studio.thegraph.com/query/18207/sherwood-sepolia/version/latest",
-};
-
-function getSubgraphUrl(): string | undefined {
-  // Explicit override always wins
-  if (process.env.SUBGRAPH_URL) return process.env.SUBGRAPH_URL;
-  const chainId = process.env.CHAIN_ID || "84532"; // default to testnet
-  return SUBGRAPH_URLS[chainId];
-}
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -56,25 +54,24 @@ export interface SyndicateDisplay {
   subdomain: string;
   name: string;
   strategy: string;
-  tvl: number;
+  tvl: string;
   agentCount: number;
   status: "EXECUTING" | "IDLE" | "NO_AGENTS";
+  chainId: number;
 }
 
 // ── Subgraph ───────────────────────────────────────────────
 
 async function querySubgraph<T>(
-  graphql: string
+  url: string,
+  graphql: string,
 ): Promise<T | null> {
-  const url = getSubgraphUrl();
-  if (!url) return null;
-
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: graphql }),
-      next: { revalidate: 60 }, // cache for 60s
+      next: { revalidate: 60 },
     });
 
     if (!response.ok) return null;
@@ -94,7 +91,7 @@ async function querySubgraph<T>(
 // ── IPFS Metadata ──────────────────────────────────────────
 
 async function fetchMetadata(
-  ipfsURI: string
+  ipfsURI: string,
 ): Promise<SyndicateMetadata | null> {
   try {
     let cid: string;
@@ -107,7 +104,7 @@ async function fetchMetadata(
     }
 
     const response = await fetch(`${PINATA_GATEWAY}/ipfs/${cid}`, {
-      next: { revalidate: 300 }, // cache metadata for 5 min
+      next: { revalidate: 300 },
     });
 
     if (!response.ok) return null;
@@ -117,11 +114,15 @@ async function fetchMetadata(
   }
 }
 
-// ── Public API ─────────────────────────────────────────────
+// ── Per-chain fetchers ────────────────────────────────────
 
-export async function getActiveSyndicates(): Promise<SyndicateDisplay[]> {
-  const data = await querySubgraph<{ syndicates: SubgraphSyndicate[] }>(`
-    {
+async function fetchViaSubgraph(
+  chainId: number,
+  subgraphUrl: string,
+): Promise<SyndicateDisplay[]> {
+  const data = await querySubgraph<{ syndicates: SubgraphSyndicate[] }>(
+    subgraphUrl,
+    `{
       syndicates(
         where: { active: true }
         orderBy: createdAt
@@ -142,13 +143,12 @@ export async function getActiveSyndicates(): Promise<SyndicateDisplay[]> {
           active
         }
       }
-    }
-  `);
+    }`,
+  );
 
   if (!data?.syndicates?.length) return [];
 
-  // Fetch all metadata in parallel
-  const syndicates = await Promise.all(
+  return Promise.all(
     data.syndicates.map(async (s) => {
       const metadata = await fetchMetadata(s.metadataURI);
 
@@ -157,12 +157,11 @@ export async function getActiveSyndicates(): Promise<SyndicateDisplay[]> {
       const tvl = totalDeposits - totalWithdrawals;
       const agentCount = s.agents?.length || 0;
 
-      // Derive strategy name from metadata
-      const strategy = metadata?.strategies?.[0]?.name
-        || (metadata?.strategies?.[0]?.protocols?.join(" + "))
-        || "—";
+      const strategy =
+        metadata?.strategies?.[0]?.name ||
+        metadata?.strategies?.[0]?.protocols?.join(" + ") ||
+        "—";
 
-      // Derive status
       let status: SyndicateDisplay["status"] = "NO_AGENTS";
       if (agentCount > 0) {
         status = tvl > 0 ? "EXECUTING" : "IDLE";
@@ -174,12 +173,170 @@ export async function getActiveSyndicates(): Promise<SyndicateDisplay[]> {
         subdomain: s.subdomain,
         name: metadata?.name || `Syndicate #${s.id}`,
         strategy,
-        tvl,
+        tvl: `$${tvl.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
         agentCount,
         status,
+        chainId,
       };
-    })
+    }),
+  );
+}
+
+async function fetchViaOnChain(
+  chainId: number,
+  entry: ChainEntry,
+): Promise<SyndicateDisplay[]> {
+  const client = getPublicClient(chainId);
+
+  // Call factory.getActiveSyndicates()
+  let rawSyndicates: readonly {
+    id: bigint;
+    vault: Address;
+    creator: Address;
+    metadataURI: string;
+    createdAt: bigint;
+    active: boolean;
+    subdomain: string;
+  }[];
+
+  try {
+    rawSyndicates = (await client.readContract({
+      address: entry.addresses.factory,
+      abi: SYNDICATE_FACTORY_ABI,
+      functionName: "getActiveSyndicates",
+    })) as typeof rawSyndicates;
+  } catch {
+    return [];
+  }
+
+  if (!rawSyndicates.length) return [];
+
+  // For each syndicate, multicall vault data: totalAssets, getAgentCount, asset
+  const vaultCalls = rawSyndicates.flatMap((s) => [
+    {
+      address: s.vault,
+      abi: SYNDICATE_VAULT_ABI,
+      functionName: "totalAssets" as const,
+    },
+    {
+      address: s.vault,
+      abi: SYNDICATE_VAULT_ABI,
+      functionName: "getAgentCount" as const,
+    },
+    {
+      address: s.vault,
+      abi: SYNDICATE_VAULT_ABI,
+      functionName: "asset" as const,
+    },
+  ]);
+
+  const vaultResults = await client.multicall({ contracts: vaultCalls });
+
+  // Collect unique asset addresses for decimals + symbol lookup
+  const assetAddresses = new Set<Address>();
+  for (let i = 0; i < rawSyndicates.length; i++) {
+    const assetResult = vaultResults[i * 3 + 2];
+    if (assetResult.status === "success" && assetResult.result) {
+      assetAddresses.add(assetResult.result as Address);
+    }
+  }
+
+  // Multicall decimals + symbol for each unique asset
+  const assetList = [...assetAddresses];
+  const assetInfoCalls = assetList.flatMap((addr) => [
+    { address: addr, abi: ERC20_ABI, functionName: "decimals" as const },
+    { address: addr, abi: ERC20_ABI, functionName: "symbol" as const },
+  ]);
+
+  const assetInfoResults =
+    assetList.length > 0
+      ? await client.multicall({ contracts: assetInfoCalls })
+      : [];
+
+  const assetInfo: Record<string, { decimals: number; symbol: string }> = {};
+  for (let i = 0; i < assetList.length; i++) {
+    const decimals = assetInfoResults[i * 2]?.result as number | undefined;
+    const symbol = assetInfoResults[i * 2 + 1]?.result as string | undefined;
+    assetInfo[assetList[i].toLowerCase()] = {
+      decimals: decimals ?? 18,
+      symbol: symbol ?? "ETH",
+    };
+  }
+
+  // Build display objects
+  return Promise.all(
+    rawSyndicates.map(async (s, i) => {
+      const totalAssets = (vaultResults[i * 3]?.result as bigint) ?? 0n;
+      const agentCount = Number(
+        (vaultResults[i * 3 + 1]?.result as bigint) ?? 0n,
+      );
+      const assetAddr = (vaultResults[i * 3 + 2]?.result as Address) ?? "";
+      const info = assetInfo[assetAddr.toLowerCase()] ?? {
+        decimals: 18,
+        symbol: "ETH",
+      };
+
+      const metadata = await fetchMetadata(s.metadataURI);
+
+      const strategy =
+        metadata?.strategies?.[0]?.name ||
+        metadata?.strategies?.[0]?.protocols?.join(" + ") ||
+        "—";
+
+      let status: SyndicateDisplay["status"] = "NO_AGENTS";
+      if (agentCount > 0) {
+        status = totalAssets > 0n ? "EXECUTING" : "IDLE";
+      }
+
+      const tvlFormatted = formatAsset(
+        totalAssets,
+        info.decimals,
+        info.symbol === "USDC" ? "USD" : undefined,
+      );
+
+      return {
+        id: s.id.toString(),
+        vault: s.vault,
+        subdomain: s.subdomain,
+        name: metadata?.name || `Syndicate #${s.id.toString()}`,
+        strategy,
+        tvl: info.symbol === "USDC" ? tvlFormatted : `${tvlFormatted} ${info.symbol}`,
+        agentCount,
+        status,
+        chainId,
+      };
+    }),
+  );
+}
+
+async function fetchSyndicatesForChain(
+  chainId: number,
+  entry: ChainEntry,
+): Promise<SyndicateDisplay[]> {
+  // Use subgraph if available, otherwise on-chain
+  if (entry.subgraphUrl) {
+    const results = await fetchViaSubgraph(chainId, entry.subgraphUrl);
+    if (results.length > 0) return results;
+    // Subgraph returned nothing — fall through to on-chain
+  }
+  return fetchViaOnChain(chainId, entry);
+}
+
+// ── Public API ─────────────────────────────────────────────
+
+export async function getActiveSyndicates(): Promise<SyndicateDisplay[]> {
+  const results = await Promise.all(
+    Object.entries(CHAINS).map(([chainId, entry]) =>
+      fetchSyndicatesForChain(Number(chainId), entry),
+    ),
   );
 
-  return syndicates;
+  // Flatten and sort newest first (by id descending as proxy for createdAt)
+  return results.flat().sort((a, b) => {
+    // Try numeric sort first
+    const aNum = parseInt(a.id, 10);
+    const bNum = parseInt(b.id, 10);
+    if (!isNaN(aNum) && !isNaN(bNum)) return bNum - aNum;
+    return b.id.localeCompare(a.id);
+  });
 }

@@ -10,7 +10,7 @@ import AgentRoster from "@/components/AgentRoster";
 import AttestationTimeline from "@/components/AttestationTimeline";
 import LiveFeed from "@/components/LiveFeed";
 import { resolveSyndicateBySubdomain } from "@/lib/syndicate-data";
-import { formatUSDC } from "@/lib/contracts";
+
 
 // Mock equity curve data — will be replaced when execution indexing is available
 const MOCK_EQUITY_CURVE = [
@@ -92,6 +92,9 @@ export default async function SyndicateDetailPage({
             vault={data.vault}
             creator={data.creator}
             paused={data.paused}
+            chainId={data.chainId}
+            assetDecimals={data.assetDecimals}
+            assetSymbol={data.assetSymbol}
             activeTab="vault"
           />
 

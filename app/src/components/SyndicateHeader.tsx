@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { type Address } from "viem";
-import { truncateAddress } from "@/lib/contracts";
+import { truncateAddress, CHAIN_BADGES } from "@/lib/contracts";
 import WalletButton from "@/components/WalletButton";
 
 export type TabId = "vault" | "proposals";
@@ -13,6 +13,7 @@ interface SyndicateHeaderProps {
   vault: Address;
   creator: Address;
   paused: boolean;
+  chainId: number;
   activeTab: TabId;
 }
 
@@ -41,8 +42,11 @@ export default function SyndicateHeader({
   vault,
   creator,
   paused,
+  chainId,
   activeTab,
 }: SyndicateHeaderProps) {
+  const badge = CHAIN_BADGES[chainId] || CHAIN_BADGES[84532];
+
   return (
     <div className="agent-header" style={{ flexDirection: "column", alignItems: "stretch", gap: "1rem" }}>
       <div className="flex justify-between items-end">
@@ -57,10 +61,10 @@ export default function SyndicateHeader({
               style={
                 paused
                   ? { background: "rgba(255,77,77,0.2)", color: "#ff4d4d" }
-                  : undefined
+                  : { background: badge.bg, color: badge.color }
               }
             >
-              {paused ? "PAUSED" : "ACTIVE"}
+              {paused ? "PAUSED" : badge.label}
             </span>
           </h1>
         </div>

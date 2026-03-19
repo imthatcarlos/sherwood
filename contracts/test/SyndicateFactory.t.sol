@@ -305,6 +305,76 @@ contract SyndicateFactoryTest is Test {
         factory.deactivate(id);
     }
 
+    // ==================== NO-REGISTRY DEPLOYMENT (Robinhood L2) ====================
+
+    function test_createFactory_noRegistries() public {
+        // Deploy factory with address(0) for ENS + agent registry (Robinhood L2 scenario)
+        SyndicateFactory noRegFactory =
+            new SyndicateFactory(address(executorLib), address(vaultImpl), address(0), address(0), address(governor));
+        vm.prank(owner);
+        governor.setFactory(address(noRegFactory));
+
+        // createSyndicate works without identity verification
+        vm.prank(creator1);
+        (uint256 id, address vaultAddr) = noRegFactory.createSyndicate(0, _defaultConfig());
+
+        assertEq(id, 1);
+        assertTrue(vaultAddr != address(0));
+
+        // Vault is functional
+        SyndicateVault vault = SyndicateVault(payable(vaultAddr));
+        assertEq(vault.name(), "Test Vault");
+        assertEq(vault.owner(), creator1);
+    }
+
+    function test_createFactory_noRegistries_noENSRegistration() public {
+        SyndicateFactory noRegFactory =
+            new SyndicateFactory(address(executorLib), address(vaultImpl), address(0), address(0), address(governor));
+        vm.prank(owner);
+        governor.setFactory(address(noRegFactory));
+
+        vm.prank(creator1);
+        noRegFactory.createSyndicate(0, _configWithSubdomain("no-ens-fund"));
+
+        // ENS registrar was not called (no revert from address(0))
+        // Subdomain mapping still works
+        assertEq(noRegFactory.subdomainToSyndicate("no-ens-fund"), 1);
+    }
+
+    function test_createFactory_noRegistries_isSubdomainAvailable() public {
+        SyndicateFactory noRegFactory =
+            new SyndicateFactory(address(executorLib), address(vaultImpl), address(0), address(0), address(governor));
+        vm.prank(owner);
+        governor.setFactory(address(noRegFactory));
+
+        assertTrue(noRegFactory.isSubdomainAvailable("available-name"));
+
+        vm.prank(creator1);
+        noRegFactory.createSyndicate(0, _configWithSubdomain("available-name"));
+
+        assertFalse(noRegFactory.isSubdomainAvailable("available-name"));
+    }
+
+    function test_createFactory_noRegistries_registerAgent() public {
+        SyndicateFactory noRegFactory =
+            new SyndicateFactory(address(executorLib), address(vaultImpl), address(0), address(0), address(governor));
+        vm.prank(owner);
+        governor.setFactory(address(noRegFactory));
+
+        vm.prank(creator1);
+        (, address vaultAddr) = noRegFactory.createSyndicate(0, _defaultConfig());
+        SyndicateVault vault = SyndicateVault(payable(vaultAddr));
+
+        // registerAgent works without ERC-8004 verification
+        address agent = makeAddr("agent");
+        vm.prank(creator1);
+        vault.registerAgent(0, agent, agent);
+
+        assertTrue(vault.isAgent(agent));
+    }
+
+    // ==================== ACTIVE SYNDICATES ====================
+
     function test_getActiveSyndicates() public {
         vm.startPrank(creator1);
         factory.createSyndicate(creator1AgentId, _configWithSubdomain("fund-aaa"));

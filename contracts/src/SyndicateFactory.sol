@@ -94,9 +94,9 @@ contract SyndicateFactory {
     ) {
         if (executorImpl_ == address(0)) revert InvalidExecutorImpl();
         if (vaultImpl_ == address(0)) revert InvalidVaultImpl();
-        if (ensRegistrar_ == address(0)) revert InvalidENSRegistrar();
-        if (agentRegistry_ == address(0)) revert InvalidAgentRegistry();
         if (governor_ == address(0)) revert InvalidGovernor();
+        // ensRegistrar_ and agentRegistry_ may be address(0) on chains
+        // without ENS/Durin or ERC-8004 (e.g. Robinhood L2)
         executorImpl = executorImpl_;
         vaultImpl = vaultImpl_;
         ensRegistrar = IL2Registrar(ensRegistrar_);
@@ -113,8 +113,10 @@ contract SyndicateFactory {
         external
         returns (uint256 syndicateId, address vault)
     {
-        // Verify ERC-8004 identity
-        if (agentRegistry.ownerOf(creatorAgentId) != msg.sender) revert NotAgentOwner();
+        // Verify ERC-8004 identity (skipped on chains without agent registry)
+        if (address(agentRegistry) != address(0)) {
+            if (agentRegistry.ownerOf(creatorAgentId) != msg.sender) revert NotAgentOwner();
+        }
 
         // Validate subdomain
         if (bytes(config.subdomain).length < 3) revert SubdomainTooShort();
@@ -141,8 +143,10 @@ contract SyndicateFactory {
         // Register vault on governor
         ISyndicateGovernor(governor).addVault(vault);
 
-        // Register ENS subname — vault is both address record + NFT owner
-        ensRegistrar.register(config.subdomain, vault);
+        // Register ENS subname (skipped on chains without Durin L2 Registrar)
+        if (address(ensRegistrar) != address(0)) {
+            ensRegistrar.register(config.subdomain, vault);
+        }
 
         syndicates[syndicateId] = Syndicate({
             id: syndicateId,
@@ -178,6 +182,9 @@ contract SyndicateFactory {
 
     /// @notice Check if a subdomain is available for registration
     function isSubdomainAvailable(string calldata subdomain) external view returns (bool) {
+        if (address(ensRegistrar) == address(0)) {
+            return subdomainToSyndicate[subdomain] == 0;
+        }
         return subdomainToSyndicate[subdomain] == 0 && ensRegistrar.available(subdomain);
     }
 

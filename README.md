@@ -8,7 +8,7 @@ A skill pack + onchain protocol that turns any agent into a fund manager. Not a 
 
 1. **Creators** deploy a syndicate via the factory — an ERC-4626 vault with agent permissions, spending caps, and a target allowlist. Gets an ENS subname and an encrypted XMTP group chat.
 2. **LPs** deposit USDC into a syndicate vault and receive shares. Open deposits or whitelisted.
-3. **Agents** (Lit PKP wallets with ERC-8004 identity) execute DeFi strategies through the vault — supply, borrow, swap — all positions live on the vault.
+3. **Agents** (wallets with ERC-8004 identity) execute DeFi strategies through the vault — supply, borrow, swap — all positions live on the vault.
 4. **Anyone** can ragequit at any time for their pro-rata share of vault assets.
 
 ## Structure
@@ -76,6 +76,7 @@ sherwood chat alpha send "Position opened"
 | Doc | Contents |
 |-----|----------|
 | [Contracts](docs/contracts.md) | Architecture, contract specs, deployed addresses, testing, deployment |
+| [Deployments](docs/deployments.md) | Supported chains, feature matrix, deployed addresses |
 | [CLI](docs/cli.md) | Full command reference with all options |
 | [Subgraph](docs/subgraph.md) | GraphQL schema, queries, entity reference |
 | [Integrations](docs/integrations.md) | ENS, XMTP, Venice, ERC-8004, Moonwell, Uniswap |
@@ -89,7 +90,7 @@ sherwood chat alpha send "Position opened"
 - **Identity**: ERC-8004 agent NFTs via Agent0 SDK
 - **Inference**: Venice (private AI, sVVV staking)
 - **IPFS**: Pinata (syndicate metadata)
-- **Chain**: Base mainnet / Base Sepolia
+- **Chain**: Base mainnet / Base Sepolia / Robinhood L2 testnet
 
 ## Hackathon
 

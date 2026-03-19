@@ -1,6 +1,6 @@
 # Contracts
 
-Solidity smart contracts for Sherwood, built with Foundry and OpenZeppelin (UUPS upgradeable). All contracts deploy on Base.
+Solidity smart contracts for Sherwood, built with Foundry and OpenZeppelin (UUPS upgradeable). Contracts deploy on Base and Robinhood L2. See [Deployments](deployments.md) for the full chain matrix.
 
 ## Architecture
 
@@ -48,7 +48,7 @@ ERC-4626 vault with two-layer permission model. Extends `ERC4626Upgradeable`, `O
 
 ### SyndicateFactory
 
-Deploys vault proxies (ERC1967) in one transaction. Registers ENS subnames atomically. Verifies ERC-8004 agent identity ownership on creation.
+Deploys vault proxies (ERC1967) in one transaction. Optionally registers ENS subnames and verifies ERC-8004 identity (skipped when registries are `address(0)`, e.g. on Robinhood L2).
 
 **Storage:**
 - `syndicates[]` — syndicate ID → struct (vault, creator, metadata, subdomain, active)
@@ -65,36 +65,11 @@ Onchain registry of strategy implementations. Permissionless registration with c
 
 ## Deployed Addresses
 
-### Sherwood (Base Sepolia)
-
-| Contract | Address |
-|----------|---------|
-| SyndicateFactory | `0xc705F04fF2781aF9bB53ba416Cb32A29540c4624` |
-| StrategyRegistry | `0x8A45f769553D10F26a6633d019B04f7805b1368A` |
-| SyndicateVault (impl) | `0x7E1F71A72a88Ce8418cf82CACDE9ce5Bbbcf5772` |
-| BatchExecutorLib | `0x0c63Ea92336eA0324B81eB6D0fD62455eC38091b` |
-
-### External (Base Mainnet)
-
-| Contract | Address |
-|----------|---------|
-| USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (6 decimals) |
-| WETH | `0x4200000000000000000000000000000000000006` |
-| Moonwell Comptroller | `0xfBb21d0380beE3312B33c4353c8936a0F13EF26C` |
-| Moonwell mUSDC | `0xEdc817A28E8B93B03976FBd4a3dDBc9f7D176c22` |
-| Uniswap V3 SwapRouter | `0x2626664c2603336E57B271c5C0b26F421741e481` |
-| Multicall3 | `0xcA11bde05977b3631167028862bE2a173976CA11` |
-
-### ERC-8004 Identity (not ours)
-
-| Contract | Base Mainnet | Base Sepolia |
-|----------|-------------|--------------|
-| IdentityRegistry | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
-| ReputationRegistry | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` |
+See [Deployments](deployments.md) for the complete multi-chain address table, feature matrix, and token availability.
 
 ## Testing
 
-66 tests across 2 test suites.
+70 tests across 2 test suites.
 
 ```bash
 cd contracts
@@ -106,13 +81,22 @@ forge fmt          # format before committing
 
 **SyndicateVault (49 tests):** ERC-4626 deposits/withdrawals, agent registration with ERC-8004 verification, batch execution with target allowlist, syndicate + per-agent daily spend tracking, ragequit, depositor whitelist, total deposited tracking, pause/unpause, simulation, fuzz testing.
 
-**SyndicateFactory (17 tests):** Syndicate creation with ENS subname registration, ERC-8004 verification on create, metadata updates, deactivation, proxy storage isolation, subdomain availability.
+**SyndicateFactory (21 tests):** Syndicate creation with ENS subname registration, ERC-8004 verification on create, metadata updates, deactivation, proxy storage isolation, subdomain availability, no-registry deployment (Robinhood L2).
 
 ## Deployment
 
+Base Sepolia:
 ```bash
 forge script script/testnet/Deploy.s.sol:DeployTestnet \
   --rpc-url base_sepolia \
+  --account sherwood-agent \
+  --broadcast
+```
+
+Robinhood L2 testnet (no ENS, no ERC-8004 — registries set to `address(0)`):
+```bash
+forge script script/robinhood-testnet/Deploy.s.sol:DeployRobinhoodTestnet \
+  --rpc-url robinhood_testnet \
   --account sherwood-agent \
   --broadcast
 ```

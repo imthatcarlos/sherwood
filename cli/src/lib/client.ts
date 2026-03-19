@@ -38,9 +38,14 @@ function getPrivateKey(): `0x${string}` {
 }
 
 export function getPublicClient() {
+  const chain = getChain();
+  // Auto-invalidate if network changed since last creation
+  if (_publicClient && _publicClient.chain?.id !== chain.id) {
+    _publicClient = null;
+  }
   if (!_publicClient) {
     _publicClient = createPublicClient({
-      chain: getChain(),
+      chain,
       transport: http(getRpcUrl()),
     });
   }
@@ -48,11 +53,16 @@ export function getPublicClient() {
 }
 
 export function getWalletClient() {
+  const chain = getChain();
+  // Auto-invalidate if network changed since last creation
+  if (_walletClient && _walletClient.chain?.id !== chain.id) {
+    _walletClient = null;
+  }
   if (!_walletClient) {
     const account = privateKeyToAccount(getPrivateKey());
     _walletClient = createWalletClient({
       account,
-      chain: getChain(),
+      chain,
       transport: http(getRpcUrl()),
     });
   }

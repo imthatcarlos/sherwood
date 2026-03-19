@@ -90,8 +90,8 @@ contract SyndicateVault is
     function initialize(InitParams memory p) external initializer {
         if (p.owner == address(0)) revert InvalidOwner();
         if (p.executorImpl == address(0)) revert InvalidExecutorImpl();
-        if (p.agentRegistry == address(0)) revert InvalidAgentRegistry();
         if (p.governor == address(0)) revert InvalidGovernor();
+        // agentRegistry may be address(0) on chains without ERC-8004
 
         __ERC4626_init(IERC20(p.asset));
         __ERC20_init(p.name, p.symbol);
@@ -223,9 +223,11 @@ contract SyndicateVault is
         if (operatorEOA == address(0)) revert InvalidOperatorEOA();
         if (_agents[pkpAddress].active) revert AgentAlreadyRegistered();
 
-        // Verify ERC-8004 identity: NFT must be owned by operatorEOA or vault owner (syndicate creator)
-        address nftOwner = _agentRegistry.ownerOf(agentId);
-        if (nftOwner != operatorEOA && nftOwner != owner()) revert NotAgentOwner();
+        // Verify ERC-8004 identity (skipped on chains without agent registry)
+        if (address(_agentRegistry) != address(0)) {
+            address nftOwner = _agentRegistry.ownerOf(agentId);
+            if (nftOwner != operatorEOA && nftOwner != owner()) revert NotAgentOwner();
+        }
 
         _agents[pkpAddress] =
             AgentConfig({agentId: agentId, pkpAddress: pkpAddress, operatorEOA: operatorEOA, active: true});

@@ -271,10 +271,30 @@ body {
 
 .table-wrapper tbody tr:hover {
   background: rgba(255, 255, 255, 0.03);
-  cursor: pointer;
 }
 
 .table-wrapper tbody tr:hover td:first-child {
+  color: var(--color-accent);
+}
+
+/* Clickable syndicate rows — link stretches across entire row */
+.syndicate-row {
+  position: relative;
+  cursor: pointer;
+}
+
+.syndicate-row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.syndicate-row-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.syndicate-row:hover .syndicate-row-link {
   color: var(--color-accent);
 }
 
@@ -687,6 +707,21 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   font-family: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
   font-size: 11px;
+}
+
+.feed-item-enter {
+  animation: feedSlideIn 0.4s ease-out both;
+}
+
+@keyframes feedSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .feed-indicator {

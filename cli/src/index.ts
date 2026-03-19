@@ -2,14 +2,15 @@
 // Load .env if present (dev convenience — production uses ~/.sherwood/config.json)
 import { config as loadDotenv } from "dotenv";
 try { loadDotenv(); } catch {};
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { parseUnits } from "viem";
 import type { Address } from "viem";
 import chalk from "chalk";
 import ora from "ora";
 import { input, confirm, select } from "@inquirer/prompts";
-import { setNetwork } from "./lib/network.js";
+import { setNetwork, getNetwork, VALID_NETWORKS } from "./lib/network.js";
 import { getExplorerUrl, getChain } from "./lib/network.js";
+import type { Network } from "./lib/network.js";
 import { TOKENS } from "./lib/addresses.js";
 import { getPublicClient, getAccount } from "./lib/client.js";
 import { ERC20_ABI } from "./lib/abis.js";
@@ -36,7 +37,7 @@ import { EAS_SCHEMAS } from "./lib/addresses.js";
 async function loadXmtp() {
   return import("./lib/xmtp.js");
 }
-import { cacheGroupId, getCachedGroupId, setChainContract, getChainContracts, loadConfig, setPrivateKey, getAgentId } from "./lib/config.js";
+import { cacheGroupId, getCachedGroupId, setChainContract, getChainContracts, loadConfig, setPrivateKey, getAgentId, setConfigRpcUrl } from "./lib/config.js";
 
 // ── Theme ──
 const G = chalk.green;
@@ -60,12 +61,27 @@ program
   .name("sherwood")
   .description("CLI for agent-managed investment syndicates")
   .version("0.1.0")
-  .option("--testnet", "Use Base Sepolia testnet instead of Base mainnet", false)
+  .addOption(
+    new Option("--chain <network>", "Target network")
+      .choices(VALID_NETWORKS)
+      .default("base"),
+  )
+  .option("--testnet", "Alias for --chain base-sepolia (deprecated)", false)
   .hook("preAction", (thisCommand) => {
     const opts = thisCommand.optsWithGlobals();
-    setNetwork(opts.testnet ? "base-sepolia" : "base");
+    let network: string = opts.chain;
     if (opts.testnet) {
-      console.log(chalk.yellow("[testnet] Base Sepolia"));
+      if (network !== "base") {
+        console.warn(
+          chalk.yellow("[warn] --testnet ignored, --chain takes precedence"),
+        );
+      } else {
+        network = "base-sepolia";
+      }
+    }
+    setNetwork(network as Network);
+    if (getNetwork() !== "base") {
+      console.log(chalk.yellow(`[${getNetwork()}]`));
     }
   });
 
@@ -83,6 +99,7 @@ syndicate
   .option("--metadata-uri <uri>", "Override metadata URI (skip IPFS upload)")
   .option("--open-deposits", "Allow anyone to deposit (no whitelist)")
   .option("--public-chat", "Enable dashboard spectator mode", false)
+  .option("-y, --yes", "Skip confirmation prompt (non-interactive mode)", false)
   .action(async (opts) => {
     try {
       // ── Header ──
@@ -99,31 +116,45 @@ syndicate
 
       const savedAgentId = getAgentId();
 
-      const name = opts.name || await input({
-        message: G("Syndicate name"),
-        validate: (v: string) => v.length > 0 || "Name is required",
-      });
+      const nonInteractive = opts.yes;
 
-      const subdomain = opts.subdomain || await input({
-        message: G("ENS subdomain"),
-        default: name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
-        validate: (v: string) => v.length >= 3 || "Must be at least 3 characters",
-      });
+      const name = opts.name || (nonInteractive
+        ? (() => { throw new Error("--name is required in non-interactive mode (-y)"); })()
+        : await input({
+            message: G("Syndicate name"),
+            validate: (v: string) => v.length > 0 || "Name is required",
+          }));
 
-      const description = opts.description || await input({
-        message: G("Description"),
-        default: `${name} — a Sherwood syndicate`,
-      });
+      const subdomain = opts.subdomain || (nonInteractive
+        ? name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")
+        : await input({
+            message: G("ENS subdomain"),
+            default: name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
+            validate: (v: string) => v.length >= 3 || "Must be at least 3 characters",
+          }));
+
+      const description = opts.description || (nonInteractive
+        ? `${name} — a Sherwood syndicate`
+        : await input({
+            message: G("Description"),
+            default: `${name} — a Sherwood syndicate`,
+          }));
 
       const agentIdStr = opts.agentId || (savedAgentId
-        ? await input({ message: G("Agent ID (ERC-8004)"), default: String(savedAgentId) })
-        : await input({ message: G("Agent ID (ERC-8004)"), validate: (v: string) => /^\d+$/.test(v) || "Must be a number" })
+        ? (nonInteractive
+            ? String(savedAgentId)
+            : await input({ message: G("Agent ID (ERC-8004)"), default: String(savedAgentId) }))
+        : (nonInteractive
+            ? "0"
+            : await input({ message: G("Agent ID (ERC-8004)"), validate: (v: string) => /^\d+$/.test(v) || "Must be a number" }))
       );
 
-      const openDeposits = opts.openDeposits !== undefined ? opts.openDeposits : await confirm({
-        message: G("Open deposits? (anyone can deposit)"),
-        default: true,
-      });
+      const openDeposits = opts.openDeposits !== undefined ? opts.openDeposits : (nonInteractive
+        ? true
+        : await confirm({
+            message: G("Open deposits? (anyone can deposit)"),
+            default: true,
+          }));
 
       // ── Resolve asset ──
       // Supported symbols (testnet + mainnet). Will expand on mainnet launch.
@@ -144,8 +175,13 @@ syndicate
           console.error(chalk.red(`  Unknown asset "${opts.asset}". Use a symbol (${supported}) or a 0x address.`));
           process.exit(1);
         }
+      } else if (nonInteractive) {
+        // Default to WETH on chains without USDC, otherwise USDC
+        asset = TOKENS().USDC !== "0x0000000000000000000000000000000000000000"
+          ? ASSET_SYMBOLS.USDC
+          : ASSET_SYMBOLS.WETH;
       } else {
-        // Interactive prompt — no silent default
+        // Interactive prompt
         const assetChoice = await select({
           message: G("Vault asset (what token do depositors provide?)"),
           choices: [
@@ -176,10 +212,12 @@ syndicate
       console.log(W(`  Open deposits: ${openDeposits ? G("yes") : chalk.red("no (whitelist)")}`));
       SEP();
 
-      const go = await confirm({ message: G("Deploy syndicate?"), default: true });
-      if (!go) {
-        console.log(DIM("  Cancelled."));
-        return;
+      if (!nonInteractive) {
+        const go = await confirm({ message: G("Deploy syndicate?"), default: true });
+        if (!go) {
+          console.log(DIM("  Cancelled."));
+          return;
+        }
       }
 
       // ── Upload metadata to IPFS ──
@@ -1087,6 +1125,7 @@ configCmd
   .description("Save settings to ~/.sherwood/config.json (persists across sessions)")
   .option("--private-key <key>", "Wallet private key (0x-prefixed)")
   .option("--vault <address>", "Default SyndicateVault address")
+  .option("--rpc <url>", "Custom RPC URL for the active --chain network")
   .action((opts) => {
     let saved = false;
 
@@ -1106,8 +1145,16 @@ configCmd
       saved = true;
     }
 
+    if (opts.rpc) {
+      const network = getNetwork();
+      setConfigRpcUrl(network, opts.rpc);
+      console.log(chalk.green(`RPC URL saved for ${network}`));
+      console.log(chalk.dim(`  RPC: ${opts.rpc}`));
+      saved = true;
+    }
+
     if (!saved) {
-      console.log(chalk.red("Provide at least one of: --private-key, --vault"));
+      console.log(chalk.red("Provide at least one of: --private-key, --vault, --rpc"));
       process.exit(1);
     }
   });
@@ -1116,13 +1163,17 @@ configCmd
   .command("show")
   .description("Display current config for the active network")
   .action(() => {
+    const network = getNetwork();
     const chainId = getChain().id;
     const contracts = getChainContracts(chainId);
     const config = loadConfig();
+    const customRpc = config.rpc?.[network];
 
     console.log();
-    console.log(chalk.bold(`Sherwood Config (chain ${chainId})`));
+    console.log(chalk.bold(`Sherwood Config`));
     console.log(chalk.dim("─".repeat(50)));
+    console.log(`  Network:    ${chalk.cyan(network)} (chain ${chainId})`);
+    console.log(`  RPC:        ${customRpc ? chalk.green(customRpc) : chalk.dim("default")}`);
     console.log(`  Wallet:     ${config.privateKey ? chalk.green("configured") : chalk.dim("not set")}`);
     console.log(`  Agent ID:   ${config.agentId ?? chalk.dim("not set")}`);
     console.log(`  Vault:      ${contracts.vault ?? chalk.dim("not set")}`);

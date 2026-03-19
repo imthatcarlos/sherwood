@@ -3,13 +3,9 @@
 import { http, createConfig } from "wagmi";
 import { base, baseSepolia } from "wagmi/chains";
 import { coinbaseWallet, walletConnect, injected } from "wagmi/connectors";
+import { robinhoodTestnet, getRpcUrl } from "@/lib/contracts";
 
-const CHAIN_ID = parseInt(
-  process.env.NEXT_PUBLIC_CHAIN_ID || "84532",
-  10,
-);
-
-const chains = CHAIN_ID === 8453 ? [base] as const : [baseSepolia] as const;
+const chains = [base, baseSepolia, robinhoodTestnet] as const;
 
 export const wagmiConfig = createConfig({
   chains,
@@ -24,7 +20,8 @@ export const wagmiConfig = createConfig({
     injected(),
   ],
   transports: {
-    [base.id]: http(),
-    [baseSepolia.id]: http(),
+    [base.id]: http(getRpcUrl(8453)),
+    [baseSepolia.id]: http(getRpcUrl(84532)),
+    [robinhoodTestnet.id]: http(getRpcUrl(46630)),
   },
 });
