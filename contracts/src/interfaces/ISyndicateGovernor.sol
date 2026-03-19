@@ -24,7 +24,6 @@ interface ISyndicateGovernor {
         uint256 executionWindow;
         uint256 quorumBps;
         uint256 maxPerformanceFeeBps;
-        uint256 maxStrategyDuration;
         uint256 cooldownPeriod;
     }
 
@@ -74,7 +73,7 @@ interface ISyndicateGovernor {
     error InvalidExecutionWindow();
     error InvalidQuorumBps();
     error InvalidMaxPerformanceFeeBps();
-    error InvalidMaxStrategyDuration();
+    error InvalidStrategyDurationBounds();
     error InvalidCooldownPeriod();
     error InvalidVault();
     error ZeroAddress();
@@ -129,6 +128,7 @@ interface ISyndicateGovernor {
     event ExecutionWindowUpdated(uint256 oldValue, uint256 newValue);
     event QuorumBpsUpdated(uint256 oldValue, uint256 newValue);
     event MaxPerformanceFeeBpsUpdated(uint256 oldValue, uint256 newValue);
+    event MinStrategyDurationUpdated(uint256 oldValue, uint256 newValue);
     event MaxStrategyDurationUpdated(uint256 oldValue, uint256 newValue);
     event CooldownPeriodUpdated(uint256 oldValue, uint256 newValue);
 
@@ -183,6 +183,7 @@ interface ISyndicateGovernor {
     function setExecutionWindow(uint256 newExecutionWindow) external;
     function setQuorumBps(uint256 newQuorumBps) external;
     function setMaxPerformanceFeeBps(uint256 newMaxPerformanceFeeBps) external;
+    function setMinStrategyDuration(uint256 newMinStrategyDuration) external;
     function setMaxStrategyDuration(uint256 newMaxStrategyDuration) external;
     function setCooldownPeriod(uint256 newCooldownPeriod) external;
     function setCollaborationWindow(uint256 newCollaborationWindow) external;
@@ -206,4 +207,6 @@ interface ISyndicateGovernor {
     function getCollaborationDeadline(uint256 proposalId) external view returns (uint256);
     function getCollaborationWindow() external view returns (uint256);
     function getMaxCoProposers() external view returns (uint256);
+    function getMinStrategyDuration() external view returns (uint256);
+    function getMaxStrategyDuration() external view returns (uint256);
 }

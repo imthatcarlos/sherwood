@@ -39,7 +39,6 @@ contract CollaborativeProposalsTest is Test {
     uint256 constant EXECUTION_WINDOW = 1 days;
     uint256 constant QUORUM_BPS = 4000;
     uint256 constant MAX_PERF_FEE_BPS = 3000;
-    uint256 constant MAX_STRATEGY_DURATION = 30 days;
     uint256 constant COOLDOWN_PERIOD = 1 days;
 
     function setUp() public {
@@ -81,15 +80,7 @@ contract CollaborativeProposalsTest is Test {
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (
-                owner,
-                VOTING_PERIOD,
-                EXECUTION_WINDOW,
-                QUORUM_BPS,
-                MAX_PERF_FEE_BPS,
-                MAX_STRATEGY_DURATION,
-                COOLDOWN_PERIOD
-            )
+            (owner, VOTING_PERIOD, EXECUTION_WINDOW, QUORUM_BPS, MAX_PERF_FEE_BPS, COOLDOWN_PERIOD)
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 

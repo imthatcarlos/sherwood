@@ -32,7 +32,6 @@ contract SyndicateGovernorTest is Test {
     uint256 constant EXECUTION_WINDOW = 1 days;
     uint256 constant QUORUM_BPS = 4000; // 40%
     uint256 constant MAX_PERF_FEE_BPS = 3000; // 30%
-    uint256 constant MAX_STRATEGY_DURATION = 30 days;
     uint256 constant COOLDOWN_PERIOD = 1 days;
 
     // ── A simple target contract for testing batch execution ──
@@ -76,15 +75,7 @@ contract SyndicateGovernorTest is Test {
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (
-                owner,
-                VOTING_PERIOD,
-                EXECUTION_WINDOW,
-                QUORUM_BPS,
-                MAX_PERF_FEE_BPS,
-                MAX_STRATEGY_DURATION,
-                COOLDOWN_PERIOD
-            )
+            (owner, VOTING_PERIOD, EXECUTION_WINDOW, QUORUM_BPS, MAX_PERF_FEE_BPS, COOLDOWN_PERIOD)
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 
@@ -179,8 +170,9 @@ contract SyndicateGovernorTest is Test {
         assertEq(params.executionWindow, EXECUTION_WINDOW);
         assertEq(params.quorumBps, QUORUM_BPS);
         assertEq(params.maxPerformanceFeeBps, MAX_PERF_FEE_BPS);
-        assertEq(params.maxStrategyDuration, MAX_STRATEGY_DURATION);
         assertEq(params.cooldownPeriod, COOLDOWN_PERIOD);
+        assertEq(governor.getMinStrategyDuration(), 1 days);
+        assertEq(governor.getMaxStrategyDuration(), 7 days);
         assertEq(governor.proposalCount(), 0);
         assertTrue(governor.isRegisteredVault(address(vault)));
     }
@@ -242,7 +234,7 @@ contract SyndicateGovernorTest is Test {
 
         vm.prank(agent);
         vm.expectRevert(ISyndicateGovernor.StrategyDurationTooLong.selector);
-        governor.propose(address(vault), "ipfs://test", 1500, MAX_STRATEGY_DURATION + 1, calls, 1, _emptyCoProposers());
+        governor.propose(address(vault), "ipfs://test", 1500, 8 days, calls, 1, _emptyCoProposers());
     }
 
     function test_propose_strategyDurationTooShort_reverts() public {
@@ -252,7 +244,7 @@ contract SyndicateGovernorTest is Test {
 
         vm.prank(agent);
         vm.expectRevert(ISyndicateGovernor.StrategyDurationTooShort.selector);
-        governor.propose(address(vault), "ipfs://test", 1500, 30 minutes, calls, 1, _emptyCoProposers());
+        governor.propose(address(vault), "ipfs://test", 1500, 12 hours, calls, 1, _emptyCoProposers());
     }
 
     function test_propose_invalidSplitIndex_reverts() public {
@@ -794,9 +786,16 @@ contract SyndicateGovernorTest is Test {
 
     function test_setMaxStrategyDuration() public {
         vm.prank(owner);
-        governor.setMaxStrategyDuration(60 days);
+        governor.setMaxStrategyDuration(14 days);
 
-        assertEq(governor.getGovernorParams().maxStrategyDuration, 60 days);
+        assertEq(governor.getMaxStrategyDuration(), 14 days);
+    }
+
+    function test_setMinStrategyDuration() public {
+        vm.prank(owner);
+        governor.setMinStrategyDuration(2 hours);
+
+        assertEq(governor.getMinStrategyDuration(), 2 hours);
     }
 
     function test_setCooldownPeriod() public {
@@ -817,7 +816,9 @@ contract SyndicateGovernorTest is Test {
         vm.expectRevert();
         governor.setMaxPerformanceFeeBps(2000);
         vm.expectRevert();
-        governor.setMaxStrategyDuration(60 days);
+        governor.setMaxStrategyDuration(14 days);
+        vm.expectRevert();
+        governor.setMinStrategyDuration(2 hours);
         vm.expectRevert();
         governor.setCooldownPeriod(2 days);
         vm.stopPrank();

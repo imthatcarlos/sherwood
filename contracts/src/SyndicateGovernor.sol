@@ -37,8 +37,10 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     uint256 public constant MIN_QUORUM_BPS = 1000; // 10%
     uint256 public constant MAX_QUORUM_BPS = 10000; // 100%
     uint256 public constant MAX_PERFORMANCE_FEE_CAP = 5000; // 50%
-    uint256 public constant MIN_STRATEGY_DURATION = 1 hours;
-    uint256 public constant MAX_STRATEGY_DURATION_CAP = 365 days;
+    uint256 public constant DEFAULT_MIN_STRATEGY_DURATION = 1 days;
+    uint256 public constant DEFAULT_MAX_STRATEGY_DURATION = 7 days;
+    uint256 public constant ABSOLUTE_MIN_STRATEGY_DURATION = 1 hours;
+    uint256 public constant ABSOLUTE_MAX_STRATEGY_DURATION = 30 days;
     uint256 public constant MIN_COOLDOWN_PERIOD = 1 hours;
     uint256 public constant MAX_COOLDOWN_PERIOD = 30 days;
 
@@ -97,6 +99,12 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     /// @notice Max number of co-proposers per proposal
     uint256 private _maxCoProposers;
 
+    /// @notice Min strategy duration proposers can choose
+    uint256 private _minStrategyDuration;
+
+    /// @notice Max strategy duration proposers can choose
+    uint256 private _maxStrategyDuration;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -108,7 +116,6 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
         uint256 executionWindow_,
         uint256 quorumBps_,
         uint256 maxPerformanceFeeBps_,
-        uint256 maxStrategyDuration_,
         uint256 cooldownPeriod_
     ) external initializer {
         if (owner_ == address(0)) revert ZeroAddress();
@@ -119,7 +126,6 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
         _validateExecutionWindow(executionWindow_);
         _validateQuorumBps(quorumBps_);
         _validateMaxPerformanceFeeBps(maxPerformanceFeeBps_);
-        _validateMaxStrategyDuration(maxStrategyDuration_);
         _validateCooldownPeriod(cooldownPeriod_);
 
         _params = GovernorParams({
@@ -127,12 +133,13 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
             executionWindow: executionWindow_,
             quorumBps: quorumBps_,
             maxPerformanceFeeBps: maxPerformanceFeeBps_,
-            maxStrategyDuration: maxStrategyDuration_,
             cooldownPeriod: cooldownPeriod_
         });
 
         _collaborationWindow = DEFAULT_COLLABORATION_WINDOW;
         _maxCoProposers = DEFAULT_MAX_CO_PROPOSERS;
+        _minStrategyDuration = DEFAULT_MIN_STRATEGY_DURATION;
+        _maxStrategyDuration = DEFAULT_MAX_STRATEGY_DURATION;
     }
 
     // ==================== PROPOSAL LIFECYCLE ====================
@@ -150,8 +157,8 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
         if (!_registeredVaults.contains(vault)) revert VaultNotRegistered();
         if (!ISyndicateVault(vault).isAgent(msg.sender)) revert NotRegisteredAgent();
         if (performanceFeeBps > _params.maxPerformanceFeeBps) revert PerformanceFeeTooHigh();
-        if (strategyDuration > _params.maxStrategyDuration) revert StrategyDurationTooLong();
-        if (strategyDuration < MIN_STRATEGY_DURATION) revert StrategyDurationTooShort();
+        if (strategyDuration > _maxStrategyDuration) revert StrategyDurationTooLong();
+        if (strategyDuration < _minStrategyDuration) revert StrategyDurationTooShort();
         if (calls.length == 0) revert EmptyCalls();
         if (splitIndex == 0 || splitIndex >= calls.length) revert InvalidSplitIndex();
 
@@ -454,10 +461,22 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     }
 
     /// @inheritdoc ISyndicateGovernor
+    function setMinStrategyDuration(uint256 newMinStrategyDuration) external onlyOwner {
+        if (newMinStrategyDuration < ABSOLUTE_MIN_STRATEGY_DURATION || newMinStrategyDuration > _maxStrategyDuration) {
+            revert InvalidStrategyDurationBounds();
+        }
+        uint256 old = _minStrategyDuration;
+        _minStrategyDuration = newMinStrategyDuration;
+        emit MinStrategyDurationUpdated(old, newMinStrategyDuration);
+    }
+
+    /// @inheritdoc ISyndicateGovernor
     function setMaxStrategyDuration(uint256 newMaxStrategyDuration) external onlyOwner {
-        _validateMaxStrategyDuration(newMaxStrategyDuration);
-        uint256 old = _params.maxStrategyDuration;
-        _params.maxStrategyDuration = newMaxStrategyDuration;
+        if (newMaxStrategyDuration > ABSOLUTE_MAX_STRATEGY_DURATION || newMaxStrategyDuration < _minStrategyDuration) {
+            revert InvalidStrategyDurationBounds();
+        }
+        uint256 old = _maxStrategyDuration;
+        _maxStrategyDuration = newMaxStrategyDuration;
         emit MaxStrategyDurationUpdated(old, newMaxStrategyDuration);
     }
 
@@ -571,6 +590,16 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
     /// @inheritdoc ISyndicateGovernor
     function getMaxCoProposers() external view returns (uint256) {
         return _maxCoProposers;
+    }
+
+    /// @inheritdoc ISyndicateGovernor
+    function getMinStrategyDuration() external view returns (uint256) {
+        return _minStrategyDuration;
+    }
+
+    /// @inheritdoc ISyndicateGovernor
+    function getMaxStrategyDuration() external view returns (uint256) {
+        return _maxStrategyDuration;
     }
 
     // ==================== INTERNAL ====================
@@ -821,10 +850,6 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
 
     function _validateMaxPerformanceFeeBps(uint256 value) internal pure {
         if (value > MAX_PERFORMANCE_FEE_CAP) revert InvalidMaxPerformanceFeeBps();
-    }
-
-    function _validateMaxStrategyDuration(uint256 value) internal pure {
-        if (value < MIN_STRATEGY_DURATION || value > MAX_STRATEGY_DURATION_CAP) revert InvalidMaxStrategyDuration();
     }
 
     function _validateCooldownPeriod(uint256 value) internal pure {

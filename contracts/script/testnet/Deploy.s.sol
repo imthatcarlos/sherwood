@@ -65,7 +65,6 @@ contract DeployTestnet is Script {
                 1 days, // executionWindow
                 4000, // quorumBps (40%)
                 3000, // maxPerformanceFeeBps (30%)
-                30 days, // maxStrategyDuration
                 1 days // cooldownPeriod
             )
         );
