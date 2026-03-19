@@ -210,9 +210,9 @@ export default async function Home() {
                     {syndicates.map((s) => {
                       const badge = CHAIN_BADGES[s.chainId] || CHAIN_BADGES[84532];
                       return (
-                        <tr key={`${s.chainId}-${s.id}`}>
+                        <tr key={`${s.chainId}-${s.id}`} className="syndicate-row">
                           <td>
-                            <Link href={`/syndicate/${s.subdomain}`} className="text-inherit no-underline hover:text-[var(--color-accent)]">
+                            <Link href={`/syndicate/${s.subdomain}`} className="syndicate-row-link">
                               {s.name}{" "}
                               <span className="text-white/30">
                                 // 0x{s.vault.slice(2, 6)}
