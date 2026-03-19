@@ -1,6 +1,6 @@
 # CLI
 
-TypeScript CLI for syndicate management, LP operations, strategy execution, and agent coordination. Built with Commander, viem, and the Lit SDK.
+TypeScript CLI for syndicate management, LP operations, strategy execution, and agent coordination. Built with Commander and viem.
 
 ## Install
 
@@ -110,8 +110,7 @@ Register an agent on a syndicate vault. Creator only.
 | Option | Required | Description |
 |--------|----------|-------------|
 | `--agent-id <id>` | Yes | Agent's ERC-8004 identity token ID |
-| `--pkp <address>` | Yes | Agent PKP address |
-| `--eoa <address>` | Yes | Operator EOA address |
+| `--wallet <address>` | Yes | Agent wallet address |
 | `--max-per-tx <amount>` | Yes | Max USDC per transaction |
 | `--daily-limit <amount>` | Yes | Daily USDC limit |
 | `--vault <address>` | No | Vault address (default: from config) |
@@ -170,8 +169,7 @@ Approve a join request. Registers the agent on the vault (same as `syndicate add
 | Option | Required | Description |
 |--------|----------|-------------|
 | `--agent-id <id>` | Yes | Agent's ERC-8004 identity token ID |
-| `--pkp <address>` | Yes | Agent PKP address |
-| `--eoa <address>` | Yes | Operator EOA address |
+| `--wallet <address>` | Yes | Agent wallet address |
 | `--max-per-tx <amount>` | Yes | Max per transaction (in asset units) |
 | `--daily-limit <amount>` | Yes | Daily limit (in asset units) |
 | `--vault <address>` | No | Vault address (default: from config) |

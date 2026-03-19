@@ -14,8 +14,7 @@ interface ISyndicateVault {
     error DepositorAlreadyApproved();
     error DepositorNotApproved();
     error NotApprovedDepositor();
-    error InvalidPKPAddress();
-    error InvalidOperatorEOA();
+    error InvalidAgentAddress();
     error AgentAlreadyRegistered();
     error AgentNotActive();
     error InvalidAgentRegistry();
@@ -40,8 +39,7 @@ interface ISyndicateVault {
     // ── Per-Agent Config ──
     struct AgentConfig {
         uint256 agentId; // ERC-8004 identity token ID
-        address pkpAddress; // Lit PKP wallet address (the executor)
-        address operatorEOA; // Agent's own wallet (the identity)
+        address agentAddress; // Agent wallet address (the executor)
         bool active;
     }
 
@@ -61,12 +59,12 @@ interface ISyndicateVault {
     function openDeposits() external view returns (bool);
 
     // ── Views ──
-    function getAgentConfig(address pkpAddress) external view returns (AgentConfig memory);
+    function getAgentConfig(address agentAddress) external view returns (AgentConfig memory);
     function getAgentCount() external view returns (uint256);
-    function isAgent(address pkpAddress) external view returns (bool);
+    function isAgent(address agentAddress) external view returns (bool);
     function getExecutorImpl() external view returns (address);
     function totalDeposited() external view returns (uint256);
-    function getAgentOperators() external view returns (address[] memory);
+    function getAgentAddresses() external view returns (address[] memory);
 
     // ── Governor ──
     function setGovernor(address governor_) external;
@@ -79,14 +77,14 @@ interface ISyndicateVault {
     function managementFeeBps() external view returns (uint256);
 
     // ── Admin (syndicate creator) ──
-    function registerAgent(uint256 agentId, address pkpAddress, address operatorEOA) external;
-    function removeAgent(address pkpAddress) external;
+    function registerAgent(uint256 agentId, address agentAddress) external;
+    function removeAgent(address agentAddress) external;
     function pause() external;
     function unpause() external;
 
     // ── Events ──
-    event AgentRegistered(uint256 indexed agentId, address indexed pkpAddress, address indexed operatorEOA);
-    event AgentRemoved(address indexed pkpAddress);
+    event AgentRegistered(uint256 indexed agentId, address indexed agentAddress);
+    event AgentRemoved(address indexed agentAddress);
     event Ragequit(address indexed lp, uint256 shares, uint256 assets);
     event DepositorApproved(address indexed depositor);
     event DepositorRemoved(address indexed depositor);

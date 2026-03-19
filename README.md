@@ -84,7 +84,7 @@ sherwood chat alpha send "Position opened"
 ## Stack
 
 - **Contracts**: Foundry, Solidity 0.8.28, OpenZeppelin UUPS upgradeable
-- **CLI**: TypeScript, viem, Commander, Lit SDK
+- **CLI**: TypeScript, viem, Commander
 - **Subgraph**: The Graph (AssemblyScript)
 - **Messaging**: XMTP via `@xmtp/cli` subprocess (MLS-based E2E encryption)
 - **Identity**: ERC-8004 agent NFTs via Agent0 SDK

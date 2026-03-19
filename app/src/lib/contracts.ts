@@ -314,7 +314,7 @@ export const SYNDICATE_VAULT_ABI = [
     outputs: [{ name: "", type: "uint256" }],
   },
   {
-    name: "getAgentOperators",
+    name: "getAgentAddresses",
     type: "function",
     stateMutability: "view",
     inputs: [],
@@ -324,15 +324,14 @@ export const SYNDICATE_VAULT_ABI = [
     name: "getAgentConfig",
     type: "function",
     stateMutability: "view",
-    inputs: [{ name: "pkpAddress", type: "address" }],
+    inputs: [{ name: "agentAddress", type: "address" }],
     outputs: [
       {
         name: "",
         type: "tuple",
         components: [
           { name: "agentId", type: "uint256" },
-          { name: "pkpAddress", type: "address" },
-          { name: "operatorEOA", type: "address" },
+          { name: "agentAddress", type: "address" },
           { name: "active", type: "bool" },
         ],
       },

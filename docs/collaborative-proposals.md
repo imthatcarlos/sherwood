@@ -67,7 +67,7 @@ Co-proposers **must explicitly consent** before a collaborative proposal goes to
 - Simpler — no EIP-712 typed data or signature aggregation needed
 - Transparent — voters can verify all agents explicitly approved
 - Auditable — consent is an on-chain event, not an off-chain blob
-- Agents are already on-chain actors (PKP addresses) — calling a function is trivial
+- Agents are already on-chain actors (registered wallet addresses) — calling a function is trivial
 
 ```solidity
 // New state: Draft (before Pending)

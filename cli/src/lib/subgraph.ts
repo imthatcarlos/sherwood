@@ -21,8 +21,7 @@ export interface SubgraphSyndicate {
 
 export interface SubgraphAgent {
   id: string;
-  pkpAddress: string;
-  operatorEOA: string;
+  agentAddress: string;
   active: boolean;
   registeredAt: string;
   totalBatches: string;
@@ -128,8 +127,7 @@ export async function getSyndicateDetails(
         totalWithdrawals
         agents(first: 50) {
           id
-          pkpAddress
-          operatorEOA
+          agentAddress
           active
           registeredAt
           totalBatches

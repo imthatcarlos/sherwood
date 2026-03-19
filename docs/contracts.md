@@ -28,18 +28,18 @@ ERC-4626 vault with two-layer permission model. Extends `ERC4626Upgradeable`, `O
 
 **Permissions:**
 - **Layer 1 (onchain):** Syndicate caps (`maxPerTx`, `maxDailyTotal`, `maxBorrowRatio`) + per-agent caps + target allowlist
-- **Layer 2 (offchain):** Lit Action policies on agent PKP wallets
+- **Layer 2 (offchain):** Agent-side off-chain policies
 
 **Key functions:**
 - `executeBatch(calls, assetAmount)` — delegatecalls to BatchExecutorLib. Enforces caps and target allowlist.
 - `simulateBatch(calls)` — dry-run via `eth_call`, returns success/failure per call without submitting onchain
 - `ragequit(receiver)` — LP emergency exit, burns all shares for pro-rata assets
-- `registerAgent(agentId, pkp, eoa, limits)` — registers agent with ERC-8004 identity verification
+- `registerAgent(agentId, agentAddress)` — registers agent with ERC-8004 identity verification
 - `deposit(assets, receiver)` / `withdraw(assets, receiver, owner)` — standard ERC-4626 with `totalDeposited` tracking
 
 **Storage:**
 - `_syndicateCaps` — syndicate-wide spending limits
-- `_agents` mapping — pkp address → `AgentConfig` (agentId, operatorEOA, limits, active)
+- `_agents` mapping — agent wallet address → `AgentConfig` (agentId, agentAddress, active)
 - `_allowedTargets` — `EnumerableSet` of whitelisted protocol addresses
 - `_approvedDepositors` — `EnumerableSet` of whitelisted depositor addresses
 - `_openDeposits` — bool toggle for permissionless deposits
