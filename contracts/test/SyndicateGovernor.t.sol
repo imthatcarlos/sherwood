@@ -795,12 +795,13 @@ contract SyndicateGovernorTest is Test {
         vault.redeem(1_000e6, lp1, lp1);
     }
 
-    function test_redemptionLock_ragequitReverts() public {
+    function test_redemptionLock_redeemAllReverts() public {
         _createAndExecuteProposal(1500, 7 days);
 
+        uint256 lp1Shares = vault.balanceOf(lp1);
         vm.prank(lp1);
         vm.expectRevert(ISyndicateVault.RedemptionsLocked.selector);
-        vault.ragequit(lp1);
+        vault.redeem(lp1Shares, lp1, lp1);
     }
 
     function test_redemptionLock_depositStillWorks() public {

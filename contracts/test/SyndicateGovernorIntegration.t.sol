@@ -186,9 +186,10 @@ contract SyndicateGovernorIntegrationTest is Test {
         assertEq(usdc.allowance(address(vault), address(targetToken)), 50_000e6);
 
         // 5. Withdrawals blocked
+        uint256 lp1Shares = vault.balanceOf(lp1);
         vm.prank(lp1);
         vm.expectRevert(ISyndicateVault.RedemptionsLocked.selector);
-        vault.ragequit(lp1);
+        vault.redeem(lp1Shares, lp1, lp1);
 
         // 6. Simulate profit
         usdc.mint(address(vault), 5_000e6);

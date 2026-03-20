@@ -144,7 +144,7 @@ contract SyndicateVaultTest is Test {
         assertGt(vault.getVotes(lp1), 0);
     }
 
-    function test_ragequit() public {
+    function test_redeemAll() public {
         // LP1 deposits
         vm.startPrank(lp1);
         usdc.approve(address(vault), 10_000e6);
@@ -159,9 +159,10 @@ contract SyndicateVaultTest is Test {
 
         uint256 balBefore = usdc.balanceOf(lp1);
 
-        // LP1 ragequits
+        // LP1 redeems all shares
+        uint256 lp1Shares = vault.balanceOf(lp1);
         vm.prank(lp1);
-        uint256 assets = vault.ragequit(lp1);
+        uint256 assets = vault.redeem(lp1Shares, lp1, lp1);
 
         assertEq(assets, 10_000e6);
         assertEq(usdc.balanceOf(lp1), balBefore + 10_000e6);
@@ -170,10 +171,10 @@ contract SyndicateVaultTest is Test {
         assertGt(vault.balanceOf(lp2), 0);
     }
 
-    function test_ragequit_noShares_reverts() public {
+    function test_redeem_noShares_reverts() public {
         vm.prank(lp1);
-        vm.expectRevert(ISyndicateVault.NoShares.selector);
-        vault.ragequit(lp1);
+        vm.expectRevert(); // ERC4626: cannot redeem more than balance
+        vault.redeem(1, lp1, lp1);
     }
 
     // ==================== AGENT REGISTRATION ====================
@@ -436,7 +437,7 @@ contract SyndicateVaultTest is Test {
         assertEq(vault.totalDeposited(), 7_000e6);
     }
 
-    function test_totalDeposited_decrements_on_ragequit() public {
+    function test_totalDeposited_decrements_on_redeemAll() public {
         vm.startPrank(lp1);
         usdc.approve(address(vault), 10_000e6);
         vault.deposit(10_000e6, lp1);
@@ -444,8 +445,9 @@ contract SyndicateVaultTest is Test {
 
         assertEq(vault.totalDeposited(), 10_000e6);
 
+        uint256 lp1Shares = vault.balanceOf(lp1);
         vm.prank(lp1);
-        vault.ragequit(lp1);
+        vault.redeem(lp1Shares, lp1, lp1);
 
         assertEq(vault.totalDeposited(), 0);
     }
@@ -463,9 +465,10 @@ contract SyndicateVaultTest is Test {
 
         assertEq(vault.totalDeposited(), 80_000e6);
 
-        // LP1 ragequits
+        // LP1 redeems all shares
+        uint256 lp1Shares = vault.balanceOf(lp1);
         vm.prank(lp1);
-        vault.ragequit(lp1);
+        vault.redeem(lp1Shares, lp1, lp1);
 
         assertEq(vault.totalDeposited(), 30_000e6);
     }

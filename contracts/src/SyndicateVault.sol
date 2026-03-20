@@ -33,7 +33,7 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
  *   Inherits ERC20VotesUpgradeable to provide proper vote checkpointing for
  *   the governor's snapshot-based voting system.
  *
- *   LPs can ragequit at any time for their pro-rata share.
+ *   LPs can redeem at any time for their pro-rata share.
  */
 contract SyndicateVault is
     ISyndicateVault,
@@ -107,18 +107,6 @@ contract SyndicateVault is
         _agentRegistry = IERC721(p.agentRegistry);
         _governor = p.governor;
         _managementFeeBps = p.managementFeeBps;
-    }
-
-    // ==================== LP FUNCTIONS ====================
-
-    /// @inheritdoc ISyndicateVault
-    function ragequit(address receiver) external whenNotPaused returns (uint256 assets) {
-        uint256 shares = balanceOf(msg.sender);
-        if (shares == 0) revert NoShares();
-
-        assets = redeem(shares, receiver, msg.sender);
-
-        emit Ragequit(msg.sender, shares, assets);
     }
 
     // ==================== BATCH EXECUTION ====================

@@ -7,7 +7,6 @@ interface ISyndicateVault {
     // ── Errors ──
     error InvalidOwner();
     error InvalidExecutorImpl();
-    error NoShares();
     error NotActiveAgent();
     error SimulationFailed();
     error InvalidDepositor();
@@ -42,9 +41,6 @@ interface ISyndicateVault {
         address agentAddress; // Agent wallet address (the executor)
         bool active;
     }
-
-    // ── LP Functions ──
-    function ragequit(address receiver) external returns (uint256 assets);
 
     // ── Owner Functions ──
     function executeBatch(BatchExecutorLib.Call[] calldata calls) external;
@@ -82,7 +78,6 @@ interface ISyndicateVault {
     // ── Events ──
     event AgentRegistered(uint256 indexed agentId, address indexed agentAddress);
     event AgentRemoved(address indexed agentAddress);
-    event Ragequit(address indexed lp, uint256 shares, uint256 assets);
     event DepositorApproved(address indexed depositor);
     event DepositorRemoved(address indexed depositor);
     event OpenDepositsUpdated(bool open);
