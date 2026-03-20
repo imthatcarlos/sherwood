@@ -14,6 +14,7 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -318,10 +319,10 @@ contract SyndicateVault is
     }
 
     /// @dev Mitigate ERC-4626 first-depositor share price inflation attack.
-    ///      Offset of 6 matches USDC's 6 decimals, creating 1e6 virtual shares per virtual asset.
-    ///      Vault shares become 12-decimal tokens (6 USDC + 6 offset).
-    function _decimalsOffset() internal pure override returns (uint8) {
-        return 6;
+    ///      Offset equals the underlying asset's decimals, creating adequate virtual shares
+    ///      regardless of asset denomination (6 for USDC, 18 for WETH/DAI, etc.).
+    function _decimalsOffset() internal view override returns (uint8) {
+        return IERC20Metadata(asset()).decimals();
     }
 
     /// @dev Block deposits when paused or depositor not approved. Track totalDeposited.

@@ -1157,6 +1157,39 @@ contract SyndicateGovernorTest is Test {
         assertEq(uint256(governor.getProposal(proposalId).state), uint256(ISyndicateGovernor.ProposalState.Settled));
     }
 
+    function test_emergencySettle_ignoresMinSettlement() public {
+        // Propose with minSettlementBalance = 200_000e6 (well above vault balance)
+        vm.prank(agent);
+        uint256 proposalId = governor.propose(
+            address(vault),
+            "ipfs://test",
+            1500,
+            7 days,
+            _simpleExecuteCalls(),
+            _simpleSettlementCalls(),
+            _emptyCoProposers(),
+            200_000e6 // minSettlementBalance — way above vault balance
+        );
+        vm.warp(block.timestamp + 1);
+
+        vm.prank(lp1);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.prank(lp2);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.warp(block.timestamp + VOTING_PERIOD + 1);
+
+        governor.executeProposal(proposalId);
+
+        // Warp past strategy duration for emergency settle
+        vm.warp(block.timestamp + 7 days);
+
+        // Emergency settle should ignore minSettlementBalance (escape hatch)
+        vm.prank(owner);
+        governor.emergencySettle(proposalId, _simpleSettleCalls());
+
+        assertEq(uint256(governor.getProposal(proposalId).state), uint256(ISyndicateGovernor.ProposalState.Settled));
+    }
+
     // ==================== VAULT MANAGEMENT ====================
 
     function test_addVault() public {
@@ -1263,7 +1296,7 @@ contract SyndicateGovernorTest is Test {
         vm.prank(lp1);
         governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
 
-        // With _decimalsOffset=6, shares are scaled by 1e6
+        // _decimalsOffset = asset.decimals() = 6, shares are scaled by 1e6
         uint256 lp1Weight = governor.getVoteWeight(proposalId, lp1);
         assertEq(lp1Weight, 60_000e12);
     }

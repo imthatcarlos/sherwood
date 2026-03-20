@@ -124,7 +124,7 @@ contract SyndicateVaultTest is Test {
     // ==================== DECIMALS ====================
 
     function test_decimals_returns12() public view {
-        // With _decimalsOffset() = 6 and USDC having 6 decimals, vault decimals = 12
+        // _decimalsOffset() = asset.decimals() = 6 for USDC, so vault decimals = 6 + 6 = 12
         assertEq(vault.decimals(), 12);
     }
 
@@ -138,7 +138,7 @@ contract SyndicateVaultTest is Test {
 
         assertGt(shares, 0);
         assertEq(vault.balanceOf(lp1), shares);
-        // With _decimalsOffset=6, 10_000e6 USDC yields 10_000e12 shares
+        // _decimalsOffset = asset.decimals() = 6, so 10_000e6 USDC yields 10_000e12 shares
         assertEq(shares, 10_000e12);
     }
 
@@ -190,8 +190,8 @@ contract SyndicateVaultTest is Test {
 
     function test_inflationAttack_mitigated() public {
         // Classic inflation attack: attacker deposits 1 wei, donates a large amount,
-        // then tries to steal from next depositor. With _decimalsOffset=6, virtual
-        // shares/assets prevent this.
+        // then tries to steal from next depositor. With dynamic _decimalsOffset (= asset
+        // decimals), virtual shares/assets prevent this for any asset denomination.
 
         address attacker = makeAddr("attacker");
         address victim = makeAddr("victim");
@@ -205,7 +205,7 @@ contract SyndicateVaultTest is Test {
         uint256 attackerShares = vault.deposit(1e6, attacker);
         vm.stopPrank();
 
-        // With offset=6: 1e6 assets -> 1e12 shares (offset protects)
+        // offset = asset.decimals() = 6: 1e6 assets -> 1e12 shares (offset protects)
         assertEq(attackerShares, 1e12);
 
         // Step 2: Attacker donates 10k USDC directly to vault
@@ -581,7 +581,7 @@ contract SyndicateVaultTest is Test {
         vm.warp(block.timestamp + 1);
 
         uint256 pastVotes = vault.getPastVotes(lp1, depositTime);
-        // With _decimalsOffset=6, 10_000e6 USDC yields 10_000e12 shares
+        // _decimalsOffset = asset.decimals() = 6, so 10_000e6 USDC yields 10_000e12 shares
         assertEq(pastVotes, 10_000e12);
     }
 
@@ -596,7 +596,7 @@ contract SyndicateVaultTest is Test {
         vm.warp(block.timestamp + 1);
 
         uint256 pastSupply = vault.getPastTotalSupply(depositTime);
-        // With _decimalsOffset=6, 10_000e6 USDC yields 10_000e12 shares
+        // _decimalsOffset = asset.decimals() = 6, so 10_000e6 USDC yields 10_000e12 shares
         assertEq(pastSupply, 10_000e12);
     }
 }

@@ -57,7 +57,6 @@ interface ISyndicateGovernor {
         address vault;
         string metadataURI;
         uint256 performanceFeeBps;
-        uint256 splitIndex; // DEPRECATED: kept for UUPS storage compat, always 0 for new proposals
         uint256 strategyDuration;
         uint256 votesFor;
         uint256 votesAgainst;

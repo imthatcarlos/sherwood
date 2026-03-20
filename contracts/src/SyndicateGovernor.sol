@@ -40,9 +40,6 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
     /// @notice Proposal ID → proposal data
     mapping(uint256 => StrategyProposal) private _proposals;
 
-    /// @notice DEPRECATED: was Proposal ID → calls array. Kept for UUPS storage slot compat.
-    mapping(uint256 => BatchExecutorLib.Call[]) private _proposalCalls_DEPRECATED;
-
     /// @notice Proposal ID → voter → bool
     mapping(uint256 => mapping(address => bool)) private _hasVoted;
 
@@ -198,7 +195,6 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
             vault: vault,
             metadataURI: metadataURI,
             performanceFeeBps: performanceFeeBps,
-            splitIndex: 0, // DEPRECATED — kept for UUPS storage compat
             strategyDuration: strategyDuration,
             votesFor: 0,
             votesAgainst: 0,
@@ -291,6 +287,11 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
 
     /// @inheritdoc ISyndicateGovernor
     /// @notice Path 1: Agent settles. Tries pre-committed calls first, falls back to custom calls. Enforces no loss.
+    /// @dev minSettlementBalance is enforced here only (not in settleProposal/emergencySettle escape hatches).
+    ///      It is an absolute floor set by the proposer — voters should evaluate it relative to vault size.
+    ///      NOTE: This is not a complete settlement trust solution. The agent controls the floor value,
+    ///      and timing manipulation is still possible. Follow-up improvements may include settlement
+    ///      delays, oracle/TWAP checks, or depositor challenge windows.
     function settleByAgent(uint256 proposalId, BatchExecutorLib.Call[] calldata calls) external nonReentrant {
         StrategyProposal storage proposal = _proposals[proposalId];
         if (_resolveState(proposal) != ProposalState.Executed) revert ProposalNotExecuted();
