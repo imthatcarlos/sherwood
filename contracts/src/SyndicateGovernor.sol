@@ -207,8 +207,8 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
         });
 
         // Store calls separately
-        _storeExecuteCalls(proposalId, executeCalls);
-        _storeSettlementCalls(proposalId, settlementCalls);
+        _storeCalls(_executeCalls, proposalId, executeCalls);
+        _storeCalls(_settlementCalls, proposalId, settlementCalls);
 
         // Store min settlement balance
         if (minSettlementBalance > 0) {
@@ -269,11 +269,7 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
         _capitalSnapshots[proposalId] = balanceBefore;
 
         // Execute the opening calls via the vault
-        BatchExecutorLib.Call[] storage execCalls = _executeCalls[proposalId];
-        BatchExecutorLib.Call[] memory callsToRun = new BatchExecutorLib.Call[](execCalls.length);
-        for (uint256 i = 0; i < execCalls.length; i++) {
-            callsToRun[i] = execCalls[i];
-        }
+        BatchExecutorLib.Call[] memory callsToRun = _loadCalls(_executeCalls, proposalId);
 
         // Update state
         _activeProposal[vault] = proposalId;
@@ -322,12 +318,7 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
         if (block.timestamp < proposal.executedAt + proposal.strategyDuration) revert StrategyDurationNotElapsed();
 
         // Run the pre-committed settlement calls
-        BatchExecutorLib.Call[] storage sCalls = _settlementCalls[proposalId];
-        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](sCalls.length);
-        for (uint256 i = 0; i < sCalls.length; i++) {
-            settleCalls[i] = sCalls[i];
-        }
-        ISyndicateVault(proposal.vault).executeGovernorBatch(settleCalls);
+        ISyndicateVault(proposal.vault).executeGovernorBatch(_loadCalls(_settlementCalls, proposalId));
 
         _finishSettlement(proposalId, proposal);
     }
@@ -475,10 +466,9 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
     /// @inheritdoc ISyndicateGovernor
     /// @dev Returns concatenation of executeCalls + settlementCalls for backwards compatibility
     function getProposalCalls(uint256 proposalId) external view returns (BatchExecutorLib.Call[] memory) {
-        BatchExecutorLib.Call[] storage exec = _executeCalls[proposalId];
-        BatchExecutorLib.Call[] storage settle = _settlementCalls[proposalId];
-        uint256 totalLen = exec.length + settle.length;
-        BatchExecutorLib.Call[] memory result = new BatchExecutorLib.Call[](totalLen);
+        BatchExecutorLib.Call[] memory exec = _loadCalls(_executeCalls, proposalId);
+        BatchExecutorLib.Call[] memory settle = _loadCalls(_settlementCalls, proposalId);
+        BatchExecutorLib.Call[] memory result = new BatchExecutorLib.Call[](exec.length + settle.length);
         for (uint256 i = 0; i < exec.length; i++) {
             result[i] = exec[i];
         }
@@ -490,12 +480,12 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
 
     /// @inheritdoc ISyndicateGovernor
     function getExecuteCalls(uint256 proposalId) external view returns (BatchExecutorLib.Call[] memory) {
-        return _executeCalls[proposalId];
+        return _loadCalls(_executeCalls, proposalId);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function getSettlementCalls(uint256 proposalId) external view returns (BatchExecutorLib.Call[] memory) {
-        return _settlementCalls[proposalId];
+        return _loadCalls(_settlementCalls, proposalId);
     }
 
     /// @inheritdoc ISyndicateGovernor
@@ -552,17 +542,27 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
 
     // ==================== INTERNAL ====================
 
-    /// @dev Store execute (opening) calls for a proposal
-    function _storeExecuteCalls(uint256 proposalId, BatchExecutorLib.Call[] calldata calls) internal {
+    /// @dev Push calldata calls into a storage mapping slot
+    function _storeCalls(
+        mapping(uint256 => BatchExecutorLib.Call[]) storage target,
+        uint256 proposalId,
+        BatchExecutorLib.Call[] calldata calls
+    ) internal {
         for (uint256 i = 0; i < calls.length; i++) {
-            _executeCalls[proposalId].push(calls[i]);
+            target[proposalId].push(calls[i]);
         }
     }
 
-    /// @dev Store settlement (closing) calls for a proposal
-    function _storeSettlementCalls(uint256 proposalId, BatchExecutorLib.Call[] calldata calls) internal {
-        for (uint256 i = 0; i < calls.length; i++) {
-            _settlementCalls[proposalId].push(calls[i]);
+    /// @dev Copy calls from storage to memory
+    function _loadCalls(mapping(uint256 => BatchExecutorLib.Call[]) storage source, uint256 proposalId)
+        internal
+        view
+        returns (BatchExecutorLib.Call[] memory result)
+    {
+        BatchExecutorLib.Call[] storage stored = source[proposalId];
+        result = new BatchExecutorLib.Call[](stored.length);
+        for (uint256 i = 0; i < stored.length; i++) {
+            result[i] = stored[i];
         }
     }
 
@@ -648,15 +648,8 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
         StrategyProposal storage proposal,
         BatchExecutorLib.Call[] calldata fallbackCalls
     ) internal {
-        // Build pre-committed settle calls
-        BatchExecutorLib.Call[] storage sCalls = _settlementCalls[proposalId];
-        BatchExecutorLib.Call[] memory settleCalls = new BatchExecutorLib.Call[](sCalls.length);
-        for (uint256 i = 0; i < sCalls.length; i++) {
-            settleCalls[i] = sCalls[i];
-        }
-
         // Try pre-committed calls first
-        try ISyndicateVault(proposal.vault).executeGovernorBatch(settleCalls) {
+        try ISyndicateVault(proposal.vault).executeGovernorBatch(_loadCalls(_settlementCalls, proposalId)) {
         // Pre-committed calls succeeded — done
         }
         catch (bytes memory reason) {
@@ -671,65 +664,26 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
         }
     }
 
+    /// @dev Compute the resolved state and persist any transitions to storage.
     function _resolveState(StrategyProposal storage proposal) internal returns (ProposalState) {
         ProposalState stored = proposal.state;
+        ProposalState resolved = _resolveStateView(proposal);
 
-        // Draft → Expired when collaboration deadline passes
-        if (stored == ProposalState.Draft) {
-            if (block.timestamp > collaborationDeadline[proposal.id]) {
-                proposal.state = ProposalState.Expired;
+        if (resolved != stored) {
+            proposal.state = resolved;
+            if (stored == ProposalState.Draft && resolved == ProposalState.Expired) {
                 emit CollaborationDeadlineExpired(proposal.id);
-                return ProposalState.Expired;
             }
-            return ProposalState.Draft;
         }
-
-        // Pending → Approved/Rejected/Expired when voting ends
-        if (stored == ProposalState.Pending) {
-            if (block.timestamp <= proposal.voteEnd) return ProposalState.Pending;
-
-            // Voting ended — determine outcome
-            // Abstain votes count toward quorum but not for/against
-            uint256 totalVotes = proposal.votesFor + proposal.votesAgainst + proposal.votesAbstain;
-            uint256 pastTotalSupply = IVotes(proposal.vault).getPastTotalSupply(proposal.snapshotTimestamp);
-            uint256 quorumRequired = (pastTotalSupply * _params.quorumBps) / 10000;
-
-            if (totalVotes < quorumRequired || proposal.votesFor <= proposal.votesAgainst) {
-                proposal.state = ProposalState.Rejected;
-                return ProposalState.Rejected;
-            }
-
-            if (block.timestamp > proposal.executeBy) {
-                proposal.state = ProposalState.Expired;
-                return ProposalState.Expired;
-            }
-
-            proposal.state = ProposalState.Approved;
-            return ProposalState.Approved;
-        }
-
-        // Approved → Expired when execution window passes
-        if (stored == ProposalState.Approved) {
-            if (block.timestamp > proposal.executeBy) {
-                proposal.state = ProposalState.Expired;
-                return ProposalState.Expired;
-            }
-            return ProposalState.Approved;
-        }
-
-        // Executed, Settled, Cancelled, Rejected, Expired — terminal states
-        return stored;
+        return resolved;
     }
 
-    /// @dev View-only version of state resolution (doesn't modify storage)
+    /// @dev Pure state resolution logic (view-only, no storage writes).
     function _resolveStateView(StrategyProposal storage proposal) internal view returns (ProposalState) {
         ProposalState stored = proposal.state;
 
         if (stored == ProposalState.Draft) {
-            if (block.timestamp > collaborationDeadline[proposal.id]) {
-                return ProposalState.Expired;
-            }
-            return ProposalState.Draft;
+            return block.timestamp > collaborationDeadline[proposal.id] ? ProposalState.Expired : ProposalState.Draft;
         }
 
         if (stored == ProposalState.Pending) {
@@ -742,19 +696,11 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
             if (totalVotes < quorumRequired || proposal.votesFor <= proposal.votesAgainst) {
                 return ProposalState.Rejected;
             }
-
-            if (block.timestamp > proposal.executeBy) {
-                return ProposalState.Expired;
-            }
-
-            return ProposalState.Approved;
+            return block.timestamp > proposal.executeBy ? ProposalState.Expired : ProposalState.Approved;
         }
 
         if (stored == ProposalState.Approved) {
-            if (block.timestamp > proposal.executeBy) {
-                return ProposalState.Expired;
-            }
-            return ProposalState.Approved;
+            return block.timestamp > proposal.executeBy ? ProposalState.Expired : ProposalState.Approved;
         }
 
         return stored;
