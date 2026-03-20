@@ -71,9 +71,6 @@ contract SyndicateVault is
     /// @notice ERC-8004 agent identity registry (ERC-721)
     IERC721 private _agentRegistry;
 
-    /// @notice Cumulative deposits for profit calculation
-    uint256 private _totalDeposited;
-
     // ── Governor storage (appended — UUPS safe) ──
 
     /// @notice Trusted governor contract
@@ -192,11 +189,6 @@ contract SyndicateVault is
     }
 
     /// @inheritdoc ISyndicateVault
-    function totalDeposited() external view returns (uint256) {
-        return _totalDeposited;
-    }
-
-    /// @inheritdoc ISyndicateVault
     function getAgentAddresses() external view returns (address[] memory) {
         return _agentSet.values();
     }
@@ -305,7 +297,7 @@ contract SyndicateVault is
         return super.decimals();
     }
 
-    /// @dev Block deposits when paused or depositor not approved. Track totalDeposited.
+    /// @dev Block deposits when paused or depositor not approved.
     ///      Auto-delegate to self on first deposit so shareholders get voting power.
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares)
         internal
@@ -313,7 +305,6 @@ contract SyndicateVault is
         whenNotPaused
     {
         if (!_openDeposits && !_approvedDepositors.contains(receiver)) revert NotApprovedDepositor();
-        _totalDeposited += assets;
         super._deposit(caller, receiver, assets, shares);
 
         // Auto-delegate: if receiver has no delegate, delegate to self
@@ -328,11 +319,6 @@ contract SyndicateVault is
         whenNotPaused
     {
         if (ISyndicateGovernor(_governor).getActiveProposal(address(this)) != 0) revert RedemptionsLocked();
-        if (assets > _totalDeposited) {
-            _totalDeposited = 0;
-        } else {
-            _totalDeposited -= assets;
-        }
         super._withdraw(caller, receiver, _owner, assets, shares);
     }
 

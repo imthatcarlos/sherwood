@@ -59,7 +59,6 @@ interface ISyndicateVault {
     function getAgentCount() external view returns (uint256);
     function isAgent(address agentAddress) external view returns (bool);
     function getExecutorImpl() external view returns (address);
-    function totalDeposited() external view returns (uint256);
     function getAgentAddresses() external view returns (address[] memory);
 
     // ── Governor ──
