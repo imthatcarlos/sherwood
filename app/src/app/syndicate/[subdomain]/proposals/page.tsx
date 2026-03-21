@@ -267,6 +267,18 @@ export default async function ProposalsPage({
   const isMock = !liveGovernor;
   const governor = liveGovernor ?? buildMockData(data.vault);
 
+  // Enrich proposals with P&L from activity feed
+  if (liveGovernor && data.activity.length > 0) {
+    for (const proposal of governor.proposals) {
+      const settled = data.activity.find(
+        (a) => a.type === "settled" && a.proposalId === proposal.id,
+      );
+      if (settled && settled.pnl !== undefined) {
+        proposal.pnl = settled.pnl;
+      }
+    }
+  }
+
   const activeProposal =
     governor.proposals.find(
       (p) => p.computedState === ProposalState.Executed,
@@ -372,6 +384,7 @@ export default async function ProposalsPage({
                   proposal={p}
                   governorAddress={governor.governorAddress}
                   params={governor.params}
+                  assetDecimals={data.assetDecimals}
                 />
               ))}
             </div>

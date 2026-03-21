@@ -12,12 +12,14 @@ interface ProposalCardProps {
   proposal: ProposalData;
   governorAddress: Address;
   params: GovernorParams;
+  assetDecimals: number;
 }
 
 export default function ProposalCard({
   proposal,
   governorAddress,
   params,
+  assetDecimals,
 }: ProposalCardProps) {
   const title =
     proposal.metadata?.title || `Proposal #${proposal.id.toString()}`;
@@ -129,7 +131,7 @@ export default function ProposalCard({
               FOR {forPct.toFixed(1)}%
             </span>
             <span>
-              {formatShares(totalVotes)} shares voted · Veto Threshold: {formatBps(params.vetoThresholdBps)}
+              {formatShares(totalVotes, assetDecimals * 2)} shares voted · Veto Threshold: {formatBps(params.vetoThresholdBps)}
             </span>
             <span style={{ color: "#ff4d4d" }}>
               {againstPct.toFixed(1)}% AGAINST

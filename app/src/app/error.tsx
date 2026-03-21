@@ -40,7 +40,7 @@ export default function RootError({
           margin: 0,
         }}
       >
-        {error.message || "An unexpected error occurred."}
+        An unexpected error occurred. Please try again.
       </p>
       <button
         onClick={reset}

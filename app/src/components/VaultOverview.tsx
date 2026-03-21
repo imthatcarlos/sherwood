@@ -59,6 +59,8 @@ export default function VaultOverview({
         <div className="param-row">
           <span className="param-key">Total Shares</span>
           <span className="param-val">
+            {/* Vault share decimals = asset.decimals() + _decimalsOffset()
+                where _decimalsOffset() = asset.decimals() (ERC-4626 inflation protection) */}
             {formatShares(totalSupply, assetDecimals * 2)}
           </span>
         </div>

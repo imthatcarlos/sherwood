@@ -5,6 +5,7 @@
  * then hydrates with on-chain data, IPFS metadata, and ENS text records.
  */
 
+import { cache } from "react";
 import { type Address, namehash } from "viem";
 import {
   CHAINS,
@@ -215,9 +216,10 @@ async function fetchOnChainAgents(
 
 // ── Main data fetching ─────────────────────────────────────
 
-export async function resolveSyndicateBySubdomain(
-  subdomain: string,
-): Promise<SyndicatePageData | null> {
+export const resolveSyndicateBySubdomain = cache(
+  async function resolveSyndicateBySubdomain(
+    subdomain: string,
+  ): Promise<SyndicatePageData | null> {
   // Try all chains in parallel — first non-null wins
   const attempts = await Promise.all(
     Object.entries(CHAINS).map(async ([chainIdStr, entry]) => {
@@ -244,7 +246,8 @@ export async function resolveSyndicateBySubdomain(
   if (!match) return null;
 
   return resolveOnChain(match.chainId, match.entry, subdomain, match.syndicateId);
-}
+  },
+);
 
 async function resolveOnChain(
   chainId: number,
@@ -570,6 +573,7 @@ async function fetchStrategyActivity(
             state
             executedAt
             settledAt
+            createdAt
             txHash
           }
         }`,
@@ -628,11 +632,13 @@ async function fetchStrategyActivity(
         });
       }
       if (state === "Cancelled") {
+        const ts = p.executedAt ?? p.settledAt ?? p.createdAt;
+        if (!ts || ts === "0") continue;
         events.push({
           type: "cancelled",
           actor: p.proposer,
           amount: 0n,
-          timestamp: BigInt(p.executedAt ?? p.settledAt ?? "0"),
+          timestamp: BigInt(ts),
           txHash: p.txHash,
           proposalId: BigInt(p.id),
         });
