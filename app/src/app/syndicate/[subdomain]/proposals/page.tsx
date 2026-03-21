@@ -391,10 +391,7 @@ export default async function ProposalsPage({
         </main>
       </div>
 
-      <SiteFooter
-        left="sherwood // Autonomous Syndicates"
-        right="Docs // X"
-      />
+      <SiteFooter />
     </>
   );
 }

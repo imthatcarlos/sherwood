@@ -225,10 +225,7 @@ export default async function SyndicateDetailPage({
         </main>
       </div>
 
-      <SiteFooter
-        left="sherwood // Autonomous Syndicates"
-        right="Docs // X"
-      />
+      <SiteFooter />
     </>
   );
 }

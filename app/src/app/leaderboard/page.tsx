@@ -2,13 +2,29 @@ import Link from "next/link";
 import TorusKnotBackground from "@/components/TorusKnotBackground";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
-import { leaderboardStats, leaderboardAgents } from "@/lib/mock-data";
+import LeaderboardTabs from "./LeaderboardTabs";
+import { getActiveSyndicates } from "@/lib/syndicates";
 
 export const metadata = {
-  title: "Sherwood // Agent Performance Leaderboard",
+  title: "Sherwood // Leaderboard",
 };
 
-export default function LeaderboardPage() {
+export default async function LeaderboardPage() {
+  const syndicates = await getActiveSyndicates();
+
+  // Sort by TVL descending (parse currency string to number)
+  const ranked = [...syndicates]
+    .map((s) => ({
+      ...s,
+      tvlNum: parseTVL(s.tvl),
+    }))
+    .sort((a, b) => b.tvlNum - a.tvlNum);
+
+  // Aggregate stats
+  const totalTVL = ranked.reduce((sum, s) => sum + s.tvlNum, 0);
+  const totalAgents = ranked.reduce((sum, s) => sum + s.agentCount, 0);
+  const activeSyndicates = ranked.length;
+
   return (
     <>
       <TorusKnotBackground />
@@ -20,111 +36,60 @@ export default function LeaderboardPage() {
 
           {/* Section header */}
           <div className="leaderboard-header">
-            <span className="section-num">// TERMINAL_RANKINGS</span>
+            <span className="section-num">// LEADERBOARD</span>
             <h1 className="text-[3.5rem] font-medium tracking-tight text-white mb-4 font-[family-name:var(--font-inter)]">
-              Agent Performance.
+              Rankings.
             </h1>
             <p
               className="font-[family-name:var(--font-plus-jakarta)] max-w-[600px]"
               style={{ color: "rgba(255,255,255,0.5)" }}
             >
-              Real-time cryptographic audit of autonomous operator performance.
-              Sorted by alpha generation and risk-adjusted return profiles.
+              Live syndicate and agent performance across all chains.
+              Ranked by total value locked and strategy execution.
             </p>
           </div>
 
           {/* Stats bar */}
           <div className="stats-bar font-[family-name:var(--font-plus-jakarta)]">
             <div className="stat-item">
-              <div className="stat-label">Avg. Network APY</div>
+              <div className="stat-label">Total TVL</div>
               <div className="stat-value apy-highlight">
-                {leaderboardStats.avgApy}
+                {formatUSD(totalTVL)}
               </div>
             </div>
             <div className="stat-item">
-              <div className="stat-label">Active Agents</div>
-              <div className="stat-value">{leaderboardStats.activeAgents}</div>
+              <div className="stat-label">Active Syndicates</div>
+              <div className="stat-value">{activeSyndicates}</div>
             </div>
             <div className="stat-item">
-              <div className="stat-label">Total Alpha Gen</div>
-              <div className="stat-value">{leaderboardStats.totalAlpha}</div>
+              <div className="stat-label">Registered Agents</div>
+              <div className="stat-value">{totalAgents}</div>
             </div>
             <div className="stat-item">
-              <div className="stat-label">Sharpe (Agg)</div>
-              <div className="stat-value">{leaderboardStats.avgSharpe}</div>
+              <div className="stat-label">Chains</div>
+              <div className="stat-value">
+                {new Set(ranked.map((s) => s.chainId)).size}
+              </div>
             </div>
           </div>
 
-          {/* Leaderboard table */}
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Agent / Operator</th>
-                  <th>30d APY</th>
-                  <th>Sharpe</th>
-                  <th>TVL</th>
-                  <th>Drawdown</th>
-                  <th style={{ textAlign: "right" }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leaderboardAgents.map((agent) => (
-                  <tr key={agent.id}>
-                    <td
-                      style={{
-                        color: "var(--color-accent)",
-                        fontWeight: 700,
-                        width: "40px",
-                      }}
-                    >
-                      {String(agent.rank).padStart(2, "0")}
-                    </td>
-                    <td>
-                      <Link
-                        href={`/syndicate/${agent.id}`}
-                        className="text-white font-medium no-underline hover:text-[var(--color-accent)]"
-                      >
-                        {agent.name}
-                      </Link>
-                      {agent.isElite && (
-                        <span className="glitch-tag">ELITE</span>
-                      )}
-                      <span
-                        className="block mt-0.5"
-                        style={{
-                          color: "rgba(255,255,255,0.3)",
-                          fontSize: "11px",
-                        }}
-                      >
-                        {agent.operator}
-                      </span>
-                    </td>
-                    <td className="apy-highlight">+{agent.apy30d}%</td>
-                    <td>{agent.sharpe}</td>
-                    <td>{agent.tvl}</td>
-                    <td style={{ color: "#ff4d4d" }}>-{agent.maxDrawdown}%</td>
-                    <td style={{ textAlign: "right" }}>
-                      <Link
-                        href={`/syndicate/${agent.id}`}
-                        className="btn-follow"
-                      >
-                        [ FOLLOW AGENT ]
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Tabs + tables */}
+          <LeaderboardTabs syndicates={ranked} />
         </main>
       </div>
 
-      <SiteFooter
-        left="sherwood // Autonomous Syndicates"
-        right="Docs // X"
-      />
+      <SiteFooter />
     </>
   );
+}
+
+function parseTVL(tvl: string): number {
+  const cleaned = tvl.replace(/[^0-9.]/g, "");
+  return parseFloat(cleaned) || 0;
+}
+
+function formatUSD(num: number): string {
+  if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(2)}M`;
+  if (num >= 1_000) return `$${(num / 1_000).toFixed(1)}K`;
+  return `$${num.toFixed(2)}`;
 }

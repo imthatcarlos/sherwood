@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ForestBackground from "@/components/ForestBackground";
 import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 import CopyButton from "@/components/CopyButton";
 import { getActiveSyndicates } from "@/lib/syndicates";
 import { CHAIN_BADGES } from "@/lib/contracts";
@@ -272,11 +273,7 @@ export default async function Home() {
         </main>
       </div>
 
-      {/* ── Footer ──────────────────────────────────────────── */}
-      <footer className="site-footer font-[family-name:var(--font-plus-jakarta)]">
-        <div>&copy; 2026 Sherwood</div>
-        <div>Docs // Github // Twitter</div>
-      </footer>
+      <SiteFooter />
     </>
   );
 }
