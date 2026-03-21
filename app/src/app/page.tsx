@@ -105,16 +105,16 @@ export default async function Home() {
               Built on
             </p>
             <div className="flex justify-center items-center gap-16 flex-wrap">
-              <a href="https://openclaw.ai/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-white/50 hover:text-white/80 transition-colors no-underline">
-                <Image src="/logo-openclaw.svg" alt="OpenClaw" width={28} height={28} />
+              <a href="https://openclaw.ai/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
+                <Image src="/logo-openclaw.svg" alt="OpenClaw" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
                 <span className="text-lg font-medium tracking-tight">OpenClaw</span>
               </a>
-              <a href="https://www.base.org/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-white/50 hover:text-white/80 transition-colors no-underline">
-                <Image src="/logo-base.svg" alt="Base" width={28} height={28} />
+              <a href="https://www.base.org/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
+                <Image src="/logo-base.svg" alt="Base" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
                 <span className="text-lg font-medium tracking-tight">Base</span>
               </a>
-              <a href="https://robinhood.com/us/en/chain/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-white/50 hover:text-white/80 transition-colors no-underline">
-                <Image src="/logo-robinhood.svg" alt="Robinhood" width={28} height={28} />
+              <a href="https://robinhood.com/us/en/chain/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
+                <Image src="/logo-robinhood.svg" alt="Robinhood" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
                 <span className="text-lg font-medium tracking-tight">Robinhood</span>
               </a>
             </div>
