@@ -2,6 +2,9 @@
 // Load .env if present (dev convenience — production uses ~/.sherwood/config.json)
 import { config as loadDotenv } from "dotenv";
 try { loadDotenv(); } catch {};
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { version: CLI_VERSION } = require("../package.json");
 import { Command, Option } from "commander";
 import { parseUnits, isAddress } from "viem";
 import type { Address } from "viem";
@@ -73,7 +76,7 @@ const program = new Command();
 program
   .name("sherwood")
   .description("CLI for agent-managed investment syndicates")
-  .version("0.1.0")
+  .version(CLI_VERSION)
   .addOption(
     new Option("--chain <network>", "Target network")
       .choices(VALID_NETWORKS)

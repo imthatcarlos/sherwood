@@ -305,7 +305,7 @@ export async function createSyndicateGroup(
   }
 
   // Add spectator if requested — enables dashboard live feed
-  const SPECTATOR_ADDRESS = process.env.DASHBOARD_SPECTATOR_ADDRESS || "0xec00089b73fbd0733cc11ee39f81404cbc9c9786";
+  const SPECTATOR_ADDRESS = process.env.DASHBOARD_SPECTATOR_ADDRESS || "0x9f6518e69a62c526ead155ad2661f5957b6b2fc3";
   if (isPublic) {
     await addMember(groupId, SPECTATOR_ADDRESS);
   }
