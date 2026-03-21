@@ -3,10 +3,10 @@
   "chainId": 46630,
   "deployer": "0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38",
   "contracts": {
-    "batchExecutorLib": "0xE4db02408A164F1b1e7Af8A8CB7F45931ee76F66",
-    "vaultImplementation": "0xB478cdb99260F46191C9e5Da405F7E70eEA23dE4",
-    "syndicateGovernor": "0x7eAbBbccdBf511c91ebBfd1353201758C62B725B",
-    "syndicateFactory": "0xc31B426683C124D3Cb328B0C8396e5caf821B1C5"
+    "batchExecutorLib": "0xa6De4583937b71E319B4570830C8FBEDdEAA2432",
+    "vaultImplementation": "0x1ff3828AC724A6601C1c6351AdD953906A591C6F",
+    "syndicateGovernor": "0x143Ee933cCa54C1511518397F51B1A80dF9eEEAb",
+    "syndicateFactory": "0x0Fc5367463A5ae2723BAAb45F73EC4B0c21EBD3f"
   },
   "externalContracts": {
     "l2Registrar": "0x0000000000000000000000000000000000000000",
@@ -14,6 +14,6 @@
     "reputationRegistry": "0x0000000000000000000000000000000000000000"
   },
   "deployedAt": "2026-03-21",
-  "redeployReason": "PR #91 — audit fixes: _decimalsOffset, deposit/rescue blocking, protocolFee validation",
+  "redeployReason": "PR #91 — audit fixes: optimizer_runs=50, TOCTOU finalize check, rescueERC721 blocking",
   "explorer": "https://explorer.testnet.chain.robinhood.com"
 }

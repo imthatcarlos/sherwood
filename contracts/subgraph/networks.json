@@ -1,21 +1,21 @@
 {
   "base-sepolia": {
     "SyndicateFactory": {
-      "address": "0x2efD194ADb3Db40E0e6faAe06c4e602c7a3D9199",
+      "address": "0xffB15e53360b01fEecb8952Ec4F4e809cB0D4965",
       "startBlock": 39036984
     },
     "SyndicateGovernor": {
-      "address": "0x6fc67a9aD15eD3A9DE25c29CCe10D662079129E2",
+      "address": "0x18Fd69B362E935f52b233bEeD033425C859605C5",
       "startBlock": 39036984
     }
   },
   "base": {
     "SyndicateFactory": {
-      "address": "0x8776F4C9b181C3AC14eB3271B69D297627d79cee",
+      "address": "0x5cBE8269CfF68D52329B8E0F9174F893627AFf0f",
       "startBlock": 43638807
     },
     "SyndicateGovernor": {
-      "address": "0x4eC24F423c79cc94624c6f555071FF49989910bD",
+      "address": "0x9a0C8BB6744058Aaf36690EAA9f3fC1d7619F169",
       "startBlock": 43638807
     }
   }
