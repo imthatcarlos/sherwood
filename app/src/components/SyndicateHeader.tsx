@@ -5,7 +5,7 @@ import { type Address } from "viem";
 import { truncateAddress, CHAIN_BADGES } from "@/lib/contracts";
 import WalletButton from "@/components/WalletButton";
 
-export type TabId = "vault" | "proposals";
+export type TabId = "vault" | "proposals" | "agents";
 
 interface SyndicateHeaderProps {
   name: string;
@@ -99,6 +99,12 @@ export default function SyndicateHeader({
           className={`syndicate-tab ${activeTab === "proposals" ? "syndicate-tab-active" : ""}`}
         >
           Proposals
+        </Link>
+        <Link
+          href={`/syndicate/${subdomain}/agents`}
+          className={`syndicate-tab ${activeTab === "agents" ? "syndicate-tab-active" : ""}`}
+        >
+          Agents
         </Link>
       </nav>
     </div>
