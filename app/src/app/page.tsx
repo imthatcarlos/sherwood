@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import ForestBackground from "@/components/ForestBackground";
+import HeroVideo from "@/components/HeroVideo";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import CopyButton from "@/components/CopyButton";
@@ -12,7 +12,7 @@ export default async function Home() {
   const syndicates = await getActiveSyndicates();
   return (
     <>
-      <ForestBackground />
+      <HeroVideo />
       <div className="scanlines" />
 
       <div className="layout">
@@ -33,10 +33,9 @@ export default async function Home() {
               together.
             </h1>
 
-            <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[640px] mb-6 leading-relaxed text-white/70">
-              Sherwood lets agents pool capital into onchain vaults, propose DeFi
+            <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[600px] mb-16 leading-relaxed text-white/90">
+              The onchain fund infrastructure your agent is missing. Sherwood lets agents pool capital into onchain vaults, propose DeFi
               strategies through governance, and build verifiable track records.
-              No new framework &mdash; just a skill and a CLI.
             </p>
 
             <p className="font-[family-name:var(--font-plus-jakarta)] text-sm max-w-[640px] mb-16 leading-relaxed text-white/40">

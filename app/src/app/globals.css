@@ -52,7 +52,7 @@ body {
   background-size: 100% 4px;
   z-index: 1;
   pointer-events: none;
-  opacity: 0.3;
+  opacity: 0.15;
 }
 
 /* ── Layout Grid ────────────────────────────────────────── */
@@ -76,7 +76,7 @@ body {
   padding: 1rem 4rem;
   margin: 0 -4rem;
   border-bottom: 1px solid var(--color-border);
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
@@ -98,12 +98,13 @@ body {
 
 .hero-title {
   font-size: clamp(4rem, 8vw, 8rem);
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 0.9;
   margin: 10vh 0 4vh 0;
   max-width: 14ch;
   color: #fff;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.8);
 }
 
 /* ── Buttons ────────────────────────────────────────────── */
