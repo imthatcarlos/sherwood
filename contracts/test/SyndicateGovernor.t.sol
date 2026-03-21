@@ -48,7 +48,7 @@ contract SyndicateGovernorTest is Test {
 
         // Deploy ERC-8004 registry
         agentRegistry = new MockAgentRegistry();
-        agentNftId = agentRegistry.mint(agentEoa);
+        agentNftId = agentRegistry.mint(agent);
 
         // Deploy vault
         SyndicateVault vaultImpl = new SyndicateVault();
@@ -69,7 +69,7 @@ contract SyndicateGovernorTest is Test {
 
         // Register agent on vault
         vm.prank(owner);
-        vault.registerAgent(agentNftId, agent, agentEoa);
+        vault.registerAgent(agentNftId, agent);
 
         // Deploy governor
         SyndicateGovernor govImpl = new SyndicateGovernor();
@@ -1085,7 +1085,7 @@ contract SyndicateGovernorTest is Test {
 
         vm.startPrank(owner);
         governor.addVault(address(vault2));
-        vault2.registerAgent(agent2NftId, agent2, agent2Eoa);
+        vault2.registerAgent(agent2NftId, agent2);
         vm.stopPrank();
 
         // Fund and deposit into vault2

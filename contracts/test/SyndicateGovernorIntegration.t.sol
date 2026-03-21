@@ -59,7 +59,7 @@ contract SyndicateGovernorIntegrationTest is Test {
 
         // Deploy ERC-8004 registry
         agentRegistry = new MockAgentRegistry();
-        agentNftId = agentRegistry.mint(agentEoa);
+        agentNftId = agentRegistry.mint(agent);
 
         // Deploy vault
         SyndicateVault vaultImpl = new SyndicateVault();
@@ -80,7 +80,7 @@ contract SyndicateGovernorIntegrationTest is Test {
 
         // Register agent
         vm.prank(owner);
-        vault.registerAgent(agentNftId, agent, agentEoa);
+        vault.registerAgent(agentNftId, agent);
 
         // Deploy governor
         SyndicateGovernor govImpl = new SyndicateGovernor();

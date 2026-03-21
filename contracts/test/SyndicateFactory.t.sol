@@ -142,7 +142,7 @@ contract SyndicateFactoryTest is Test {
         address agent = makeAddr("agent");
         uint256 agentNftId = agentRegistry.mint(agent);
         vm.prank(creator1);
-        vault.registerAgent(agentNftId, agent, agent);
+        vault.registerAgent(agentNftId, agent);
 
         // Approve LP as depositor (vault has openDeposits=false)
         address lp = makeAddr("lp");
@@ -186,9 +186,9 @@ contract SyndicateFactoryTest is Test {
         uint256 agent2NftId = agentRegistry.mint(agent2);
 
         vm.prank(creator1);
-        vault1.registerAgent(agent1NftId, agent1, agent1);
+        vault1.registerAgent(agent1NftId, agent1);
         vm.prank(creator2);
-        vault2.registerAgent(agent2NftId, agent2, agent2);
+        vault2.registerAgent(agent2NftId, agent2);
 
         // Agent1 is only on vault1
         assertTrue(vault1.isAgent(agent1));

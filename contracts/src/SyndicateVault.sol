@@ -52,10 +52,10 @@ contract SyndicateVault is
 
     // ==================== STORAGE ====================
 
-    /// @notice PKP address => agent config
+    /// @notice Agent address => agent config
     mapping(address => AgentConfig) private _agents;
 
-    /// @notice Set of all registered PKP addresses
+    /// @notice Set of all registered agent addresses
     EnumerableSet.AddressSet private _agentSet;
 
     // ── New storage (appended after existing slots) ──
@@ -166,8 +166,8 @@ contract SyndicateVault is
     // ==================== VIEWS ====================
 
     /// @inheritdoc ISyndicateVault
-    function getAgentConfig(address pkpAddress) external view returns (AgentConfig memory) {
-        return _agents[pkpAddress];
+    function getAgentConfig(address agentAddress) external view returns (AgentConfig memory) {
+        return _agents[agentAddress];
     }
 
     /// @inheritdoc ISyndicateVault
@@ -176,8 +176,8 @@ contract SyndicateVault is
     }
 
     /// @inheritdoc ISyndicateVault
-    function isAgent(address pkpAddress) external view returns (bool) {
-        return _agents[pkpAddress].active;
+    function isAgent(address agentAddress) external view returns (bool) {
+        return _agents[agentAddress].active;
     }
 
     /// @inheritdoc ISyndicateVault
@@ -193,31 +193,31 @@ contract SyndicateVault is
     // ==================== ADMIN ====================
 
     /// @inheritdoc ISyndicateVault
-    function registerAgent(uint256 agentId, address pkpAddress, address operatorEOA) external onlyOwner {
-        if (pkpAddress == address(0)) revert InvalidPKPAddress();
-        if (operatorEOA == address(0)) revert InvalidOperatorEOA();
-        if (_agents[pkpAddress].active) revert AgentAlreadyRegistered();
+    function registerAgent(uint256 agentId, address agentAddress) external onlyOwner {
+        if (agentAddress == address(0)) revert ZeroAddress();
+        if (_agents[agentAddress].active) revert AgentAlreadyRegistered();
 
-        // Verify ERC-8004 identity: NFT must be owned by operatorEOA or vault owner (syndicate creator)
-        address nftOwner = _agentRegistry.ownerOf(agentId);
-        if (nftOwner != operatorEOA && nftOwner != owner()) revert NotAgentOwner();
+        // Verify ERC-8004 identity (skipped on chains without agent registry)
+        if (address(_agentRegistry) != address(0)) {
+            address nftOwner = _agentRegistry.ownerOf(agentId);
+            if (nftOwner != agentAddress && nftOwner != owner()) revert NotAgentOwner();
+        }
 
-        _agents[pkpAddress] =
-            AgentConfig({agentId: agentId, pkpAddress: pkpAddress, operatorEOA: operatorEOA, active: true});
+        _agents[agentAddress] = AgentConfig({agentId: agentId, agentAddress: agentAddress, active: true});
 
-        _agentSet.add(pkpAddress);
+        _agentSet.add(agentAddress);
 
-        emit AgentRegistered(agentId, pkpAddress, operatorEOA);
+        emit AgentRegistered(agentId, agentAddress);
     }
 
     /// @inheritdoc ISyndicateVault
-    function removeAgent(address pkpAddress) external onlyOwner {
-        if (!_agents[pkpAddress].active) revert AgentNotActive();
+    function removeAgent(address agentAddress) external onlyOwner {
+        if (!_agents[agentAddress].active) revert AgentNotActive();
 
-        _agents[pkpAddress].active = false;
-        _agentSet.remove(pkpAddress);
+        _agents[agentAddress].active = false;
+        _agentSet.remove(agentAddress);
 
-        emit AgentRemoved(pkpAddress);
+        emit AgentRemoved(agentAddress);
     }
 
     /// @inheritdoc ISyndicateVault

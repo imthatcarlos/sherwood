@@ -25,10 +25,8 @@ contract SyndicateVaultTest is Test {
     address public owner = makeAddr("owner");
     address public lp1 = makeAddr("lp1");
     address public lp2 = makeAddr("lp2");
-    address public agentPkp = makeAddr("agentPkp");
-    address public agentEoa = makeAddr("agentEoa");
-    address public agentPkp2 = makeAddr("agentPkp2");
-    address public agentEoa2 = makeAddr("agentEoa2");
+    address public agentAddr = makeAddr("agent1");
+    address public agentAddr2 = makeAddr("agent2");
 
     uint256 public agent1NftId;
     uint256 public agent2NftId;
@@ -50,8 +48,8 @@ contract SyndicateVaultTest is Test {
         agentRegistry = new MockAgentRegistry();
 
         // Mint ERC-8004 identity NFTs for agents
-        agent1NftId = agentRegistry.mint(agentEoa);
-        agent2NftId = agentRegistry.mint(agentEoa2);
+        agent1NftId = agentRegistry.mint(agentAddr);
+        agent2NftId = agentRegistry.mint(agentAddr2);
 
         // Deploy vault via proxy with executor lib
         SyndicateVault impl = new SyndicateVault();
@@ -81,9 +79,9 @@ contract SyndicateVaultTest is Test {
         // Fund swap router
         weth.mint(address(swapRouter), 1_000e18);
 
-        // Register agent (NFT owned by agentEoa)
+        // Register agent (NFT owned by agent)
         vm.prank(owner);
-        vault.registerAgent(agent1NftId, agentPkp, agentEoa);
+        vault.registerAgent(agent1NftId, agentAddr);
     }
 
     // ==================== INITIALIZATION ====================
@@ -123,13 +121,12 @@ contract SyndicateVaultTest is Test {
     // ==================== AGENT REGISTRATION ====================
 
     function test_registerAgent() public view {
-        assertTrue(vault.isAgent(agentPkp));
+        assertTrue(vault.isAgent(agentAddr));
         assertEq(vault.getAgentCount(), 1);
 
-        ISyndicateVault.AgentConfig memory config = vault.getAgentConfig(agentPkp);
+        ISyndicateVault.AgentConfig memory config = vault.getAgentConfig(agentAddr);
         assertEq(config.agentId, agent1NftId);
-        assertEq(config.pkpAddress, agentPkp);
-        assertEq(config.operatorEOA, agentEoa);
+        assertEq(config.agentAddress, agentAddr);
         assertTrue(config.active);
     }
 
@@ -138,10 +135,10 @@ contract SyndicateVaultTest is Test {
         uint256 ownerNftId = agentRegistry.mint(owner);
 
         vm.prank(owner);
-        vault.registerAgent(ownerNftId, agentPkp2, agentEoa2);
+        vault.registerAgent(ownerNftId, agentAddr2);
 
-        assertTrue(vault.isAgent(agentPkp2));
-        ISyndicateVault.AgentConfig memory config = vault.getAgentConfig(agentPkp2);
+        assertTrue(vault.isAgent(agentAddr2));
+        ISyndicateVault.AgentConfig memory config = vault.getAgentConfig(agentAddr2);
         assertEq(config.agentId, ownerNftId);
     }
 
@@ -150,23 +147,23 @@ contract SyndicateVaultTest is Test {
         address random = makeAddr("random");
         uint256 randomNftId = agentRegistry.mint(random);
 
-        // Try to register with NFT not owned by operatorEOA or vault owner
+        // Try to register with NFT not owned by agentAddress or vault owner
         vm.prank(owner);
         vm.expectRevert(ISyndicateVault.NotAgentOwner.selector);
-        vault.registerAgent(randomNftId, agentPkp2, agentEoa2);
+        vault.registerAgent(randomNftId, agentAddr2);
     }
 
     function test_registerAgent_notOwner_reverts() public {
         vm.prank(lp1);
         vm.expectRevert();
-        vault.registerAgent(agent2NftId, agentPkp2, agentEoa2);
+        vault.registerAgent(agent2NftId, agentAddr2);
     }
 
     function test_removeAgent() public {
         vm.prank(owner);
-        vault.removeAgent(agentPkp);
+        vault.removeAgent(agentAddr);
 
-        assertFalse(vault.isAgent(agentPkp));
+        assertFalse(vault.isAgent(agentAddr));
         assertEq(vault.getAgentCount(), 0);
     }
 
@@ -194,7 +191,7 @@ contract SyndicateVaultTest is Test {
     function test_executeBatch_notOwner_reverts() public {
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](0);
 
-        vm.prank(agentPkp);
+        vm.prank(agentAddr);
         vm.expectRevert();
         vault.executeBatch(calls);
     }
