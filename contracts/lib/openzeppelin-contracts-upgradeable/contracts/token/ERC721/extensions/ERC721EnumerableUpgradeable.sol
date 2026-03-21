@@ -26,8 +26,7 @@ abstract contract ERC721EnumerableUpgradeable is Initializable, ERC721Upgradeabl
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC721Enumerable")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC721EnumerableStorageLocation =
-        0x645e039705490088daad89bae25049a34f4a9072d398537b1ab2425f24cbed00;
+    bytes32 private constant ERC721EnumerableStorageLocation = 0x645e039705490088daad89bae25049a34f4a9072d398537b1ab2425f24cbed00;
 
     function _getERC721EnumerableStorage() private pure returns (ERC721EnumerableStorage storage $) {
         assembly {
@@ -47,18 +46,13 @@ abstract contract ERC721EnumerableUpgradeable is Initializable, ERC721Upgradeabl
      */
     error ERC721EnumerableForbiddenBatchMint();
 
-    function __ERC721Enumerable_init() internal onlyInitializing {}
+    function __ERC721Enumerable_init() internal onlyInitializing {
+    }
 
-    function __ERC721Enumerable_init_unchained() internal onlyInitializing {}
-
+    function __ERC721Enumerable_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override(IERC165, ERC721Upgradeable)
-        returns (bool)
-    {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(IERC165, ERC721Upgradeable) returns (bool) {
         return interfaceId == type(IERC721Enumerable).interfaceId || super.supportsInterface(interfaceId);
     }
 

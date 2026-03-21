@@ -19,14 +19,9 @@ abstract contract GovernorSequentialProposalIdUpgradeable is Initializable, Gove
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorSequentialProposalId")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GovernorSequentialProposalIdStorageLocation =
-        0x4b8c47b641115bbb755a0530712d89d8042b41728d36570a6119c90ae1b76800;
+    bytes32 private constant GovernorSequentialProposalIdStorageLocation = 0x4b8c47b641115bbb755a0530712d89d8042b41728d36570a6119c90ae1b76800;
 
-    function _getGovernorSequentialProposalIdStorage()
-        private
-        pure
-        returns (GovernorSequentialProposalIdStorage storage $)
-    {
+    function _getGovernorSequentialProposalIdStorage() private pure returns (GovernorSequentialProposalIdStorage storage $) {
         assembly {
             $.slot := GovernorSequentialProposalIdStorageLocation
         }
@@ -38,10 +33,11 @@ abstract contract GovernorSequentialProposalIdUpgradeable is Initializable, Gove
      */
     error GovernorAlreadyInitializedLatestProposalId();
 
-    function __GovernorSequentialProposalId_init() internal onlyInitializing {}
+    function __GovernorSequentialProposalId_init() internal onlyInitializing {
+    }
 
-    function __GovernorSequentialProposalId_init_unchained() internal onlyInitializing {}
-
+    function __GovernorSequentialProposalId_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc IGovernor
     function getProposalId(
         address[] memory targets,

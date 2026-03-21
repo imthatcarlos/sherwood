@@ -26,10 +26,11 @@ abstract contract NoncesUpgradeable is Initializable {
         }
     }
 
-    function __Nonces_init() internal onlyInitializing {}
+    function __Nonces_init() internal onlyInitializing {
+    }
 
-    function __Nonces_init_unchained() internal onlyInitializing {}
-
+    function __Nonces_init_unchained() internal onlyInitializing {
+    }
     /**
      * @dev Returns the next unused nonce for an address.
      */

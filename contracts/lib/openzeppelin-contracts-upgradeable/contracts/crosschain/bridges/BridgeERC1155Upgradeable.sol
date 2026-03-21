@@ -21,8 +21,7 @@ abstract contract BridgeERC1155Upgradeable is Initializable, BridgeMultiTokenUpg
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.BridgeERC1155")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant BridgeERC1155StorageLocation =
-        0x909e9290c25df187afb66d37da03e8fcf8c9688c0d67924e7756c04fab796300;
+    bytes32 private constant BridgeERC1155StorageLocation = 0x909e9290c25df187afb66d37da03e8fcf8c9688c0d67924e7756c04fab796300;
 
     function _getBridgeERC1155Storage() private pure returns (BridgeERC1155Storage storage $) {
         assembly {
@@ -64,11 +63,12 @@ abstract contract BridgeERC1155Upgradeable is Initializable, BridgeMultiTokenUpg
      *
      * Note: The `to` parameter is the full InteroperableAddress (chain ref + address).
      */
-    function crosschainTransferFrom(address from, bytes memory to, uint256[] memory ids, uint256[] memory values)
-        public
-        virtual
-        returns (bytes32)
-    {
+    function crosschainTransferFrom(
+        address from,
+        bytes memory to,
+        uint256[] memory ids,
+        uint256[] memory values
+    ) public virtual returns (bytes32) {
         // Permission is handled using the ERC1155's allowance system. This check replicates `ERC1155._checkAuthorized`.
         address spender = _msgSender();
         require(
@@ -93,44 +93,30 @@ abstract contract BridgeERC1155Upgradeable is Initializable, BridgeMultiTokenUpg
     /// @dev Support receiving tokens only if the transfer was initiated by the bridge itself.
     function onERC1155Received(
         address operator,
-        address,
-        /* from */
-        uint256,
-        /* id */
-        uint256,
-        /* value */
+        address /* from */,
+        uint256 /* id */,
+        uint256 /* value */,
         bytes memory /* data */
-    )
-        public
-        virtual
-        override
-        returns (bytes4)
-    {
+    ) public virtual override returns (bytes4) {
         BridgeERC1155Storage storage $ = _getBridgeERC1155Storage();
-        return msg.sender == address($._token) && operator == address(this)
-            ? IERC1155Receiver.onERC1155Received.selector
-            : bytes4(0);
+        return
+            msg.sender == address($._token) && operator == address(this)
+                ? IERC1155Receiver.onERC1155Received.selector
+                : bytes4(0);
     }
 
     /// @dev Support receiving tokens only if the transfer was initiated by the bridge itself.
     function onERC1155BatchReceived(
         address operator,
-        address,
-        /* from */
-        uint256[] memory,
-        /* ids */
-        uint256[] memory,
-        /* values */
+        address /* from */,
+        uint256[] memory /* ids */,
+        uint256[] memory /* values */,
         bytes memory /* data */
-    )
-        public
-        virtual
-        override
-        returns (bytes4)
-    {
+    ) public virtual override returns (bytes4) {
         BridgeERC1155Storage storage $ = _getBridgeERC1155Storage();
-        return msg.sender == address($._token) && operator == address(this)
-            ? IERC1155Receiver.onERC1155BatchReceived.selector
-            : bytes4(0);
+        return
+            msg.sender == address($._token) && operator == address(this)
+                ? IERC1155Receiver.onERC1155BatchReceived.selector
+                : bytes4(0);
     }
 }

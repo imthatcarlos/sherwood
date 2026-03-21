@@ -16,11 +16,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * fraction of the total supply. Proposals that meet the super quorum (and have a majority of for votes) advance to
  * the `Succeeded` state before the proposal deadline.
  */
-abstract contract GovernorVotesSuperQuorumFractionUpgradeable is
-    Initializable,
-    GovernorVotesQuorumFractionUpgradeable,
-    GovernorSuperQuorumUpgradeable
-{
+abstract contract GovernorVotesSuperQuorumFractionUpgradeable is Initializable, GovernorVotesQuorumFractionUpgradeable, GovernorSuperQuorumUpgradeable {
     using Checkpoints for Checkpoints.Trace208;
 
     /// @custom:storage-location erc7201:openzeppelin.storage.GovernorVotesSuperQuorumFraction
@@ -29,14 +25,9 @@ abstract contract GovernorVotesSuperQuorumFractionUpgradeable is
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorVotesSuperQuorumFraction")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GovernorVotesSuperQuorumFractionStorageLocation =
-        0x31eabc8444b313223279a7cb4d22bce9201d463789f695e0a51f91d19ec31000;
+    bytes32 private constant GovernorVotesSuperQuorumFractionStorageLocation = 0x31eabc8444b313223279a7cb4d22bce9201d463789f695e0a51f91d19ec31000;
 
-    function _getGovernorVotesSuperQuorumFractionStorage()
-        private
-        pure
-        returns (GovernorVotesSuperQuorumFractionStorage storage $)
-    {
+    function _getGovernorVotesSuperQuorumFractionStorage() private pure returns (GovernorVotesSuperQuorumFractionStorage storage $) {
         assembly {
             $.slot := GovernorVotesSuperQuorumFractionStorageLocation
         }
@@ -69,10 +60,7 @@ abstract contract GovernorVotesSuperQuorumFractionUpgradeable is
         __GovernorVotesSuperQuorumFraction_init_unchained(superQuorumNumeratorValue);
     }
 
-    function __GovernorVotesSuperQuorumFraction_init_unchained(uint256 superQuorumNumeratorValue)
-        internal
-        onlyInitializing
-    {
+    function __GovernorVotesSuperQuorumFraction_init_unchained(uint256 superQuorumNumeratorValue) internal onlyInitializing {
         _updateSuperQuorumNumerator(superQuorumNumeratorValue);
     }
 
@@ -160,13 +148,9 @@ abstract contract GovernorVotesSuperQuorumFractionUpgradeable is
     }
 
     /// @inheritdoc GovernorSuperQuorumUpgradeable
-    function state(uint256 proposalId)
-        public
-        view
-        virtual
-        override(GovernorUpgradeable, GovernorSuperQuorumUpgradeable)
-        returns (ProposalState)
-    {
+    function state(
+        uint256 proposalId
+    ) public view virtual override(GovernorUpgradeable, GovernorSuperQuorumUpgradeable) returns (ProposalState) {
         return super.state(proposalId);
     }
 }

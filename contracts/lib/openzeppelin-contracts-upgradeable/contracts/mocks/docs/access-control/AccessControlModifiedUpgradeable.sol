@@ -8,10 +8,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 contract AccessControlModifiedUpgradeable is Initializable, AccessControlUpgradeable {
     error AccessControlNonRevocable();
 
-    function __AccessControlModified_init() internal onlyInitializing {}
+    function __AccessControlModified_init() internal onlyInitializing {
+    }
 
-    function __AccessControlModified_init_unchained() internal onlyInitializing {}
-
+    function __AccessControlModified_init_unchained() internal onlyInitializing {
+    }
     // Override the revokeRole function
     function revokeRole(bytes32, address) public pure override {
         revert AccessControlNonRevocable();

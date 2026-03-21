@@ -34,8 +34,7 @@ abstract contract SignerP256Upgradeable is Initializable, AbstractSigner {
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.SignerP256")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant SignerP256StorageLocation =
-        0x6c6e681eb9c9937bb0e9a845af882a34f03801b1b670c4e5431f8b41c16a2700;
+    bytes32 private constant SignerP256StorageLocation = 0x6c6e681eb9c9937bb0e9a845af882a34f03801b1b670c4e5431f8b41c16a2700;
 
     function _getSignerP256Storage() private pure returns (SignerP256Storage storage $) {
         assembly {
@@ -71,13 +70,10 @@ abstract contract SignerP256Upgradeable is Initializable, AbstractSigner {
     }
 
     /// @inheritdoc AbstractSigner
-    function _rawSignatureValidation(bytes32 hash, bytes calldata signature)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _rawSignatureValidation(
+        bytes32 hash,
+        bytes calldata signature
+    ) internal view virtual override returns (bool) {
         if (signature.length < 0x40) return false;
         bytes32 r = bytes32(signature[0x00:0x20]);
         bytes32 s = bytes32(signature[0x20:0x40]);

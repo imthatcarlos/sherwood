@@ -15,10 +15,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  */
 // slither-disable-next-line locked-ether
 abstract contract ERC721CrosschainUpgradeable is Initializable, ERC721Upgradeable, BridgeNonFungibleUpgradeable {
-    function __ERC721Crosschain_init() internal onlyInitializing {}
+    function __ERC721Crosschain_init() internal onlyInitializing {
+    }
 
-    function __ERC721Crosschain_init_unchained() internal onlyInitializing {}
-
+    function __ERC721Crosschain_init_unchained() internal onlyInitializing {
+    }
     /// @dev Crosschain variant of {transferFrom}, using the allowance system from the underlying ERC-721 token.
     function crosschainTransferFrom(address from, bytes memory to, uint256 tokenId) public virtual returns (bytes32) {
         // operator (_msgSender) permission over `from` is checked in `_onSend`

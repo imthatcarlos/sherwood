@@ -13,10 +13,11 @@ contract ERC20GetterHelperUpgradeable is Initializable {
     event ERC20Symbol(IERC20Metadata token, string symbol);
     event ERC20Decimals(IERC20Metadata token, uint8 decimals);
 
-    function __ERC20GetterHelper_init() internal onlyInitializing {}
+    function __ERC20GetterHelper_init() internal onlyInitializing {
+    }
 
-    function __ERC20GetterHelper_init_unchained() internal onlyInitializing {}
-
+    function __ERC20GetterHelper_init_unchained() internal onlyInitializing {
+    }
     function totalSupply(IERC20 token) external {
         emit ERC20TotalSupply(token, token.totalSupply());
     }

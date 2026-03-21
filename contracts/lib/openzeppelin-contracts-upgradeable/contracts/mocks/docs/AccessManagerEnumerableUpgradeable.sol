@@ -21,10 +21,11 @@ abstract contract AccessManagerEnumerableUpgradeable is Initializable, AccessMan
     mapping(uint64 roleId => EnumerableSet.AddressSet) private _roleMembers;
     mapping(uint64 roleId => mapping(address target => EnumerableSet.Bytes4Set)) private _roleTargetFunctions;
 
-    function __AccessManagerEnumerable_init() internal onlyInitializing {}
+    function __AccessManagerEnumerable_init() internal onlyInitializing {
+    }
 
-    function __AccessManagerEnumerable_init_unchained() internal onlyInitializing {}
-
+    function __AccessManagerEnumerable_init_unchained() internal onlyInitializing {
+    }
     /**
      * @dev Returns the number of accounts that have `roleId`. Can be used
      * together with {getRoleMember} to enumerate all bearers of a role.
@@ -109,22 +110,22 @@ abstract contract AccessManagerEnumerableUpgradeable is Initializable, AccessMan
      * NOTE: Given {ADMIN_ROLE} is the default role for every restricted function, passing {ADMIN_ROLE} as `roleId` will
      * return an empty array. See {_updateRoleTargetFunction} for more details.
      */
-    function getRoleTargetFunctions(uint64 roleId, address target, uint256 start, uint256 end)
-        public
-        view
-        virtual
-        returns (bytes4[] memory)
-    {
+    function getRoleTargetFunctions(
+        uint64 roleId,
+        address target,
+        uint256 start,
+        uint256 end
+    ) public view virtual returns (bytes4[] memory) {
         return _roleTargetFunctions[roleId][target].values(start, end);
     }
 
     /// @dev See {AccessManager-_grantRole}. Adds the account to the role members set.
-    function _grantRole(uint64 roleId, address account, uint32 grantDelay, uint32 executionDelay)
-        internal
-        virtual
-        override
-        returns (bool)
-    {
+    function _grantRole(
+        uint64 roleId,
+        address account,
+        uint32 grantDelay,
+        uint32 executionDelay
+    ) internal virtual override returns (bool) {
         bool granted = super._grantRole(roleId, account, grantDelay, executionDelay);
         if (granted) {
             _roleMembers[roleId].add(account);

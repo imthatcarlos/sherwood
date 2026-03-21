@@ -26,8 +26,7 @@ abstract contract AccessManagedUpgradeable is Initializable, ContextUpgradeable,
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.AccessManaged")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant AccessManagedStorageLocation =
-        0xf3177357ab46d8af007ab3fdb9af81da189e1068fefdc0073dca88a2cab40a00;
+    bytes32 private constant AccessManagedStorageLocation = 0xf3177357ab46d8af007ab3fdb9af81da189e1068fefdc0073dca88a2cab40a00;
 
     function _getAccessManagedStorage() private pure returns (AccessManagedStorage storage $) {
         assembly {
@@ -115,8 +114,12 @@ abstract contract AccessManagedUpgradeable is Initializable, ContextUpgradeable,
      */
     function _checkCanCall(address caller, bytes calldata data) internal virtual {
         AccessManagedStorage storage $ = _getAccessManagedStorage();
-        (bool immediate, uint32 delay) =
-            AuthorityUtils.canCallWithDelay(authority(), caller, address(this), bytes4(data[0:4]));
+        (bool immediate, uint32 delay) = AuthorityUtils.canCallWithDelay(
+            authority(),
+            caller,
+            address(this),
+            bytes4(data[0:4])
+        );
         if (!immediate) {
             if (delay > 0) {
                 $._consumingSchedule = true;

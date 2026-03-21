@@ -16,10 +16,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * the votes in governance decisions, or they can delegate to themselves to be their own representative.
  */
 abstract contract ERC721VotesUpgradeable is Initializable, ERC721Upgradeable, VotesUpgradeable {
-    function __ERC721Votes_init() internal onlyInitializing {}
+    function __ERC721Votes_init() internal onlyInitializing {
+    }
 
-    function __ERC721Votes_init_unchained() internal onlyInitializing {}
-
+    function __ERC721Votes_init_unchained() internal onlyInitializing {
+    }
     /**
      * @dev See {ERC721-_update}. Adjusts votes when tokens are transferred.
      *

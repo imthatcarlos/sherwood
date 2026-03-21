@@ -87,10 +87,11 @@ library Clones {
      * NOTE: Using a non-zero value at creation will require the contract using this function (e.g. a factory)
      * to always have enough balance for new deployments. Consider exposing this function under a payable method.
      */
-    function cloneDeterministic(address implementation, bytes32 salt, uint256 value)
-        internal
-        returns (address instance)
-    {
+    function cloneDeterministic(
+        address implementation,
+        bytes32 salt,
+        uint256 value
+    ) internal returns (address instance) {
         if (address(this).balance < value) {
             revert Errors.InsufficientBalance(address(this).balance, value);
         }
@@ -110,11 +111,11 @@ library Clones {
     /**
      * @dev Computes the address of a clone deployed using {Clones-cloneDeterministic}.
      */
-    function predictDeterministicAddress(address implementation, bytes32 salt, address deployer)
-        internal
-        pure
-        returns (address predicted)
-    {
+    function predictDeterministicAddress(
+        address implementation,
+        bytes32 salt,
+        address deployer
+    ) internal pure returns (address predicted) {
         assembly ("memory-safe") {
             let ptr := mload(0x40)
             mstore(add(ptr, 0x38), deployer)
@@ -130,11 +131,10 @@ library Clones {
     /**
      * @dev Computes the address of a clone deployed using {Clones-cloneDeterministic}.
      */
-    function predictDeterministicAddress(address implementation, bytes32 salt)
-        internal
-        view
-        returns (address predicted)
-    {
+    function predictDeterministicAddress(
+        address implementation,
+        bytes32 salt
+    ) internal view returns (address predicted) {
         return predictDeterministicAddress(implementation, salt, address(this));
     }
 
@@ -164,10 +164,11 @@ library Clones {
      * NOTE: Using a non-zero value at creation will require the contract using this function (e.g. a factory)
      * to always have enough balance for new deployments. Consider exposing this function under a payable method.
      */
-    function cloneWithImmutableArgs(address implementation, bytes memory args, uint256 value)
-        internal
-        returns (address instance)
-    {
+    function cloneWithImmutableArgs(
+        address implementation,
+        bytes memory args,
+        uint256 value
+    ) internal returns (address instance) {
         if (address(this).balance < value) {
             revert Errors.InsufficientBalance(address(this).balance, value);
         }
@@ -193,10 +194,11 @@ library Clones {
      * without code cannot be initialized. Initialization calls may appear to be successful when, in reality, they
      * have no effect and leave the clone uninitialized, allowing a third party to initialize it later.
      */
-    function cloneDeterministicWithImmutableArgs(address implementation, bytes memory args, bytes32 salt)
-        internal
-        returns (address instance)
-    {
+    function cloneDeterministicWithImmutableArgs(
+        address implementation,
+        bytes memory args,
+        bytes32 salt
+    ) internal returns (address instance) {
         return cloneDeterministicWithImmutableArgs(implementation, args, salt, 0);
     }
 
@@ -211,10 +213,12 @@ library Clones {
      * NOTE: Using a non-zero value at creation will require the contract using this function (e.g. a factory)
      * to always have enough balance for new deployments. Consider exposing this function under a payable method.
      */
-    function cloneDeterministicWithImmutableArgs(address implementation, bytes memory args, bytes32 salt, uint256 value)
-        internal
-        returns (address instance)
-    {
+    function cloneDeterministicWithImmutableArgs(
+        address implementation,
+        bytes memory args,
+        bytes32 salt,
+        uint256 value
+    ) internal returns (address instance) {
         bytes memory bytecode = _cloneCodeWithImmutableArgs(implementation, args);
         return Create2.deploy(value, salt, bytecode);
     }
@@ -235,11 +239,11 @@ library Clones {
     /**
      * @dev Computes the address of a clone deployed using {Clones-cloneDeterministicWithImmutableArgs}.
      */
-    function predictDeterministicAddressWithImmutableArgs(address implementation, bytes memory args, bytes32 salt)
-        internal
-        view
-        returns (address predicted)
-    {
+    function predictDeterministicAddressWithImmutableArgs(
+        address implementation,
+        bytes memory args,
+        bytes32 salt
+    ) internal view returns (address predicted) {
         return predictDeterministicAddressWithImmutableArgs(implementation, args, salt, address(this));
     }
 
@@ -272,19 +276,19 @@ library Clones {
      * NOTE: https://eips.ethereum.org/EIPS/eip-170[EIP-170] limits the length of the contract code to 24576 bytes.
      * With the proxy code taking 45 bytes, that limits the length of the immutable args to 24531 bytes.
      */
-    function _cloneCodeWithImmutableArgs(address implementation, bytes memory args)
-        private
-        pure
-        returns (bytes memory)
-    {
+    function _cloneCodeWithImmutableArgs(
+        address implementation,
+        bytes memory args
+    ) private pure returns (bytes memory) {
         if (args.length > 0x5fd3) revert CloneArgumentsTooLong();
-        return abi.encodePacked(
-            hex"61",
-            uint16(args.length + 0x2d),
-            hex"3d81600a3d39f3363d3d373d3d3d363d73",
-            implementation,
-            hex"5af43d82803e903d91602b57fd5bf3",
-            args
-        );
+        return
+            abi.encodePacked(
+                hex"61",
+                uint16(args.length + 0x2d),
+                hex"3d81600a3d39f3363d3d373d3d3d363d73",
+                implementation,
+                hex"5af43d82803e903d91602b57fd5bf3",
+                args
+            );
     }
 }

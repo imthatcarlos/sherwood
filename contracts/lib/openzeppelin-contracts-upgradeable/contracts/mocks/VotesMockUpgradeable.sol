@@ -8,10 +8,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 abstract contract VotesMockUpgradeable is Initializable, VotesUpgradeable {
     mapping(address voter => uint256) private _votingUnits;
 
-    function __VotesMock_init() internal onlyInitializing {}
+    function __VotesMock_init() internal onlyInitializing {
+    }
 
-    function __VotesMock_init_unchained() internal onlyInitializing {}
-
+    function __VotesMock_init_unchained() internal onlyInitializing {
+    }
     function getTotalSupply() public view returns (uint256) {
         return _getTotalSupply();
     }
@@ -36,10 +37,11 @@ abstract contract VotesMockUpgradeable is Initializable, VotesUpgradeable {
 }
 
 abstract contract VotesTimestampMockUpgradeable is Initializable, VotesMockUpgradeable {
-    function __VotesTimestampMock_init() internal onlyInitializing {}
+    function __VotesTimestampMock_init() internal onlyInitializing {
+    }
 
-    function __VotesTimestampMock_init_unchained() internal onlyInitializing {}
-
+    function __VotesTimestampMock_init_unchained() internal onlyInitializing {
+    }
     function clock() public view override returns (uint48) {
         return uint48(block.timestamp);
     }

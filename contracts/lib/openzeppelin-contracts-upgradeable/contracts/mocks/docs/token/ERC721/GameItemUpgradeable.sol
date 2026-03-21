@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {
-    ERC721URIStorageUpgradeable,
-    ERC721Upgradeable
-} from "../../../../token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
+import {ERC721URIStorageUpgradeable, ERC721Upgradeable} from "../../../../token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract GameItemUpgradeable is Initializable, ERC721URIStorageUpgradeable {

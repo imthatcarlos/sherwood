@@ -68,11 +68,12 @@ library WebAuthn {
     /**
      * @dev Performs standard verification of a WebAuthn Authentication Assertion.
      */
-    function verify(bytes memory challenge, WebAuthnAuth memory auth, bytes32 qx, bytes32 qy)
-        internal
-        view
-        returns (bool)
-    {
+    function verify(
+        bytes memory challenge,
+        WebAuthnAuth memory auth,
+        bytes32 qx,
+        bytes32 qy
+    ) internal view returns (bool) {
         return verify(challenge, auth, qx, qy, true);
     }
 
@@ -89,34 +90,37 @@ library WebAuthn {
      * 5. (if `requireUV` is true) confirming stronger user authentication (biometrics/PIN)
      * 6. Backup Eligibility (`BE`) and Backup State (BS) bits relationship is valid
      */
-    function verify(bytes memory challenge, WebAuthnAuth memory auth, bytes32 qx, bytes32 qy, bool requireUV)
-        internal
-        view
-        returns (bool)
-    {
+    function verify(
+        bytes memory challenge,
+        WebAuthnAuth memory auth,
+        bytes32 qx,
+        bytes32 qy,
+        bool requireUV
+    ) internal view returns (bool) {
         // Verify authenticator data has sufficient length (37 bytes minimum):
         // - 32 bytes for rpIdHash
         // - 1 byte for flags
         // - 4 bytes for signature counter
-        return auth.authenticatorData.length > 36 && _validateExpectedTypeHash(auth.clientDataJSON, auth.typeIndex) // 11
-            && _validateChallenge(auth.clientDataJSON, auth.challengeIndex, challenge) // 12
-            && _validateUserPresentBitSet(auth.authenticatorData[32]) // 16
-            && (!requireUV || _validateUserVerifiedBitSet(auth.authenticatorData[32])) // 17
-            && _validateBackupEligibilityAndState(auth.authenticatorData[32]) // Consistency check
-            && 
+        return
+            auth.authenticatorData.length > 36 &&
+            _validateExpectedTypeHash(auth.clientDataJSON, auth.typeIndex) && // 11
+            _validateChallenge(auth.clientDataJSON, auth.challengeIndex, challenge) && // 12
+            _validateUserPresentBitSet(auth.authenticatorData[32]) && // 16
+            (!requireUV || _validateUserVerifiedBitSet(auth.authenticatorData[32])) && // 17
+            _validateBackupEligibilityAndState(auth.authenticatorData[32]) && // Consistency check
             // P256.verify handles signature malleability internally
             P256.verify(
-            sha256(
-            abi.encodePacked(
-            auth.authenticatorData,
-            sha256(bytes(auth.clientDataJSON)) // 19
-        )
-        ),
-            auth.r,
-            auth.s,
-            qx,
-            qy
-        ); // 20
+                sha256(
+                    abi.encodePacked(
+                        auth.authenticatorData,
+                        sha256(bytes(auth.clientDataJSON)) // 19
+                    )
+                ),
+                auth.r,
+                auth.s,
+                qx,
+                qy
+            ); // 20
     }
 
     /**
@@ -125,11 +129,10 @@ library WebAuthn {
      *
      * Step 11 in https://www.w3.org/TR/webauthn-2/#sctn-verifying-assertion[verifying an assertion].
      */
-    function _validateExpectedTypeHash(string memory clientDataJSON, uint256 typeIndex)
-        private
-        pure
-        returns (bool success)
-    {
+    function _validateExpectedTypeHash(
+        string memory clientDataJSON,
+        uint256 typeIndex
+    ) private pure returns (bool success) {
         assembly ("memory-safe") {
             success := and(
                 // clientDataJson.length >= typeIndex + 21
@@ -149,11 +152,11 @@ library WebAuthn {
      *
      * Step 12 in https://www.w3.org/TR/webauthn-2/#sctn-verifying-assertion[verifying an assertion].
      */
-    function _validateChallenge(string memory clientDataJSON, uint256 challengeIndex, bytes memory challenge)
-        private
-        pure
-        returns (bool)
-    {
+    function _validateChallenge(
+        string memory clientDataJSON,
+        uint256 challengeIndex,
+        bytes memory challenge
+    ) private pure returns (bool) {
         // solhint-disable-next-line quotes
         string memory expectedChallenge = string.concat('"challenge":"', Base64.encodeURL(challenge), '"');
         string memory actualChallenge = string(
@@ -247,9 +250,8 @@ library WebAuthn {
 
         // The elements length (at the offset) should be 32 bytes long. We check that this is within the
         // buffer bounds. Since we know input.length is at least 32, we can subtract with no overflow risk.
-        if (input.length - 0x20 < authenticatorDataOffset || input.length - 0x20 < clientDataJSONOffset) {
+        if (input.length - 0x20 < authenticatorDataOffset || input.length - 0x20 < clientDataJSONOffset)
             return (false, auth);
-        }
 
         // Get the lengths. offset + 32 is bounded by input.length so it does not overflow.
         uint256 authenticatorDataLength = uint256(bytes32(input[authenticatorDataOffset:]));
@@ -258,8 +260,8 @@ library WebAuthn {
         // Check that the input buffer is long enough to store the non-value-type elements
         // Since we know input.length is at least xxxOffset + 32, we can subtract with no overflow risk.
         if (
-            input.length - authenticatorDataOffset - 0x20 < authenticatorDataLength
-                || input.length - clientDataJSONOffset - 0x20 < clientDataJSONLength
+            input.length - authenticatorDataOffset - 0x20 < authenticatorDataLength ||
+            input.length - clientDataJSONOffset - 0x20 < clientDataJSONLength
         ) return (false, auth);
 
         return (true, auth);

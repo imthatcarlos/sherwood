@@ -24,8 +24,7 @@ contract ERC6909Upgradeable is Initializable, ContextUpgradeable, ERC165Upgradea
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC6909")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC6909StorageLocation =
-        0x9e75074fe7582401cc58901f6bda367c4d687c51437956963a7c06ef5cfaf900;
+    bytes32 private constant ERC6909StorageLocation = 0x9e75074fe7582401cc58901f6bda367c4d687c51437956963a7c06ef5cfaf900;
 
     function _getERC6909Storage() private pure returns (ERC6909Storage storage $) {
         assembly {
@@ -40,18 +39,13 @@ contract ERC6909Upgradeable is Initializable, ContextUpgradeable, ERC165Upgradea
     error ERC6909InvalidSender(address sender);
     error ERC6909InvalidSpender(address spender);
 
-    function __ERC6909_init() internal onlyInitializing {}
+    function __ERC6909_init() internal onlyInitializing {
+    }
 
-    function __ERC6909_init_unchained() internal onlyInitializing {}
-
+    function __ERC6909_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override(ERC165Upgradeable, IERC165)
-        returns (bool)
-    {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165Upgradeable, IERC165) returns (bool) {
         return interfaceId == type(IERC6909).interfaceId || super.supportsInterface(interfaceId);
     }
 
@@ -92,12 +86,12 @@ contract ERC6909Upgradeable is Initializable, ContextUpgradeable, ERC165Upgradea
     }
 
     /// @inheritdoc IERC6909
-    function transferFrom(address sender, address receiver, uint256 id, uint256 amount)
-        public
-        virtual
-        override
-        returns (bool)
-    {
+    function transferFrom(
+        address sender,
+        address receiver,
+        uint256 id,
+        uint256 amount
+    ) public virtual override returns (bool) {
         address caller = _msgSender();
         if (sender != caller && !isOperator(sender, caller)) {
             _spendAllowance(sender, caller, id, amount);

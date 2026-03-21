@@ -24,29 +24,39 @@ abstract contract BridgeMultiToken is Context, CrosschainLinked {
     using InteroperableAddress for bytes;
 
     event CrosschainMultiTokenTransferSent(
-        bytes32 indexed sendId, address indexed from, bytes to, uint256[] ids, uint256[] values
+        bytes32 indexed sendId,
+        address indexed from,
+        bytes to,
+        uint256[] ids,
+        uint256[] values
     );
     event CrosschainMultiTokenTransferReceived(
-        bytes32 indexed receiveId, bytes from, address indexed to, uint256[] ids, uint256[] values
+        bytes32 indexed receiveId,
+        bytes from,
+        address indexed to,
+        uint256[] ids,
+        uint256[] values
     );
-
     /**
      * @dev Internal crosschain transfer function.
      *
      * Note: The `to` parameter is the full InteroperableAddress (chain ref + address).
      */
-    function _crosschainTransfer(address from, bytes memory to, uint256[] memory ids, uint256[] memory values)
-        internal
-        virtual
-        returns (bytes32)
-    {
+    function _crosschainTransfer(
+        address from,
+        bytes memory to,
+        uint256[] memory ids,
+        uint256[] memory values
+    ) internal virtual returns (bytes32) {
         _onSend(from, ids, values);
 
         (bytes2 chainType, bytes memory chainReference, bytes memory addr) = to.parseV1();
         bytes memory chain = InteroperableAddress.formatV1(chainType, chainReference, hex"");
 
         bytes32 sendId = _sendMessageToCounterpart(
-            chain, abi.encode(InteroperableAddress.formatEvmV1(block.chainid, from), addr, ids, values), new bytes[](0)
+            chain,
+            abi.encode(InteroperableAddress.formatEvmV1(block.chainid, from), addr, ids, values),
+            new bytes[](0)
         );
 
         emit CrosschainMultiTokenTransferSent(sendId, from, to, ids, values);
@@ -55,22 +65,18 @@ abstract contract BridgeMultiToken is Context, CrosschainLinked {
 
     /// @inheritdoc ERC7786Recipient
     function _processMessage(
-        address,
-        /*gateway*/
+        address /*gateway*/,
         bytes32 receiveId,
-        bytes calldata,
-        /*sender*/
+        bytes calldata /*sender*/,
         bytes calldata payload
-    )
-        internal
-        virtual
-        override
-    {
+    ) internal virtual override {
         // NOTE: Gateway is validated by {_isAuthorizedGateway} (implemented in {CrosschainLinked}). No need to check here.
 
         // split payload
-        (bytes memory from, bytes memory toEvm, uint256[] memory ids, uint256[] memory values) =
-            abi.decode(payload, (bytes, bytes, uint256[], uint256[]));
+        (bytes memory from, bytes memory toEvm, uint256[] memory ids, uint256[] memory values) = abi.decode(
+            payload,
+            (bytes, bytes, uint256[], uint256[])
+        );
         address to = address(bytes20(toEvm));
 
         _onReceive(to, ids, values);

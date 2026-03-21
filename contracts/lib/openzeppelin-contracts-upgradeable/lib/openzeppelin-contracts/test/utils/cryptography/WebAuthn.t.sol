@@ -130,8 +130,10 @@ contract WebAuthnTest is Test {
                 seed,
                 challenge,
                 _encodeAuthenticatorData(
-                    WebAuthn.AUTH_DATA_FLAGS_UP | WebAuthn.AUTH_DATA_FLAGS_UV | WebAuthn.AUTH_DATA_FLAGS_BE
-                        | WebAuthn.AUTH_DATA_FLAGS_BS
+                    WebAuthn.AUTH_DATA_FLAGS_UP |
+                        WebAuthn.AUTH_DATA_FLAGS_UV |
+                        WebAuthn.AUTH_DATA_FLAGS_BE |
+                        WebAuthn.AUTH_DATA_FLAGS_BS
                 ),
                 _encodeClientDataJSON(challenge),
                 false
@@ -197,20 +199,21 @@ contract WebAuthnTest is Test {
         (bytes32 r, bytes32 s) = vm.signP256(privateKey, messageHash);
 
         // Verify the signature
-        return WebAuthn.verify(
-            challenge,
-            WebAuthn.WebAuthnAuth({
-                authenticatorData: authenticatorData,
-                clientDataJSON: clientDataJSON,
-                challengeIndex: challengeIndex, // Position of challenge in clientDataJSON
-                typeIndex: typeIndex, // Position of type in clientDataJSON
-                r: r,
-                s: bytes32(Math.min(uint256(s), P256.N - uint256(s)))
-            }),
-            bytes32(x),
-            bytes32(y),
-            requireUV
-        );
+        return
+            WebAuthn.verify(
+                challenge,
+                WebAuthn.WebAuthnAuth({
+                    authenticatorData: authenticatorData,
+                    clientDataJSON: clientDataJSON,
+                    challengeIndex: challengeIndex, // Position of challenge in clientDataJSON
+                    typeIndex: typeIndex, // Position of type in clientDataJSON
+                    r: r,
+                    s: bytes32(Math.min(uint256(s), P256.N - uint256(s)))
+                }),
+                bytes32(x),
+                bytes32(y),
+                requireUV
+            );
     }
 
     function testTryDecodeAuthValid(
@@ -261,43 +264,69 @@ contract WebAuthnTest is Test {
         assertTrue(
             this.tryDecodeAuthDrop(
                 abi.encodePacked(
-                    r, s, challengeIndex, typeIndex, uint256(0xc0), uint256(0xe0), uint256(0x20), uint256(0)
+                    r,
+                    s,
+                    challengeIndex,
+                    typeIndex,
+                    uint256(0xc0),
+                    uint256(0xe0),
+                    uint256(0x20),
+                    uint256(0)
                 )
             )
         );
         assertFalse(
             this.tryDecodeAuthDrop(
                 abi.encodePacked(
-                    r, s, challengeIndex, typeIndex, uint256(0xc0), uint256(0xe0), uint256(0x21), uint256(0)
+                    r,
+                    s,
+                    challengeIndex,
+                    typeIndex,
+                    uint256(0xc0),
+                    uint256(0xe0),
+                    uint256(0x21),
+                    uint256(0)
                 )
             )
         );
         assertTrue(
             this.tryDecodeAuthDrop(
                 abi.encodePacked(
-                    r, s, challengeIndex, typeIndex, uint256(0xc0), uint256(0xe0), uint256(0), uint256(0x00)
+                    r,
+                    s,
+                    challengeIndex,
+                    typeIndex,
+                    uint256(0xc0),
+                    uint256(0xe0),
+                    uint256(0),
+                    uint256(0x00)
                 )
             )
         );
         assertFalse(
             this.tryDecodeAuthDrop(
                 abi.encodePacked(
-                    r, s, challengeIndex, typeIndex, uint256(0xc0), uint256(0xe0), uint256(0), uint256(0x01)
+                    r,
+                    s,
+                    challengeIndex,
+                    typeIndex,
+                    uint256(0xc0),
+                    uint256(0xe0),
+                    uint256(0),
+                    uint256(0x01)
                 )
             )
         );
     }
 
-    function tryDecodeAuth(bytes calldata encoded)
-        public
-        pure
-        returns (bool success, WebAuthn.WebAuthnAuth calldata auth)
-    {
+    function tryDecodeAuth(
+        bytes calldata encoded
+    ) public pure returns (bool success, WebAuthn.WebAuthnAuth calldata auth) {
         (success, auth) = WebAuthn.tryDecodeAuth(encoded);
     }
 
     function tryDecodeAuthDrop(bytes calldata encoded) public pure returns (bool success) {
-        (success,) = WebAuthn.tryDecodeAuth(encoded);
+        (success, ) = WebAuthn.tryDecodeAuth(encoded);
     }
 
     function _encodeAuthenticatorData(bytes1 flags) private pure returns (bytes memory) {

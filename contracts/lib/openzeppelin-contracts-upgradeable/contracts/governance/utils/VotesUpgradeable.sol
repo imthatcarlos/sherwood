@@ -31,13 +31,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * {ERC721-balanceOf}), and can use {_transferVotingUnits} to track a change in the distribution of those units (in the
  * previous example, it would be included in {ERC721-_update}).
  */
-abstract contract VotesUpgradeable is
-    Initializable,
-    ContextUpgradeable,
-    EIP712Upgradeable,
-    NoncesUpgradeable,
-    IERC5805
-{
+abstract contract VotesUpgradeable is Initializable, ContextUpgradeable, EIP712Upgradeable, NoncesUpgradeable, IERC5805 {
     using Checkpoints for Checkpoints.Trace208;
 
     bytes32 private constant DELEGATION_TYPEHASH =
@@ -71,10 +65,11 @@ abstract contract VotesUpgradeable is
      */
     error ERC5805FutureLookup(uint256 timepoint, uint48 clock);
 
-    function __Votes_init() internal onlyInitializing {}
+    function __Votes_init() internal onlyInitializing {
+    }
 
-    function __Votes_init_unchained() internal onlyInitializing {}
-
+    function __Votes_init_unchained() internal onlyInitializing {
+    }
     /**
      * @dev Clock used for flagging checkpoints. Can be overridden to implement timestamp based
      * checkpoints (and voting), in which case {CLOCK_MODE} should be overridden as well to match.
@@ -169,15 +164,22 @@ abstract contract VotesUpgradeable is
     /**
      * @dev Delegates votes from signer to `delegatee`.
      */
-    function delegateBySig(address delegatee, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s)
-        public
-        virtual
-    {
+    function delegateBySig(
+        address delegatee,
+        uint256 nonce,
+        uint256 expiry,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public virtual {
         if (block.timestamp > expiry) {
             revert VotesExpiredSignature(expiry);
         }
         address signer = ECDSA.recover(
-            _hashTypedDataV4(keccak256(abi.encode(DELEGATION_TYPEHASH, delegatee, nonce, expiry))), v, r, s
+            _hashTypedDataV4(keccak256(abi.encode(DELEGATION_TYPEHASH, delegatee, nonce, expiry))),
+            v,
+            r,
+            s
         );
         _useCheckedNonce(signer, nonce);
         _delegate(signer, delegatee);
@@ -219,13 +221,19 @@ abstract contract VotesUpgradeable is
         VotesStorage storage $ = _getVotesStorage();
         if (from != to && amount > 0) {
             if (from != address(0)) {
-                (uint256 oldValue, uint256 newValue) =
-                    _push($._delegateCheckpoints[from], _subtract, SafeCast.toUint208(amount));
+                (uint256 oldValue, uint256 newValue) = _push(
+                    $._delegateCheckpoints[from],
+                    _subtract,
+                    SafeCast.toUint208(amount)
+                );
                 emit DelegateVotesChanged(from, oldValue, newValue);
             }
             if (to != address(0)) {
-                (uint256 oldValue, uint256 newValue) =
-                    _push($._delegateCheckpoints[to], _add, SafeCast.toUint208(amount));
+                (uint256 oldValue, uint256 newValue) = _push(
+                    $._delegateCheckpoints[to],
+                    _add,
+                    SafeCast.toUint208(amount)
+                );
                 emit DelegateVotesChanged(to, oldValue, newValue);
             }
         }
@@ -242,12 +250,10 @@ abstract contract VotesUpgradeable is
     /**
      * @dev Get the `pos`-th checkpoint for `account`.
      */
-    function _checkpoints(address account, uint32 pos)
-        internal
-        view
-        virtual
-        returns (Checkpoints.Checkpoint208 memory)
-    {
+    function _checkpoints(
+        address account,
+        uint32 pos
+    ) internal view virtual returns (Checkpoints.Checkpoint208 memory) {
         VotesStorage storage $ = _getVotesStorage();
         return $._delegateCheckpoints[account].at(pos);
     }

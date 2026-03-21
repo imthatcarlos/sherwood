@@ -34,8 +34,7 @@ abstract contract ERC2981Upgradeable is Initializable, IERC2981, ERC165Upgradeab
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC2981")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC2981StorageLocation =
-        0xdaedc9ab023613a7caf35e703657e986ccfad7e3eb0af93a2853f8d65dd86b00;
+    bytes32 private constant ERC2981StorageLocation = 0xdaedc9ab023613a7caf35e703657e986ccfad7e3eb0af93a2853f8d65dd86b00;
 
     function _getERC2981Storage() private pure returns (ERC2981Storage storage $) {
         assembly {
@@ -63,28 +62,21 @@ abstract contract ERC2981Upgradeable is Initializable, IERC2981, ERC165Upgradeab
      */
     error ERC2981InvalidTokenRoyaltyReceiver(uint256 tokenId, address receiver);
 
-    function __ERC2981_init() internal onlyInitializing {}
+    function __ERC2981_init() internal onlyInitializing {
+    }
 
-    function __ERC2981_init_unchained() internal onlyInitializing {}
-
+    function __ERC2981_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override(IERC165, ERC165Upgradeable)
-        returns (bool)
-    {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(IERC165, ERC165Upgradeable) returns (bool) {
         return interfaceId == type(IERC2981).interfaceId || super.supportsInterface(interfaceId);
     }
 
     /// @inheritdoc IERC2981
-    function royaltyInfo(uint256 tokenId, uint256 salePrice)
-        public
-        view
-        virtual
-        returns (address receiver, uint256 amount)
-    {
+    function royaltyInfo(
+        uint256 tokenId,
+        uint256 salePrice
+    ) public view virtual returns (address receiver, uint256 amount) {
         ERC2981Storage storage $ = _getERC2981Storage();
         RoyaltyInfo storage _royaltyInfo = $._tokenRoyaltyInfo[tokenId];
         address royaltyReceiver = _royaltyInfo.receiver;

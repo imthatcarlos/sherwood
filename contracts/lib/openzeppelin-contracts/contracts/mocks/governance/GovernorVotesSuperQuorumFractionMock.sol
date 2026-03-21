@@ -17,7 +17,9 @@ abstract contract GovernorVotesSuperQuorumFractionMock is
         return super.proposalThreshold();
     }
 
-    function proposalVotes(uint256 proposalId)
+    function proposalVotes(
+        uint256 proposalId
+    )
         public
         view
         virtual
@@ -27,12 +29,9 @@ abstract contract GovernorVotesSuperQuorumFractionMock is
         return super.proposalVotes(proposalId);
     }
 
-    function state(uint256 proposalId)
-        public
-        view
-        override(Governor, GovernorVotesSuperQuorumFraction)
-        returns (ProposalState)
-    {
+    function state(
+        uint256 proposalId
+    ) public view override(Governor, GovernorVotesSuperQuorumFraction) returns (ProposalState) {
         return super.state(proposalId);
     }
 }

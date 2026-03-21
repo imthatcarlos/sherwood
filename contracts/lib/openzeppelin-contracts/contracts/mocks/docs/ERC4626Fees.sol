@@ -58,11 +58,13 @@ abstract contract ERC4626Fees is ERC4626 {
     }
 
     /// @dev Send exit fee to {_exitFeeRecipient}. See {ERC4626-_withdraw}.
-    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
-        internal
-        virtual
-        override
-    {
+    function _withdraw(
+        address caller,
+        address receiver,
+        address owner,
+        uint256 assets,
+        uint256 shares
+    ) internal virtual override {
         uint256 fee = _feeOnRaw(assets, _exitFeeBasisPoints());
         address recipient = _exitFeeRecipient();
 

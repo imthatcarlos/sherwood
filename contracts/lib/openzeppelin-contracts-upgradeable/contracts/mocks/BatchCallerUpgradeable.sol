@@ -11,10 +11,11 @@ contract BatchCallerUpgradeable is Initializable {
         bytes data;
     }
 
-    function __BatchCaller_init() internal onlyInitializing {}
+    function __BatchCaller_init() internal onlyInitializing {
+    }
 
-    function __BatchCaller_init_unchained() internal onlyInitializing {}
-
+    function __BatchCaller_init_unchained() internal onlyInitializing {
+    }
     function execute(Call[] calldata calls) external returns (bytes[] memory) {
         bytes[] memory returndata = new bytes[](calls.length);
         for (uint256 i = 0; i < calls.length; ++i) {

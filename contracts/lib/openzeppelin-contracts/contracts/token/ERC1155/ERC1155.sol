@@ -36,8 +36,10 @@ abstract contract ERC1155 is Context, ERC165, IERC1155, IERC1155MetadataURI, IER
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165, IERC165) returns (bool) {
-        return interfaceId == type(IERC1155).interfaceId || interfaceId == type(IERC1155MetadataURI).interfaceId
-            || super.supportsInterface(interfaceId);
+        return
+            interfaceId == type(IERC1155).interfaceId ||
+            interfaceId == type(IERC1155MetadataURI).interfaceId ||
+            super.supportsInterface(interfaceId);
     }
 
     /**
@@ -50,14 +52,7 @@ abstract contract ERC1155 is Context, ERC165, IERC1155, IERC1155MetadataURI, IER
      * Clients calling this function must replace the `\{id\}` substring with the
      * actual token type ID.
      */
-    function uri(
-        uint256 /* id */
-    )
-        public
-        view
-        virtual
-        returns (string memory)
-    {
+    function uri(uint256 /* id */) public view virtual returns (string memory) {
         return _uri;
     }
 
@@ -73,12 +68,10 @@ abstract contract ERC1155 is Context, ERC165, IERC1155, IERC1155MetadataURI, IER
      *
      * - `accounts` and `ids` must have the same length.
      */
-    function balanceOfBatch(address[] memory accounts, uint256[] memory ids)
-        public
-        view
-        virtual
-        returns (uint256[] memory)
-    {
+    function balanceOfBatch(
+        address[] memory accounts,
+        uint256[] memory ids
+    ) public view virtual returns (uint256[] memory) {
         if (accounts.length != ids.length) {
             revert ERC1155InvalidArrayLength(ids.length, accounts.length);
         }
@@ -400,11 +393,10 @@ abstract contract ERC1155 is Context, ERC165, IERC1155, IERC1155MetadataURI, IER
     /**
      * @dev Creates an array in memory with only one value for each of the elements provided.
      */
-    function _asSingletonArrays(uint256 element1, uint256 element2)
-        private
-        pure
-        returns (uint256[] memory array1, uint256[] memory array2)
-    {
+    function _asSingletonArrays(
+        uint256 element1,
+        uint256 element2
+    ) private pure returns (uint256[] memory array1, uint256[] memory array2) {
         assembly ("memory-safe") {
             // Load the free memory pointer
             array1 := mload(0x40)

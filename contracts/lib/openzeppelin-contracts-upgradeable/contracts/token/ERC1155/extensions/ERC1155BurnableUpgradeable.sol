@@ -11,10 +11,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * own tokens and those that they have been approved to use.
  */
 abstract contract ERC1155BurnableUpgradeable is Initializable, ERC1155Upgradeable {
-    function __ERC1155Burnable_init() internal onlyInitializing {}
+    function __ERC1155Burnable_init() internal onlyInitializing {
+    }
 
-    function __ERC1155Burnable_init_unchained() internal onlyInitializing {}
-
+    function __ERC1155Burnable_init_unchained() internal onlyInitializing {
+    }
     function burn(address account, uint256 id, uint256 value) public virtual {
         if (account != _msgSender() && !isApprovedForAll(account, _msgSender())) {
             revert ERC1155MissingApprovalForAll(_msgSender(), account);

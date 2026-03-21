@@ -28,10 +28,11 @@ abstract contract ERC7739Upgradeable is Initializable, AbstractSigner, EIP712Upg
     using ERC7739Utils for *;
     using MessageHashUtils for bytes32;
 
-    function __ERC7739_init() internal onlyInitializing {}
+    function __ERC7739_init() internal onlyInitializing {
+    }
 
-    function __ERC7739_init_unchained() internal onlyInitializing {}
-
+    function __ERC7739_init_unchained() internal onlyInitializing {
+    }
     /**
      * @dev Attempts validating the signature in a nested EIP-712 type.
      *
@@ -44,12 +45,12 @@ abstract contract ERC7739Upgradeable is Initializable, AbstractSigner, EIP712Upg
         // For the hash `0x7739773977397739773977397739773977397739773977397739773977397739` and an empty signature,
         // we return the magic value `0x77390001` as it's assumed impossible to find a preimage for it that can be used
         // maliciously. Useful for simulation purposes and to validate whether the contract supports ERC-7739.
-        return (_isValidNestedTypedDataSignature(hash, signature)
-                || _isValidNestedPersonalSignSignature(hash, signature))
-            ? IERC1271.isValidSignature.selector
-            : (hash == 0x7739773977397739773977397739773977397739773977397739773977397739 && signature.length == 0)
-                ? bytes4(0x77390001)
-                : bytes4(0xffffffff);
+        return
+            (_isValidNestedTypedDataSignature(hash, signature) || _isValidNestedPersonalSignSignature(hash, signature))
+                ? IERC1271.isValidSignature.selector
+                : (hash == 0x7739773977397739773977397739773977397739773977397739773977397739 && signature.length == 0)
+                    ? bytes4(0x77390001)
+                    : bytes4(0xffffffff);
     }
 
     /**
@@ -62,30 +63,42 @@ abstract contract ERC7739Upgradeable is Initializable, AbstractSigner, EIP712Upg
     /**
      * @dev Nested EIP-712 typed data verification.
      */
-    function _isValidNestedTypedDataSignature(bytes32 hash, bytes calldata encodedSignature)
-        private
-        view
-        returns (bool)
-    {
+    function _isValidNestedTypedDataSignature(
+        bytes32 hash,
+        bytes calldata encodedSignature
+    ) private view returns (bool) {
         // decode signature
-        (bytes calldata signature, bytes32 appSeparator, bytes32 contentsHash, string calldata contentsDescr) =
-            encodedSignature.decodeTypedDataSig();
+        (
+            bytes calldata signature,
+            bytes32 appSeparator,
+            bytes32 contentsHash,
+            string calldata contentsDescr
+        ) = encodedSignature.decodeTypedDataSig();
 
-        (, string memory name, string memory version, uint256 chainId, address verifyingContract, bytes32 salt,) =
-            eip712Domain();
+        (
+            ,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt,
+
+        ) = eip712Domain();
 
         // Check that contentHash and separator are correct
         // Rebuild nested hash
-        return hash == appSeparator.toTypedDataHash(contentsHash) && bytes(contentsDescr).length != 0
-            && _rawSignatureValidation(
-            appSeparator.toTypedDataHash(
-            ERC7739Utils.typedDataSignStructHash(
-            contentsDescr,
-            contentsHash,
-            abi.encode(keccak256(bytes(name)), keccak256(bytes(version)), chainId, verifyingContract, salt)
-        )
-        ),
-            signature
-        );
+        return
+            hash == appSeparator.toTypedDataHash(contentsHash) &&
+            bytes(contentsDescr).length != 0 &&
+            _rawSignatureValidation(
+                appSeparator.toTypedDataHash(
+                    ERC7739Utils.typedDataSignStructHash(
+                        contentsDescr,
+                        contentsHash,
+                        abi.encode(keccak256(bytes(name)), keccak256(bytes(version)), chainId, verifyingContract, salt)
+                    )
+                ),
+                signature
+            );
     }
 }

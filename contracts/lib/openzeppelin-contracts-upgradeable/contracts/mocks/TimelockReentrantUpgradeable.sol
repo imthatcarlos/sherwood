@@ -9,10 +9,11 @@ contract TimelockReentrantUpgradeable is Initializable {
     bytes private _reenterData;
     bool _reentered;
 
-    function __TimelockReentrant_init() internal onlyInitializing {}
+    function __TimelockReentrant_init() internal onlyInitializing {
+    }
 
-    function __TimelockReentrant_init_unchained() internal onlyInitializing {}
-
+    function __TimelockReentrant_init_unchained() internal onlyInitializing {
+    }
     function disableReentrancy() external {
         _reentered = true;
     }

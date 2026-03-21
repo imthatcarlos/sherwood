@@ -28,78 +28,66 @@ abstract contract AccountMock is Account, ERC7739, ERC7821, ERC721Holder, ERC115
     }
 
     /// @inheritdoc ERC7821
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }
 
 abstract contract AccountECDSAMock is Account, SignerECDSA, ERC7739, ERC7821, ERC721Holder, ERC1155Holder {
     /// @inheritdoc ERC7821
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }
 
 abstract contract AccountP256Mock is Account, SignerP256, ERC7739, ERC7821, ERC721Holder, ERC1155Holder {
     /// @inheritdoc ERC7821
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }
 
 abstract contract AccountRSAMock is Account, SignerRSA, ERC7739, ERC7821, ERC721Holder, ERC1155Holder {
     /// @inheritdoc ERC7821
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }
 
 abstract contract AccountWebAuthnMock is Account, SignerWebAuthn, ERC7739, ERC7821, ERC721Holder, ERC1155Holder {
     /// @inheritdoc ERC7821
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }
 
 abstract contract AccountEIP7702Mock is Account, SignerEIP7702, ERC7739, ERC7821, ERC721Holder, ERC1155Holder {
     /// @inheritdoc ERC7821
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }
@@ -112,23 +100,19 @@ abstract contract AccountEIP7702WithModulesMock is
     ERC721Holder,
     ERC1155Holder
 {
-    function _validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, bytes calldata signature)
-        internal
-        virtual
-        override(Account, AccountERC7579)
-        returns (uint256)
-    {
+    function _validateUserOp(
+        PackedUserOperation calldata userOp,
+        bytes32 userOpHash,
+        bytes calldata signature
+    ) internal virtual override(Account, AccountERC7579) returns (uint256) {
         return super._validateUserOp(userOp, userOpHash, signature);
     }
 
     /// @dev Resolve implementation of ERC-1271 by both ERC7739 and AccountERC7579 to support both schemes.
-    function isValidSignature(bytes32 hash, bytes calldata signature)
-        public
-        view
-        virtual
-        override(ERC7739, AccountERC7579)
-        returns (bytes4)
-    {
+    function isValidSignature(
+        bytes32 hash,
+        bytes calldata signature
+    ) public view virtual override(ERC7739, AccountERC7579) returns (bytes4) {
         // ERC-7739 can return the fn selector (success), 0xffffffff (invalid) or 0x77390001 (detection).
         // If the return is 0xffffffff, we fallback to validation using ERC-7579 modules.
         bytes4 erc7739magic = ERC7739.isValidSignature(hash, signature);
@@ -136,13 +120,10 @@ abstract contract AccountEIP7702WithModulesMock is
     }
 
     /// @dev Enable signature using the EIP-7702 signer.
-    function _rawSignatureValidation(bytes32 hash, bytes calldata signature)
-        internal
-        view
-        virtual
-        override(AbstractSigner, AccountERC7579, SignerEIP7702)
-        returns (bool)
-    {
+    function _rawSignatureValidation(
+        bytes32 hash,
+        bytes calldata signature
+    ) internal view virtual override(AbstractSigner, AccountERC7579, SignerEIP7702) returns (bool) {
         return SignerEIP7702._rawSignatureValidation(hash, signature);
     }
 }
@@ -161,26 +142,22 @@ abstract contract AccountERC7579HookedMock is AccountERC7579Hooked {
 
 abstract contract AccountERC7913Mock is Account, SignerERC7913, ERC7739, ERC7821, ERC721Holder, ERC1155Holder {
     /// @inheritdoc ERC7821
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }
 
 abstract contract AccountMultiSignerMock is Account, MultiSignerERC7913, ERC7739, ERC7821, ERC721Holder, ERC1155Holder {
     /// @inheritdoc ERC7821
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }
@@ -194,13 +171,11 @@ abstract contract AccountMultiSignerWeightedMock is
     ERC1155Holder
 {
     /// @inheritdoc ERC7821
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }

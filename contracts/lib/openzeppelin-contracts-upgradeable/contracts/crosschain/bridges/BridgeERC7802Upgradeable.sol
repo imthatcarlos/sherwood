@@ -18,8 +18,7 @@ abstract contract BridgeERC7802Upgradeable is Initializable, BridgeFungibleUpgra
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.BridgeERC7802")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant BridgeERC7802StorageLocation =
-        0xaa74a536d5c1ef957e103c5cd74a2d097ce13b7e0a555173bee99ce500fd4300;
+    bytes32 private constant BridgeERC7802StorageLocation = 0xaa74a536d5c1ef957e103c5cd74a2d097ce13b7e0a555173bee99ce500fd4300;
 
     function _getBridgeERC7802Storage() private pure returns (BridgeERC7802Storage storage $) {
         assembly {

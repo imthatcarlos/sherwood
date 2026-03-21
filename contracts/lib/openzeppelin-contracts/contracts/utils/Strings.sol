@@ -16,9 +16,10 @@ library Strings {
 
     bytes16 private constant HEX_DIGITS = "0123456789abcdef";
     uint8 private constant ADDRESS_LENGTH = 20;
-    uint256 private constant SPECIAL_CHARS_LOOKUP = 0xffffffff // first 32 bits corresponding to the control characters (U+0000 to U+001F)
-        | (1 << 0x22) // double quote
-        | (1 << 0x5c); // backslash
+    uint256 private constant SPECIAL_CHARS_LOOKUP =
+        0xffffffff | // first 32 bits corresponding to the control characters (U+0000 to U+001F)
+            (1 << 0x22) | // double quote
+            (1 << 0x5c); // backslash
 
     /**
      * @dev The `value` string doesn't fit in the specified `length`.
@@ -188,11 +189,11 @@ library Strings {
      *
      * NOTE: This function will revert if the result does not fit in a `uint256`.
      */
-    function tryParseUint(string memory input, uint256 begin, uint256 end)
-        internal
-        pure
-        returns (bool success, uint256 value)
-    {
+    function tryParseUint(
+        string memory input,
+        uint256 begin,
+        uint256 end
+    ) internal pure returns (bool success, uint256 value) {
         if (end > bytes(input).length || begin > end) return (false, 0);
         return _tryParseUintUncheckedBounds(input, begin, end);
     }
@@ -201,11 +202,11 @@ library Strings {
      * @dev Implementation of {tryParseUint-string-uint256-uint256} that does not check bounds. Caller should make sure that
      * `begin <= end <= input.length`. Other inputs would result in undefined behavior.
      */
-    function _tryParseUintUncheckedBounds(string memory input, uint256 begin, uint256 end)
-        private
-        pure
-        returns (bool success, uint256 value)
-    {
+    function _tryParseUintUncheckedBounds(
+        string memory input,
+        uint256 begin,
+        uint256 end
+    ) private pure returns (bool success, uint256 value) {
         bytes memory buffer = bytes(input);
 
         uint256 result = 0;
@@ -261,11 +262,11 @@ library Strings {
      *
      * NOTE: This function will revert if the absolute value of the result does not fit in a `uint256`.
      */
-    function tryParseInt(string memory input, uint256 begin, uint256 end)
-        internal
-        pure
-        returns (bool success, int256 value)
-    {
+    function tryParseInt(
+        string memory input,
+        uint256 begin,
+        uint256 end
+    ) internal pure returns (bool success, int256 value) {
         if (end > bytes(input).length || begin > end) return (false, 0);
         return _tryParseIntUncheckedBounds(input, begin, end);
     }
@@ -274,11 +275,11 @@ library Strings {
      * @dev Implementation of {tryParseInt-string-uint256-uint256} that does not check bounds. Caller should make sure that
      * `begin <= end <= input.length`. Other inputs would result in undefined behavior.
      */
-    function _tryParseIntUncheckedBounds(string memory input, uint256 begin, uint256 end)
-        private
-        pure
-        returns (bool success, int256 value)
-    {
+    function _tryParseIntUncheckedBounds(
+        string memory input,
+        uint256 begin,
+        uint256 end
+    ) private pure returns (bool success, int256 value) {
         bytes memory buffer = bytes(input);
 
         // Check presence of a negative sign.
@@ -293,9 +294,7 @@ library Strings {
             return (true, negativeSign ? -int256(absValue) : int256(absValue));
         } else if (absSuccess && negativeSign && absValue == ABS_MIN_INT256) {
             return (true, type(int256).min);
-        } else {
-            return (false, 0);
-        }
+        } else return (false, 0);
     }
 
     /**
@@ -338,11 +337,11 @@ library Strings {
      *
      * NOTE: This function will revert if the result does not fit in a `uint256`.
      */
-    function tryParseHexUint(string memory input, uint256 begin, uint256 end)
-        internal
-        pure
-        returns (bool success, uint256 value)
-    {
+    function tryParseHexUint(
+        string memory input,
+        uint256 begin,
+        uint256 end
+    ) internal pure returns (bool success, uint256 value) {
         if (end > bytes(input).length || begin > end) return (false, 0);
         return _tryParseHexUintUncheckedBounds(input, begin, end);
     }
@@ -351,11 +350,11 @@ library Strings {
      * @dev Implementation of {tryParseHexUint-string-uint256-uint256} that does not check bounds. Caller should make sure that
      * `begin <= end <= input.length`. Other inputs would result in undefined behavior.
      */
-    function _tryParseHexUintUncheckedBounds(string memory input, uint256 begin, uint256 end)
-        private
-        pure
-        returns (bool success, uint256 value)
-    {
+    function _tryParseHexUintUncheckedBounds(
+        string memory input,
+        uint256 begin,
+        uint256 end
+    ) private pure returns (bool success, uint256 value) {
         bytes memory buffer = bytes(input);
 
         // skip 0x prefix if present
@@ -411,11 +410,11 @@ library Strings {
      * @dev Variant of {parseAddress-string-uint256-uint256} that returns false if the parsing fails because input is not a properly
      * formatted address. See {parseAddress-string-uint256-uint256} requirements.
      */
-    function tryParseAddress(string memory input, uint256 begin, uint256 end)
-        internal
-        pure
-        returns (bool success, address value)
-    {
+    function tryParseAddress(
+        string memory input,
+        uint256 begin,
+        uint256 end
+    ) internal pure returns (bool success, address value) {
         if (end > bytes(input).length || begin > end) return (false, address(0));
 
         bool hasPrefix = (end > begin + 1) && bytes2(_unsafeReadBytesOffset(bytes(input), begin)) == bytes2("0x"); // don't do out-of-bound (possibly unsafe) read if sub-string is empty
@@ -475,19 +474,13 @@ library Strings {
             uint8 char = uint8(bytes1(_unsafeReadBytesOffset(buffer, i)));
             if (((SPECIAL_CHARS_LOOKUP & (1 << char)) != 0)) {
                 _unsafeWriteBytesOffset(output, outputLength++, "\\");
-                if (char == 0x08) {
-                    _unsafeWriteBytesOffset(output, outputLength++, "b");
-                } else if (char == 0x09) {
-                    _unsafeWriteBytesOffset(output, outputLength++, "t");
-                } else if (char == 0x0a) {
-                    _unsafeWriteBytesOffset(output, outputLength++, "n");
-                } else if (char == 0x0c) {
-                    _unsafeWriteBytesOffset(output, outputLength++, "f");
-                } else if (char == 0x0d) {
-                    _unsafeWriteBytesOffset(output, outputLength++, "r");
-                } else if (char == 0x5c) {
-                    _unsafeWriteBytesOffset(output, outputLength++, "\\");
-                } else if (char == 0x22) {
+                if (char == 0x08) _unsafeWriteBytesOffset(output, outputLength++, "b");
+                else if (char == 0x09) _unsafeWriteBytesOffset(output, outputLength++, "t");
+                else if (char == 0x0a) _unsafeWriteBytesOffset(output, outputLength++, "n");
+                else if (char == 0x0c) _unsafeWriteBytesOffset(output, outputLength++, "f");
+                else if (char == 0x0d) _unsafeWriteBytesOffset(output, outputLength++, "r");
+                else if (char == 0x5c) _unsafeWriteBytesOffset(output, outputLength++, "\\");
+                else if (char == 0x22) {
                     // solhint-disable-next-line quotes
                     _unsafeWriteBytesOffset(output, outputLength++, '"');
                 } else {

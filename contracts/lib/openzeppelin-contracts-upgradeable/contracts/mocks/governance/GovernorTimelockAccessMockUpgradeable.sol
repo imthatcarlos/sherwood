@@ -6,48 +6,33 @@ import {GovernorUpgradeable} from "../../governance/GovernorUpgradeable.sol";
 import {GovernorTimelockAccessUpgradeable} from "../../governance/extensions/GovernorTimelockAccessUpgradeable.sol";
 import {GovernorSettingsUpgradeable} from "../../governance/extensions/GovernorSettingsUpgradeable.sol";
 import {GovernorCountingSimpleUpgradeable} from "../../governance/extensions/GovernorCountingSimpleUpgradeable.sol";
-import {
-    GovernorVotesQuorumFractionUpgradeable
-} from "../../governance/extensions/GovernorVotesQuorumFractionUpgradeable.sol";
+import {GovernorVotesQuorumFractionUpgradeable} from "../../governance/extensions/GovernorVotesQuorumFractionUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 abstract contract GovernorTimelockAccessMockUpgradeable is
-    Initializable,
-    GovernorSettingsUpgradeable,
+    Initializable, GovernorSettingsUpgradeable,
     GovernorTimelockAccessUpgradeable,
     GovernorVotesQuorumFractionUpgradeable,
     GovernorCountingSimpleUpgradeable
 {
-    function __GovernorTimelockAccessMock_init() internal onlyInitializing {}
+    function __GovernorTimelockAccessMock_init() internal onlyInitializing {
+    }
 
-    function __GovernorTimelockAccessMock_init_unchained() internal onlyInitializing {}
+    function __GovernorTimelockAccessMock_init_unchained() internal onlyInitializing {
+    }
     function nonGovernanceFunction() external {}
 
-    function quorum(uint256 blockNumber)
-        public
-        view
-        override(GovernorUpgradeable, GovernorVotesQuorumFractionUpgradeable)
-        returns (uint256)
-    {
+    function quorum(uint256 blockNumber) public view override(GovernorUpgradeable, GovernorVotesQuorumFractionUpgradeable) returns (uint256) {
         return super.quorum(blockNumber);
     }
 
-    function proposalThreshold()
-        public
-        view
-        override(GovernorUpgradeable, GovernorSettingsUpgradeable)
-        returns (uint256)
-    {
+    function proposalThreshold() public view override(GovernorUpgradeable, GovernorSettingsUpgradeable) returns (uint256) {
         return super.proposalThreshold();
     }
 
-    function proposalNeedsQueuing(uint256 proposalId)
-        public
-        view
-        virtual
-        override(GovernorUpgradeable, GovernorTimelockAccessUpgradeable)
-        returns (bool)
-    {
+    function proposalNeedsQueuing(
+        uint256 proposalId
+    ) public view virtual override(GovernorUpgradeable, GovernorTimelockAccessUpgradeable) returns (bool) {
         return super.proposalNeedsQueuing(proposalId);
     }
 

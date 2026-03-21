@@ -21,8 +21,7 @@ abstract contract VestingWalletCliffUpgradeable is Initializable, VestingWalletU
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.VestingWalletCliff")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant VestingWalletCliffStorageLocation =
-        0x0a0ceb66c7c9aef32c0bfc43d3108868a39e95e96162520745e462557492f100;
+    bytes32 private constant VestingWalletCliffStorageLocation = 0x0a0ceb66c7c9aef32c0bfc43d3108868a39e95e96162520745e462557492f100;
 
     function _getVestingWalletCliffStorage() private pure returns (VestingWalletCliffStorage storage $) {
         assembly {
@@ -65,13 +64,10 @@ abstract contract VestingWalletCliffUpgradeable is Initializable, VestingWalletU
      * effect from calling the inherited implementation (i.e. `super._vestingSchedule`). Carefully consider
      * this caveat if the overridden implementation of this function has any (e.g. writing to memory or reverting).
      */
-    function _vestingSchedule(uint256 totalAllocation, uint64 timestamp)
-        internal
-        view
-        virtual
-        override
-        returns (uint256)
-    {
+    function _vestingSchedule(
+        uint256 totalAllocation,
+        uint64 timestamp
+    ) internal view virtual override returns (uint256) {
         return timestamp < cliff() ? 0 : super._vestingSchedule(totalAllocation, timestamp);
     }
 }

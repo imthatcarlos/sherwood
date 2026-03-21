@@ -66,56 +66,65 @@ library ERC7579Utils {
     error ERC7579DecodingError();
 
     /// @dev Executes a single call.
-    function execSingle(bytes calldata executionCalldata, ExecType execType)
-        internal
-        returns (bytes[] memory returnData)
-    {
+    function execSingle(
+        bytes calldata executionCalldata,
+        ExecType execType
+    ) internal returns (bytes[] memory returnData) {
         (address target, uint256 value, bytes calldata callData) = decodeSingle(executionCalldata);
         returnData = new bytes[](1);
         returnData[0] = _call(0, execType, target, value, callData);
     }
 
     /// @dev Executes a batch of calls.
-    function execBatch(bytes calldata executionCalldata, ExecType execType)
-        internal
-        returns (bytes[] memory returnData)
-    {
+    function execBatch(
+        bytes calldata executionCalldata,
+        ExecType execType
+    ) internal returns (bytes[] memory returnData) {
         Execution[] calldata executionBatch = decodeBatch(executionCalldata);
         returnData = new bytes[](executionBatch.length);
         for (uint256 i = 0; i < executionBatch.length; ++i) {
-            returnData[i] =
-                _call(i, execType, executionBatch[i].target, executionBatch[i].value, executionBatch[i].callData);
+            returnData[i] = _call(
+                i,
+                execType,
+                executionBatch[i].target,
+                executionBatch[i].value,
+                executionBatch[i].callData
+            );
         }
     }
 
     /// @dev Executes a delegate call.
-    function execDelegateCall(bytes calldata executionCalldata, ExecType execType)
-        internal
-        returns (bytes[] memory returnData)
-    {
+    function execDelegateCall(
+        bytes calldata executionCalldata,
+        ExecType execType
+    ) internal returns (bytes[] memory returnData) {
         (address target, bytes calldata callData) = decodeDelegate(executionCalldata);
         returnData = new bytes[](1);
         returnData[0] = _delegatecall(0, execType, target, callData);
     }
 
     /// @dev Encodes the mode with the provided parameters. See {decodeMode}.
-    function encodeMode(CallType callType, ExecType execType, ModeSelector selector, ModePayload payload)
-        internal
-        pure
-        returns (Mode mode)
-    {
-        return Mode.wrap(
-            CallType.unwrap(callType).pack_1_1(ExecType.unwrap(execType)).pack_2_4(bytes4(0))
-                .pack_6_4(ModeSelector.unwrap(selector)).pack_10_22(ModePayload.unwrap(payload))
-        );
+    function encodeMode(
+        CallType callType,
+        ExecType execType,
+        ModeSelector selector,
+        ModePayload payload
+    ) internal pure returns (Mode mode) {
+        return
+            Mode.wrap(
+                CallType
+                    .unwrap(callType)
+                    .pack_1_1(ExecType.unwrap(execType))
+                    .pack_2_4(bytes4(0))
+                    .pack_6_4(ModeSelector.unwrap(selector))
+                    .pack_10_22(ModePayload.unwrap(payload))
+            );
     }
 
     /// @dev Decodes the mode into its parameters. See {encodeMode}.
-    function decodeMode(Mode mode)
-        internal
-        pure
-        returns (CallType callType, ExecType execType, ModeSelector selector, ModePayload payload)
-    {
+    function decodeMode(
+        Mode mode
+    ) internal pure returns (CallType callType, ExecType execType, ModeSelector selector, ModePayload payload) {
         return (
             CallType.wrap(Packing.extract_32_1(Mode.unwrap(mode), 0x00)),
             ExecType.wrap(Packing.extract_32_1(Mode.unwrap(mode), 0x01)),
@@ -125,40 +134,35 @@ library ERC7579Utils {
     }
 
     /// @dev Encodes a single call execution. See {decodeSingle}.
-    function encodeSingle(address target, uint256 value, bytes calldata callData)
-        internal
-        pure
-        returns (bytes memory executionCalldata)
-    {
+    function encodeSingle(
+        address target,
+        uint256 value,
+        bytes calldata callData
+    ) internal pure returns (bytes memory executionCalldata) {
         return abi.encodePacked(target, value, callData);
     }
 
     /// @dev Decodes a single call execution. See {encodeSingle}.
-    function decodeSingle(bytes calldata executionCalldata)
-        internal
-        pure
-        returns (address target, uint256 value, bytes calldata callData)
-    {
+    function decodeSingle(
+        bytes calldata executionCalldata
+    ) internal pure returns (address target, uint256 value, bytes calldata callData) {
         target = address(bytes20(executionCalldata));
         value = uint256(bytes32(executionCalldata[20:52]));
         callData = executionCalldata[52:];
     }
 
     /// @dev Encodes a delegate call execution. See {decodeDelegate}.
-    function encodeDelegate(address target, bytes calldata callData)
-        internal
-        pure
-        returns (bytes memory executionCalldata)
-    {
+    function encodeDelegate(
+        address target,
+        bytes calldata callData
+    ) internal pure returns (bytes memory executionCalldata) {
         return abi.encodePacked(target, callData);
     }
 
     /// @dev Decodes a delegate call execution. See {encodeDelegate}.
-    function decodeDelegate(bytes calldata executionCalldata)
-        internal
-        pure
-        returns (address target, bytes calldata callData)
-    {
+    function decodeDelegate(
+        bytes calldata executionCalldata
+    ) internal pure returns (address target, bytes calldata callData) {
         target = address(bytes20(executionCalldata));
         callData = executionCalldata[20:];
     }
@@ -196,9 +200,8 @@ library ERC7579Utils {
             //
             // Since we know bufferLength is at least arrayLengthOffset + 32, we can subtract with no overflow risk.
             // Solidity limits length of such arrays to 2**64-1, this guarantees `arrayLength * 32` does not overflow.
-            if (arrayLength > type(uint64).max || bufferLength - arrayLengthOffset - 0x20 < arrayLength * 0x20) {
+            if (arrayLength > type(uint64).max || bufferLength - arrayLengthOffset - 0x20 < arrayLength * 0x20)
                 revert ERC7579DecodingError();
-            }
 
             assembly ("memory-safe") {
                 executionBatch.offset := add(add(executionCalldata.offset, arrayLengthOffset), 0x20)
@@ -208,29 +211,37 @@ library ERC7579Utils {
     }
 
     /// @dev Executes a `call` to the target with the provided {ExecType}.
-    function _call(uint256 index, ExecType execType, address target, uint256 value, bytes calldata data)
-        private
-        returns (bytes memory)
-    {
-        (bool success, bytes memory returndata) =
-            (target == address(0) ? address(this) : target).call{value: value}(data);
+    function _call(
+        uint256 index,
+        ExecType execType,
+        address target,
+        uint256 value,
+        bytes calldata data
+    ) private returns (bytes memory) {
+        (bool success, bytes memory returndata) = (target == address(0) ? address(this) : target).call{value: value}(
+            data
+        );
         return _validateExecutionMode(index, execType, success, returndata);
     }
 
     /// @dev Executes a `delegatecall` to the target with the provided {ExecType}.
-    function _delegatecall(uint256 index, ExecType execType, address target, bytes calldata data)
-        private
-        returns (bytes memory)
-    {
+    function _delegatecall(
+        uint256 index,
+        ExecType execType,
+        address target,
+        bytes calldata data
+    ) private returns (bytes memory) {
         (bool success, bytes memory returndata) = (target == address(0) ? address(this) : target).delegatecall(data);
         return _validateExecutionMode(index, execType, success, returndata);
     }
 
     /// @dev Validates the execution mode and returns the returndata.
-    function _validateExecutionMode(uint256 index, ExecType execType, bool success, bytes memory returndata)
-        private
-        returns (bytes memory)
-    {
+    function _validateExecutionMode(
+        uint256 index,
+        ExecType execType,
+        bool success,
+        bytes memory returndata
+    ) private returns (bytes memory) {
         if (execType == ERC7579Utils.EXECTYPE_DEFAULT) {
             Address.verifyCallResult(success, returndata);
         } else if (execType == ERC7579Utils.EXECTYPE_TRY) {

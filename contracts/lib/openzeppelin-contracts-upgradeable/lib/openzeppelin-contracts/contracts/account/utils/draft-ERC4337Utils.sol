@@ -55,11 +55,9 @@ library ERC4337Utils {
      * @dev Parses the validation data into its components and the validity range. See {packValidationData}.
      * Strips away the highest bit flag from the `validAfter` and `validUntil` fields.
      */
-    function parseValidationData(uint256 validationData)
-        internal
-        pure
-        returns (address aggregator, uint48 validAfter, uint48 validUntil, ValidationRange range)
-    {
+    function parseValidationData(
+        uint256 validationData
+    ) internal pure returns (address aggregator, uint48 validAfter, uint48 validUntil, ValidationRange range) {
         validAfter = uint48(bytes32(validationData).extract_32_6(0));
         validUntil = uint48(bytes32(validationData).extract_32_6(6));
         aggregator = address(bytes32(validationData).extract_32_20(12));
@@ -72,28 +70,30 @@ library ERC4337Utils {
     }
 
     /// @dev Packs the validation data into a single uint256. See {parseValidationData}.
-    function packValidationData(address aggregator, uint48 validAfter, uint48 validUntil)
-        internal
-        pure
-        returns (uint256)
-    {
-        return packValidationData(
-            aggregator,
-            validAfter,
-            validUntil,
-            (validAfter & validUntil & BLOCK_RANGE_FLAG) == 0 ? ValidationRange.TIMESTAMP : ValidationRange.BLOCK
-        );
+    function packValidationData(
+        address aggregator,
+        uint48 validAfter,
+        uint48 validUntil
+    ) internal pure returns (uint256) {
+        return
+            packValidationData(
+                aggregator,
+                validAfter,
+                validUntil,
+                (validAfter & validUntil & BLOCK_RANGE_FLAG) == 0 ? ValidationRange.TIMESTAMP : ValidationRange.BLOCK
+            );
     }
 
     /**
      * @dev Variant of {packValidationData} that forces which validity range to use. This overwrites the presence of
      * flags in `validAfter` and `validUntil`).
      */
-    function packValidationData(address aggregator, uint48 validAfter, uint48 validUntil, ValidationRange range)
-        internal
-        pure
-        returns (uint256)
-    {
+    function packValidationData(
+        address aggregator,
+        uint48 validAfter,
+        uint48 validUntil,
+        ValidationRange range
+    ) internal pure returns (uint256) {
         if (range == ValidationRange.TIMESTAMP) {
             validAfter &= BLOCK_RANGE_MASK;
             validUntil &= BLOCK_RANGE_MASK;
@@ -106,28 +106,31 @@ library ERC4337Utils {
 
     /// @dev Variant of {packValidationData} that uses a boolean success flag instead of an aggregator address.
     function packValidationData(bool sigSuccess, uint48 validAfter, uint48 validUntil) internal pure returns (uint256) {
-        return packValidationData(
-            address(uint160(Math.ternary(sigSuccess, SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED))),
-            validAfter,
-            validUntil
-        );
+        return
+            packValidationData(
+                address(uint160(Math.ternary(sigSuccess, SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED))),
+                validAfter,
+                validUntil
+            );
     }
 
     /**
      * @dev Variant of {packValidationData} that uses a boolean success flag instead of an aggregator address and that
      * forces which validity range to use. This overwrites the presence of flags in `validAfter` and `validUntil`).
      */
-    function packValidationData(bool sigSuccess, uint48 validAfter, uint48 validUntil, ValidationRange range)
-        internal
-        pure
-        returns (uint256)
-    {
-        return packValidationData(
-            address(uint160(Math.ternary(sigSuccess, SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED))),
-            validAfter,
-            validUntil,
-            range
-        );
+    function packValidationData(
+        bool sigSuccess,
+        uint48 validAfter,
+        uint48 validUntil,
+        ValidationRange range
+    ) internal pure returns (uint256) {
+        return
+            packValidationData(
+                address(uint160(Math.ternary(sigSuccess, SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED))),
+                validAfter,
+                validUntil,
+                range
+            );
     }
 
     /**
@@ -139,14 +142,16 @@ library ERC4337Utils {
      * NOTE: Returns `SIG_VALIDATION_FAILED` if the validation ranges differ.
      */
     function combineValidationData(uint256 validationData1, uint256 validationData2) internal pure returns (uint256) {
-        (address aggregator1, uint48 validAfter1, uint48 validUntil1, ValidationRange range1) =
-            parseValidationData(validationData1);
-        (address aggregator2, uint48 validAfter2, uint48 validUntil2, ValidationRange range2) =
-            parseValidationData(validationData2);
+        (address aggregator1, uint48 validAfter1, uint48 validUntil1, ValidationRange range1) = parseValidationData(
+            validationData1
+        );
+        (address aggregator2, uint48 validAfter2, uint48 validUntil2, ValidationRange range2) = parseValidationData(
+            validationData2
+        );
 
         if (range1 == range2) {
-            bool success = aggregator1 == address(uint160(SIG_VALIDATION_SUCCESS))
-                && aggregator2 == address(uint160(SIG_VALIDATION_SUCCESS));
+            bool success = aggregator1 == address(uint160(SIG_VALIDATION_SUCCESS)) &&
+                aggregator2 == address(uint160(SIG_VALIDATION_SUCCESS));
             uint48 validAfter = uint48(Math.max(validAfter1, validAfter2));
             uint48 validUntil = uint48(Math.min(validUntil1, validUntil2));
             return packValidationData(success, validAfter, validUntil, range1);
@@ -157,8 +162,9 @@ library ERC4337Utils {
 
     /// @dev Returns the aggregator of the `validationData` and whether it is out of time range.
     function getValidationData(uint256 validationData) internal view returns (address aggregator, bool outOfTimeRange) {
-        (address aggregator_, uint48 validAfter, uint48 validUntil, ValidationRange range) =
-            parseValidationData(validationData);
+        (address aggregator_, uint48 validAfter, uint48 validUntil, ValidationRange range) = parseValidationData(
+            validationData
+        );
         uint256 current = Math.ternary(range == ValidationRange.TIMESTAMP, block.timestamp, block.number);
         return (aggregator_, current <= validAfter || validUntil < current);
     }
@@ -235,12 +241,13 @@ library ERC4337Utils {
      * If a paymaster signature is present, it is excluded from the returned data.
      */
     function paymasterData(PackedUserOperation calldata self) internal pure returns (bytes calldata) {
-        bool hasSignature = self.paymasterAndData.length > 9
-            && bytes8(self.paymasterAndData[self.paymasterAndData.length - 8:]) == PAYMASTER_SIG_MAGIC;
+        bool hasSignature = self.paymasterAndData.length > 9 &&
+            bytes8(self.paymasterAndData[self.paymasterAndData.length - 8:]) == PAYMASTER_SIG_MAGIC;
         uint256 suffixLength = hasSignature ? _paymasterSignatureSize(self) + 10 : 0;
-        return self.paymasterAndData.length < 52 + suffixLength
-            ? Calldata.emptyBytes()
-            : self.paymasterAndData[52:self.paymasterAndData.length - suffixLength];
+        return
+            self.paymasterAndData.length < 52 + suffixLength
+                ? Calldata.emptyBytes()
+                : self.paymasterAndData[52:self.paymasterAndData.length - suffixLength];
     }
 
     /**
@@ -249,15 +256,16 @@ library ERC4337Utils {
      */
     function paymasterSignature(PackedUserOperation calldata self) internal pure returns (bytes calldata) {
         if (
-            self.paymasterAndData.length < 10
-                || bytes8(self.paymasterAndData[self.paymasterAndData.length - 8:]) != PAYMASTER_SIG_MAGIC
+            self.paymasterAndData.length < 10 ||
+            bytes8(self.paymasterAndData[self.paymasterAndData.length - 8:]) != PAYMASTER_SIG_MAGIC
         ) return Calldata.emptyBytes();
 
         uint256 sigSize = _paymasterSignatureSize(self);
         uint256 sigEnd = self.paymasterAndData.length - 10;
-        return self.paymasterAndData.length < 62 + sigSize
-            ? Calldata.emptyBytes()
-            : self.paymasterAndData[sigEnd - sigSize:sigEnd];
+        return
+            self.paymasterAndData.length < 62 + sigSize
+                ? Calldata.emptyBytes()
+                : self.paymasterAndData[sigEnd - sigSize:sigEnd];
     }
 
     /**
@@ -265,6 +273,7 @@ library ERC4337Utils {
      * Does not check minimum length of `paymasterAndData`.
      */
     function _paymasterSignatureSize(PackedUserOperation calldata self) private pure returns (uint256) {
-        return uint16(bytes2(self.paymasterAndData[self.paymasterAndData.length - 10:self.paymasterAndData.length - 8]));
+        return
+            uint16(bytes2(self.paymasterAndData[self.paymasterAndData.length - 10:self.paymasterAndData.length - 8]));
     }
 }

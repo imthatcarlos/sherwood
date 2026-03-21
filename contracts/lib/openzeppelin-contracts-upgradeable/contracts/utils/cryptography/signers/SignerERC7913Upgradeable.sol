@@ -41,8 +41,7 @@ abstract contract SignerERC7913Upgradeable is Initializable, AbstractSigner {
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.SignerERC7913")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant SignerERC7913StorageLocation =
-        0x170786af7cf7b78916dca5a937f25e3b9b70ae3faee6f0db68cda91b7e818e00;
+    bytes32 private constant SignerERC7913StorageLocation = 0x170786af7cf7b78916dca5a937f25e3b9b70ae3faee6f0db68cda91b7e818e00;
 
     function _getSignerERC7913Storage() private pure returns (SignerERC7913Storage storage $) {
         assembly {
@@ -74,13 +73,10 @@ abstract contract SignerERC7913Upgradeable is Initializable, AbstractSigner {
      * @dev Verifies a signature using {SignatureChecker-isValidSignatureNow-bytes-bytes32-bytes-}
      * with {signer}, `hash` and `signature`.
      */
-    function _rawSignatureValidation(bytes32 hash, bytes calldata signature)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _rawSignatureValidation(
+        bytes32 hash,
+        bytes calldata signature
+    ) internal view virtual override returns (bool) {
         return SignatureChecker.isValidSignatureNow(signer(), hash, signature);
     }
 }

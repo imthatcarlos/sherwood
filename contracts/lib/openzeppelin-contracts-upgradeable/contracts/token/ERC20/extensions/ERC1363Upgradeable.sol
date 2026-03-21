@@ -41,18 +41,13 @@ abstract contract ERC1363Upgradeable is Initializable, ERC20Upgradeable, ERC165U
      */
     error ERC1363ApproveFailed(address spender, uint256 value);
 
-    function __ERC1363_init() internal onlyInitializing {}
+    function __ERC1363_init() internal onlyInitializing {
+    }
 
-    function __ERC1363_init_unchained() internal onlyInitializing {}
-
+    function __ERC1363_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override(ERC165Upgradeable, IERC165)
-        returns (bool)
-    {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165Upgradeable, IERC165) returns (bool) {
         return interfaceId == type(IERC1363).interfaceId || super.supportsInterface(interfaceId);
     }
 
@@ -104,11 +99,12 @@ abstract contract ERC1363Upgradeable is Initializable, ERC20Upgradeable, ERC165U
      * @dev Variant of {transferFromAndCall} that accepts an additional `data` parameter with
      * no specified format.
      */
-    function transferFromAndCall(address from, address to, uint256 value, bytes memory data)
-        public
-        virtual
-        returns (bool)
-    {
+    function transferFromAndCall(
+        address from,
+        address to,
+        uint256 value,
+        bytes memory data
+    ) public virtual returns (bool) {
         if (!transferFrom(from, to, value)) {
             revert ERC1363TransferFromFailed(from, to, value);
         }

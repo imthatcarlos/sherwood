@@ -11,10 +11,11 @@ contract DummyImplementationUpgradeable is Initializable {
     string public text;
     uint256[] public values;
 
-    function __DummyImplementation_init() internal onlyInitializing {}
+    function __DummyImplementation_init() internal onlyInitializing {
+    }
 
-    function __DummyImplementation_init_unchained() internal onlyInitializing {}
-
+    function __DummyImplementation_init_unchained() internal onlyInitializing {
+    }
     function initializeNonPayable() public {
         value = 10;
     }
@@ -56,10 +57,11 @@ contract DummyImplementationUpgradeable is Initializable {
 }
 
 contract DummyImplementationV2Upgradeable is Initializable, DummyImplementationUpgradeable {
-    function __DummyImplementationV2_init() internal onlyInitializing {}
+    function __DummyImplementationV2_init() internal onlyInitializing {
+    }
 
-    function __DummyImplementationV2_init_unchained() internal onlyInitializing {}
-
+    function __DummyImplementationV2_init_unchained() internal onlyInitializing {
+    }
     function migrate(uint256 newVal) public payable {
         value = newVal;
     }

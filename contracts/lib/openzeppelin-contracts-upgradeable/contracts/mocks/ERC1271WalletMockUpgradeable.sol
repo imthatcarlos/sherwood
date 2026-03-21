@@ -20,10 +20,11 @@ contract ERC1271WalletMockUpgradeable is Initializable, OwnableUpgradeable, IERC
 }
 
 contract ERC1271MaliciousMockUpgradeable is Initializable, IERC1271 {
-    function __ERC1271MaliciousMock_init() internal onlyInitializing {}
+    function __ERC1271MaliciousMock_init() internal onlyInitializing {
+    }
 
-    function __ERC1271MaliciousMock_init_unchained() internal onlyInitializing {}
-
+    function __ERC1271MaliciousMock_init_unchained() internal onlyInitializing {
+    }
     function isValidSignature(bytes32, bytes memory) public pure returns (bytes4) {
         assembly {
             mstore(0, 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)

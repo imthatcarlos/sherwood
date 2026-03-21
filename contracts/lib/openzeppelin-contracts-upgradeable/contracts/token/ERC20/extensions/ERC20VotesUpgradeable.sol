@@ -27,10 +27,11 @@ abstract contract ERC20VotesUpgradeable is Initializable, ERC20Upgradeable, Vote
      */
     error ERC20ExceededSafeSupply(uint256 increasedSupply, uint256 cap);
 
-    function __ERC20Votes_init() internal onlyInitializing {}
+    function __ERC20Votes_init() internal onlyInitializing {
+    }
 
-    function __ERC20Votes_init_unchained() internal onlyInitializing {}
-
+    function __ERC20Votes_init_unchained() internal onlyInitializing {
+    }
     /**
      * @dev Maximum token supply. Defaults to `type(uint208).max` (2^208^ - 1).
      *

@@ -59,14 +59,9 @@ abstract contract MultiSignerERC7913WeightedUpgradeable is Initializable, MultiS
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.MultiSignerERC7913Weighted")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant MultiSignerERC7913WeightedStorageLocation =
-        0x5ec62f110612a7ff5e720b9a2f4970583e308ad11d9cde77cb7db3ea251b1f00;
+    bytes32 private constant MultiSignerERC7913WeightedStorageLocation = 0x5ec62f110612a7ff5e720b9a2f4970583e308ad11d9cde77cb7db3ea251b1f00;
 
-    function _getMultiSignerERC7913WeightedStorage()
-        private
-        pure
-        returns (MultiSignerERC7913WeightedStorage storage $)
-    {
+    function _getMultiSignerERC7913WeightedStorage() private pure returns (MultiSignerERC7913WeightedStorage storage $) {
         assembly {
             $.slot := MultiSignerERC7913WeightedStorageLocation
         }
@@ -86,19 +81,12 @@ abstract contract MultiSignerERC7913WeightedUpgradeable is Initializable, MultiS
     /// @dev Thrown when the arrays lengths don't match. See {_setSignerWeights}.
     error MultiSignerERC7913WeightedMismatchedLength();
 
-    function __MultiSignerERC7913Weighted_init(bytes[] memory signers_, uint64[] memory weights_, uint64 threshold_)
-        internal
-        onlyInitializing
-    {
+    function __MultiSignerERC7913Weighted_init(bytes[] memory signers_, uint64[] memory weights_, uint64 threshold_) internal onlyInitializing {
         __MultiSignerERC7913_init_unchained(signers_, 1);
         __MultiSignerERC7913Weighted_init_unchained(signers_, weights_, threshold_);
     }
 
-    function __MultiSignerERC7913Weighted_init_unchained(
-        bytes[] memory signers_,
-        uint64[] memory weights_,
-        uint64 threshold_
-    ) internal onlyInitializing {
+    function __MultiSignerERC7913Weighted_init_unchained(bytes[] memory signers_, uint64[] memory weights_, uint64 threshold_) internal onlyInitializing {
         _setSignerWeights(signers_, weights_);
         _setThreshold(threshold_);
     }

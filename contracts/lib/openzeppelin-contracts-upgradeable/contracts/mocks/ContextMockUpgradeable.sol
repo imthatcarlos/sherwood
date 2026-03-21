@@ -8,10 +8,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 contract ContextMockUpgradeable is Initializable, ContextUpgradeable {
     event Sender(address sender);
 
-    function __ContextMock_init() internal onlyInitializing {}
+    function __ContextMock_init() internal onlyInitializing {
+    }
 
-    function __ContextMock_init_unchained() internal onlyInitializing {}
-
+    function __ContextMock_init_unchained() internal onlyInitializing {
+    }
     function msgSender() public {
         emit Sender(_msgSender());
     }
@@ -30,10 +31,11 @@ contract ContextMockUpgradeable is Initializable, ContextUpgradeable {
 }
 
 contract ContextMockCallerUpgradeable is Initializable {
-    function __ContextMockCaller_init() internal onlyInitializing {}
+    function __ContextMockCaller_init() internal onlyInitializing {
+    }
 
-    function __ContextMockCaller_init_unchained() internal onlyInitializing {}
-
+    function __ContextMockCaller_init_unchained() internal onlyInitializing {
+    }
     function callSender(ContextMockUpgradeable context) public {
         context.msgSender();
     }

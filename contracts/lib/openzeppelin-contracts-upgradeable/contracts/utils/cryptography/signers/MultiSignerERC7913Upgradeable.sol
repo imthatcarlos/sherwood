@@ -54,8 +54,7 @@ abstract contract MultiSignerERC7913Upgradeable is Initializable, AbstractSigner
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.MultiSignerERC7913")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant MultiSignerERC7913StorageLocation =
-        0xdfe169305a533e288e0557da8d289146d3cc75fa6e04c87599b048a60a4e5600;
+    bytes32 private constant MultiSignerERC7913StorageLocation = 0xdfe169305a533e288e0557da8d289146d3cc75fa6e04c87599b048a60a4e5600;
 
     function _getMultiSignerERC7913Storage() private pure returns (MultiSignerERC7913Storage storage $) {
         assembly {
@@ -242,13 +241,10 @@ abstract contract MultiSignerERC7913Upgradeable is Initializable, AbstractSigner
      *
      * * The `signature` must be encoded as `abi.encode(signers, signatures)`.
      */
-    function _rawSignatureValidation(bytes32 hash, bytes calldata signature)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _rawSignatureValidation(
+        bytes32 hash,
+        bytes calldata signature
+    ) internal view virtual override returns (bool) {
         if (signature.length == 0) return false; // For ERC-7739 compatibility
         (bytes[] memory signers, bytes[] memory signatures) = abi.decode(signature, (bytes[], bytes[]));
         return _validateThreshold(signers) && _validateSignatures(hash, signers, signatures);
@@ -265,12 +261,11 @@ abstract contract MultiSignerERC7913Upgradeable is Initializable, AbstractSigner
      *
      * * The `signatures` and `signers` arrays must be equal in length. Returns false otherwise.
      */
-    function _validateSignatures(bytes32 hash, bytes[] memory signers, bytes[] memory signatures)
-        internal
-        view
-        virtual
-        returns (bool valid)
-    {
+    function _validateSignatures(
+        bytes32 hash,
+        bytes[] memory signers,
+        bytes[] memory signatures
+    ) internal view virtual returns (bool valid) {
         for (uint256 i = 0; i < signers.length; ++i) {
             if (!isSigner(signers[i])) {
                 return false;

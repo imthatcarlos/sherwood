@@ -10,10 +10,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 contract StorageSlotMockUpgradeable is Initializable, MulticallUpgradeable {
     using StorageSlot for *;
 
-    function __StorageSlotMock_init() internal onlyInitializing {}
+    function __StorageSlotMock_init() internal onlyInitializing {
+    }
 
-    function __StorageSlotMock_init_unchained() internal onlyInitializing {}
-
+    function __StorageSlotMock_init_unchained() internal onlyInitializing {
+    }
     function setAddressSlot(bytes32 slot, address value) public {
         slot.getAddressSlot().value = value;
     }

@@ -7,11 +7,7 @@ import {ERC721ConsecutiveUpgradeable} from "../../token/ERC721/extensions/ERC721
 import {ERC721EnumerableUpgradeable} from "../../token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-contract ERC721ConsecutiveEnumerableMockUpgradeable is
-    Initializable,
-    ERC721ConsecutiveUpgradeable,
-    ERC721EnumerableUpgradeable
-{
+contract ERC721ConsecutiveEnumerableMockUpgradeable is Initializable, ERC721ConsecutiveUpgradeable, ERC721EnumerableUpgradeable {
     function __ERC721ConsecutiveEnumerableMock_init(
         string memory name,
         string memory symbol,
@@ -33,40 +29,25 @@ contract ERC721ConsecutiveEnumerableMockUpgradeable is
         }
     }
 
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override(ERC721Upgradeable, ERC721EnumerableUpgradeable)
-        returns (bool)
-    {
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view virtual override(ERC721Upgradeable, ERC721EnumerableUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    function _ownerOf(uint256 tokenId)
-        internal
-        view
-        virtual
-        override(ERC721Upgradeable, ERC721ConsecutiveUpgradeable)
-        returns (address)
-    {
+    function _ownerOf(uint256 tokenId) internal view virtual override(ERC721Upgradeable, ERC721ConsecutiveUpgradeable) returns (address) {
         return super._ownerOf(tokenId);
     }
 
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        virtual
-        override(ERC721ConsecutiveUpgradeable, ERC721EnumerableUpgradeable)
-        returns (address)
-    {
+    function _update(
+        address to,
+        uint256 tokenId,
+        address auth
+    ) internal virtual override(ERC721ConsecutiveUpgradeable, ERC721EnumerableUpgradeable) returns (address) {
         return super._update(to, tokenId, auth);
     }
 
-    function _increaseBalance(address account, uint128 amount)
-        internal
-        virtual
-        override(ERC721Upgradeable, ERC721EnumerableUpgradeable)
-    {
+    function _increaseBalance(address account, uint128 amount) internal virtual override(ERC721Upgradeable, ERC721EnumerableUpgradeable) {
         super._increaseBalance(account, amount);
     }
 }

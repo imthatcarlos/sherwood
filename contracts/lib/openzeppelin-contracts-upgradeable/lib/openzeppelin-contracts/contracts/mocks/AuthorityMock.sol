@@ -6,17 +6,7 @@ import {IAccessManaged} from "../access/manager/IAccessManaged.sol";
 import {IAuthority} from "../access/manager/IAuthority.sol";
 
 contract NotAuthorityMock is IAuthority {
-    function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
-        bytes4 /* selector */
-    )
-        external
-        pure
-        returns (bool)
-    {
+    function canCall(address /* caller */, address /* target */, bytes4 /* selector */) external pure returns (bool) {
         revert("NotAuthorityMock: not implemented");
     }
 }
@@ -25,16 +15,10 @@ contract AuthorityNoDelayMock is IAuthority {
     bool private _immediate;
 
     function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
+        address /* caller */,
+        address /* target */,
         bytes4 /* selector */
-    )
-        external
-        view
-        returns (bool immediate)
-    {
+    ) external view returns (bool immediate) {
         return _immediate;
     }
 
@@ -48,16 +32,10 @@ contract AuthorityDelayMock {
     uint256 private _delay;
 
     function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
+        address /* caller */,
+        address /* target */,
         bytes4 /* selector */
-    )
-        external
-        view
-        returns (bool immediate, uint256 delay)
-    {
+    ) external view returns (bool immediate, uint256 delay) {
         return (_immediate, _delay);
     }
 
@@ -71,31 +49,17 @@ contract AuthorityDelayMock {
 }
 
 contract AuthorityNoResponse {
-    function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
-        bytes4 /* selector */
-    )
-        external
-        view {}
+    function canCall(address /* caller */, address /* target */, bytes4 /* selector */) external view {}
 }
 
 contract AuthorityObserveIsConsuming {
     event ConsumeScheduledOpCalled(address caller, bytes data, bytes4 isConsuming);
 
     function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
+        address /* caller */,
+        address /* target */,
         bytes4 /* selector */
-    )
-        external
-        pure
-        returns (bool immediate, uint32 delay)
-    {
+    ) external pure returns (bool immediate, uint32 delay) {
         return (false, 1);
     }
 

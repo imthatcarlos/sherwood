@@ -10,13 +10,11 @@ import {SignerEIP7702} from "../../../utils/cryptography/signers/SignerEIP7702.s
 
 contract MyAccountEIP7702 is Account, SignerEIP7702, ERC7821, ERC721Holder, ERC1155Holder {
     /// @dev Allows the entry point as an authorized executor.
-    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _erc7821AuthorizedExecutor(
+        address caller,
+        bytes32 mode,
+        bytes calldata executionData
+    ) internal view virtual override returns (bool) {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }

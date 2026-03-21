@@ -15,16 +15,18 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  */
 // slither-disable-next-line locked-ether
 abstract contract ERC1155CrosschainUpgradeable is Initializable, ERC1155Upgradeable, BridgeMultiTokenUpgradeable {
-    function __ERC1155Crosschain_init() internal onlyInitializing {}
+    function __ERC1155Crosschain_init() internal onlyInitializing {
+    }
 
-    function __ERC1155Crosschain_init_unchained() internal onlyInitializing {}
-
+    function __ERC1155Crosschain_init_unchained() internal onlyInitializing {
+    }
     /// @dev TransferFrom variant of {crosschainTransferFrom}, using ERC1155 allowance from the sender to the caller.
-    function crosschainTransferFrom(address from, bytes memory to, uint256 id, uint256 value)
-        public
-        virtual
-        returns (bytes32)
-    {
+    function crosschainTransferFrom(
+        address from,
+        bytes memory to,
+        uint256 id,
+        uint256 value
+    ) public virtual returns (bytes32) {
         _checkAuthorized(_msgSender(), from);
 
         uint256[] memory ids = new uint256[](1);
@@ -35,11 +37,12 @@ abstract contract ERC1155CrosschainUpgradeable is Initializable, ERC1155Upgradea
     }
 
     /// @dev TransferFrom variant of {crosschainTransferFrom}, using ERC1155 allowance from the sender to the caller.
-    function crosschainTransferFrom(address from, bytes memory to, uint256[] memory ids, uint256[] memory values)
-        public
-        virtual
-        returns (bytes32)
-    {
+    function crosschainTransferFrom(
+        address from,
+        bytes memory to,
+        uint256[] memory ids,
+        uint256[] memory values
+    ) public virtual returns (bytes32) {
         _checkAuthorized(_msgSender(), from);
         return _crosschainTransfer(from, to, ids, values);
     }

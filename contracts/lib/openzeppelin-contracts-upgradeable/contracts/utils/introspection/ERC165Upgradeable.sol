@@ -19,10 +19,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * ```
  */
 abstract contract ERC165Upgradeable is Initializable, IERC165 {
-    function __ERC165_init() internal onlyInitializing {}
+    function __ERC165_init() internal onlyInitializing {
+    }
 
-    function __ERC165_init_unchained() internal onlyInitializing {}
-
+    function __ERC165_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) public view virtual returns (bool) {
         return interfaceId == type(IERC165).interfaceId;

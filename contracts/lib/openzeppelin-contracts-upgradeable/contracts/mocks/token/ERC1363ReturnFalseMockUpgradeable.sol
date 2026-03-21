@@ -8,10 +8,11 @@ import {ERC1363Upgradeable} from "../../token/ERC20/extensions/ERC1363Upgradeabl
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 abstract contract ERC1363ReturnFalseOnERC20MockUpgradeable is Initializable, ERC1363Upgradeable {
-    function __ERC1363ReturnFalseOnERC20Mock_init() internal onlyInitializing {}
+    function __ERC1363ReturnFalseOnERC20Mock_init() internal onlyInitializing {
+    }
 
-    function __ERC1363ReturnFalseOnERC20Mock_init_unchained() internal onlyInitializing {}
-
+    function __ERC1363ReturnFalseOnERC20Mock_init_unchained() internal onlyInitializing {
+    }
     function transfer(address, uint256) public pure override(IERC20, ERC20Upgradeable) returns (bool) {
         return false;
     }
@@ -26,10 +27,11 @@ abstract contract ERC1363ReturnFalseOnERC20MockUpgradeable is Initializable, ERC
 }
 
 abstract contract ERC1363ReturnFalseMockUpgradeable is Initializable, ERC1363Upgradeable {
-    function __ERC1363ReturnFalseMock_init() internal onlyInitializing {}
+    function __ERC1363ReturnFalseMock_init() internal onlyInitializing {
+    }
 
-    function __ERC1363ReturnFalseMock_init_unchained() internal onlyInitializing {}
-
+    function __ERC1363ReturnFalseMock_init_unchained() internal onlyInitializing {
+    }
     function transferAndCall(address, uint256, bytes memory) public pure override returns (bool) {
         return false;
     }

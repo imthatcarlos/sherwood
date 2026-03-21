@@ -6,15 +6,17 @@ import {AccessControlDefaultAdminRules} from "../patched/access/extensions/Acces
 contract AccessControlDefaultAdminRulesHarness is AccessControlDefaultAdminRules {
     uint48 private _delayIncreaseWait;
 
-    constructor(uint48 initialDelay, address initialDefaultAdmin, uint48 delayIncreaseWait)
-        AccessControlDefaultAdminRules(initialDelay, initialDefaultAdmin)
-    {
+    constructor(
+        uint48 initialDelay,
+        address initialDefaultAdmin,
+        uint48 delayIncreaseWait
+    ) AccessControlDefaultAdminRules(initialDelay, initialDefaultAdmin) {
         _delayIncreaseWait = delayIncreaseWait;
     }
 
     // FV
     function pendingDefaultAdmin_() external view returns (address) {
-        (address newAdmin,) = pendingDefaultAdmin();
+        (address newAdmin, ) = pendingDefaultAdmin();
         return newAdmin;
     }
 
@@ -24,7 +26,7 @@ contract AccessControlDefaultAdminRulesHarness is AccessControlDefaultAdminRules
     }
 
     function pendingDelay_() external view returns (uint48) {
-        (uint48 newDelay,) = pendingDefaultAdminDelay();
+        (uint48 newDelay, ) = pendingDefaultAdminDelay();
         return newDelay;
     }
 

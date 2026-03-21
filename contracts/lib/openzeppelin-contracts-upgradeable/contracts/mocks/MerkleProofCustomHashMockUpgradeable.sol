@@ -7,10 +7,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 
 // This could be a library, but then we would have to add it to the Stateless.sol mock for upgradeable tests
 abstract contract MerkleProofCustomHashMockUpgradeable is Initializable {
-    function __MerkleProofCustomHashMock_init() internal onlyInitializing {}
+    function __MerkleProofCustomHashMock_init() internal onlyInitializing {
+    }
 
-    function __MerkleProofCustomHashMock_init_unchained() internal onlyInitializing {}
-
+    function __MerkleProofCustomHashMock_init_unchained() internal onlyInitializing {
+    }
     function customHash(bytes32 a, bytes32 b) internal pure returns (bytes32) {
         return a < b ? sha256(abi.encode(a, b)) : sha256(abi.encode(b, a));
     }
@@ -40,11 +41,11 @@ abstract contract MerkleProofCustomHashMockUpgradeable is Initializable {
         return MerkleProof.multiProofVerify(proof, proofFlags, root, leaves, customHash);
     }
 
-    function processMultiProof(bytes32[] calldata proof, bool[] calldata proofFlags, bytes32[] calldata leaves)
-        internal
-        view
-        returns (bytes32)
-    {
+    function processMultiProof(
+        bytes32[] calldata proof,
+        bool[] calldata proofFlags,
+        bytes32[] calldata leaves
+    ) internal view returns (bytes32) {
         return MerkleProof.processMultiProof(proof, proofFlags, leaves, customHash);
     }
 
@@ -57,11 +58,11 @@ abstract contract MerkleProofCustomHashMockUpgradeable is Initializable {
         return MerkleProof.multiProofVerifyCalldata(proof, proofFlags, root, leaves, customHash);
     }
 
-    function processMultiProofCalldata(bytes32[] calldata proof, bool[] calldata proofFlags, bytes32[] calldata leaves)
-        internal
-        view
-        returns (bytes32)
-    {
+    function processMultiProofCalldata(
+        bytes32[] calldata proof,
+        bool[] calldata proofFlags,
+        bytes32[] calldata leaves
+    ) internal view returns (bytes32) {
         return MerkleProof.processMultiProofCalldata(proof, proofFlags, leaves, customHash);
     }
 }

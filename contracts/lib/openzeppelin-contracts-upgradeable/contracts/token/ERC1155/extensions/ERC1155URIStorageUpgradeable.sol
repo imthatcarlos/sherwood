@@ -21,8 +21,7 @@ abstract contract ERC1155URIStorageUpgradeable is Initializable, ERC1155Upgradea
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC1155URIStorage")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC1155URIStorageStorageLocation =
-        0x89fc852226e759c7c636cf34d732f0198fc56a54876b2374a52beb7b0c558600;
+    bytes32 private constant ERC1155URIStorageStorageLocation = 0x89fc852226e759c7c636cf34d732f0198fc56a54876b2374a52beb7b0c558600;
 
     function _getERC1155URIStorageStorage() private pure returns (ERC1155URIStorageStorage storage $) {
         assembly {
@@ -38,7 +37,6 @@ abstract contract ERC1155URIStorageUpgradeable is Initializable, ERC1155Upgradea
         ERC1155URIStorageStorage storage $ = _getERC1155URIStorageStorage();
         $._baseURI = "";
     }
-
     /**
      * @dev See {IERC1155MetadataURI-uri}.
      *

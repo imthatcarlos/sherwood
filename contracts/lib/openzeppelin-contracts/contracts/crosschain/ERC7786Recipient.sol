@@ -31,11 +31,7 @@ abstract contract ERC7786Recipient is IERC7786Recipient {
         bytes32 receiveId,
         bytes calldata sender, // Binary Interoperable Address
         bytes calldata payload
-    )
-        external
-        payable
-        returns (bytes4)
-    {
+    ) external payable returns (bytes4) {
         // Check authorization
         if (!_isAuthorizedGateway(msg.sender, sender)) {
             revert ERC7786RecipientUnauthorizedGateway(msg.sender, sender);
@@ -61,7 +57,10 @@ abstract contract ERC7786Recipient is IERC7786Recipient {
      * NOTE: This function should revert on failure. Any silent failure from this function will result in the message
      * being marked as received and not being retryable.
      */
-    function _processMessage(address gateway, bytes32 receiveId, bytes calldata sender, bytes calldata payload)
-        internal
-        virtual;
+    function _processMessage(
+        address gateway,
+        bytes32 receiveId,
+        bytes calldata sender,
+        bytes calldata payload
+    ) internal virtual;
 }

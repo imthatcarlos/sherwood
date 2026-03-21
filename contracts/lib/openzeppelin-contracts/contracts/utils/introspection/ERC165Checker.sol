@@ -49,11 +49,10 @@ library ERC165Checker {
      *
      * See {IERC165-supportsInterface}.
      */
-    function getSupportedInterfaces(address account, bytes4[] memory interfaceIds)
-        internal
-        view
-        returns (bool[] memory)
-    {
+    function getSupportedInterfaces(
+        address account,
+        bytes4[] memory interfaceIds
+    ) internal view returns (bool[] memory) {
         // an array of booleans corresponding to interfaceIds and whether they're supported or not
         bool[] memory interfaceIdsSupported = new bool[](interfaceIds.length);
 
@@ -124,11 +123,10 @@ library ERC165Checker {
      * * `success`: true if the call didn't revert, false if it did
      * * `supported`: true if the returned data indicating the interface is supported
      */
-    function _trySupportsInterface(address account, bytes4 interfaceId)
-        private
-        view
-        returns (bool success, bool supported)
-    {
+    function _trySupportsInterface(
+        address account,
+        bytes4 interfaceId
+    ) private view returns (bool success, bool supported) {
         bytes4 selector = IERC165.supportsInterface.selector;
 
         assembly ("memory-safe") {

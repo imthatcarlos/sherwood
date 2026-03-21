@@ -22,14 +22,9 @@ abstract contract GovernorVotesQuorumFractionUpgradeable is Initializable, Gover
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorVotesQuorumFraction")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GovernorVotesQuorumFractionStorageLocation =
-        0xe770710421fd2cad75ad828c61aa98f2d77d423a440b67872d0f65554148e000;
+    bytes32 private constant GovernorVotesQuorumFractionStorageLocation = 0xe770710421fd2cad75ad828c61aa98f2d77d423a440b67872d0f65554148e000;
 
-    function _getGovernorVotesQuorumFractionStorage()
-        private
-        pure
-        returns (GovernorVotesQuorumFractionStorage storage $)
-    {
+    function _getGovernorVotesQuorumFractionStorage() private pure returns (GovernorVotesQuorumFractionStorage storage $) {
         assembly {
             $.slot := GovernorVotesQuorumFractionStorageLocation
         }
@@ -126,11 +121,10 @@ abstract contract GovernorVotesQuorumFractionUpgradeable is Initializable, Gover
     /**
      * @dev Returns the numerator at a specific timepoint.
      */
-    function _optimisticUpperLookupRecent(Checkpoints.Trace208 storage ckpts, uint256 timepoint)
-        internal
-        view
-        returns (uint256)
-    {
+    function _optimisticUpperLookupRecent(
+        Checkpoints.Trace208 storage ckpts,
+        uint256 timepoint
+    ) internal view returns (uint256) {
         // If trace is empty, key and value are both equal to 0.
         // In that case `key <= timepoint` is true, and it is ok to return 0.
         (, uint48 key, uint208 value) = ckpts.latestCheckpoint();

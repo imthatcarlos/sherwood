@@ -2,14 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import {
-    MODULE_TYPE_HOOK,
-    MODULE_TYPE_FALLBACK,
-    MODULE_TYPE_VALIDATOR,
-    IERC7579Hook,
-    IERC7579Module,
-    IERC7579Validator
-} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
+import {MODULE_TYPE_HOOK, MODULE_TYPE_FALLBACK, MODULE_TYPE_VALIDATOR, IERC7579Hook, IERC7579Module, IERC7579Validator} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
@@ -44,17 +37,12 @@ abstract contract ERC7579ModuleMockUpgradeable is Initializable, IERC7579Module 
 }
 
 abstract contract ERC7579ModuleMaliciousMockUpgradeable is Initializable, ERC7579ModuleMockUpgradeable {
-    function __ERC7579ModuleMaliciousMock_init() internal onlyInitializing {}
+    function __ERC7579ModuleMaliciousMock_init() internal onlyInitializing {
+    }
 
-    function __ERC7579ModuleMaliciousMock_init_unchained() internal onlyInitializing {}
-
-    function onUninstall(
-        bytes calldata /*data*/
-    )
-        public
-        virtual
-        override
-    {
+    function __ERC7579ModuleMaliciousMock_init_unchained() internal onlyInitializing {
+    }
+    function onUninstall(bytes calldata /*data*/) public virtual override {
         revert("uninstall reverts");
     }
 }
@@ -75,7 +63,6 @@ abstract contract ERC7579HookMockUpgradeable is Initializable, ERC7579ModuleMock
         _shouldRevertOnPreCheck = false;
         _shouldRevertOnPostCheck = false;
     }
-
     function revertOnPreCheck(bool shouldRevert) external {
         _shouldRevertOnPreCheck = shouldRevert;
     }
@@ -84,10 +71,11 @@ abstract contract ERC7579HookMockUpgradeable is Initializable, ERC7579ModuleMock
         _shouldRevertOnPostCheck = shouldRevert;
     }
 
-    function preCheck(address msgSender, uint256 value, bytes calldata msgData)
-        external
-        returns (bytes memory hookData)
-    {
+    function preCheck(
+        address msgSender,
+        uint256 value,
+        bytes calldata msgData
+    ) external returns (bytes memory hookData) {
         require(!_shouldRevertOnPreCheck, "preCheck reverts");
         emit PreCheck(msgSender, value, msgData);
         return msgData;
@@ -108,8 +96,8 @@ abstract contract ERC7579FallbackHandlerMockUpgradeable is Initializable, ERC757
         __ERC7579ModuleMock_init_unchained(MODULE_TYPE_FALLBACK);
     }
 
-    function __ERC7579FallbackHandlerMock_init_unchained() internal onlyInitializing {}
-
+    function __ERC7579FallbackHandlerMock_init_unchained() internal onlyInitializing {
+    }
     function _msgAccount() internal view returns (address) {
         return msg.sender;
     }
@@ -142,8 +130,8 @@ abstract contract ERC7579ValidatorMockUpgradeable is Initializable, ERC7579Modul
         __ERC7579ModuleMock_init_unchained(MODULE_TYPE_VALIDATOR);
     }
 
-    function __ERC7579ValidatorMock_init_unchained() internal onlyInitializing {}
-
+    function __ERC7579ValidatorMock_init_unchained() internal onlyInitializing {
+    }
     function onInstall(bytes calldata data) public virtual override(IERC7579Module, ERC7579ModuleMockUpgradeable) {
         _associatedSigners[msg.sender] = address(bytes20(data[0:20]));
         super.onInstall(data);
@@ -154,30 +142,24 @@ abstract contract ERC7579ValidatorMockUpgradeable is Initializable, ERC7579Modul
         super.onUninstall(data);
     }
 
-    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash)
-        public
-        view
-        virtual
-        returns (uint256)
-    {
-        return SignatureChecker.isValidSignatureNow(_associatedSigners[msg.sender], userOpHash, userOp.signature)
-            ? ERC4337Utils.SIG_VALIDATION_SUCCESS
-            : ERC4337Utils.SIG_VALIDATION_FAILED;
+    function validateUserOp(
+        PackedUserOperation calldata userOp,
+        bytes32 userOpHash
+    ) public view virtual returns (uint256) {
+        return
+            SignatureChecker.isValidSignatureNow(_associatedSigners[msg.sender], userOpHash, userOp.signature)
+                ? ERC4337Utils.SIG_VALIDATION_SUCCESS
+                : ERC4337Utils.SIG_VALIDATION_FAILED;
     }
 
     function isValidSignatureWithSender(
-        address,
-        /*sender*/
+        address /*sender*/,
         bytes32 hash,
         bytes calldata signature
-    )
-        public
-        view
-        virtual
-        returns (bytes4)
-    {
-        return SignatureChecker.isValidSignatureNow(_associatedSigners[msg.sender], hash, signature)
-            ? IERC1271.isValidSignature.selector
-            : bytes4(0xffffffff);
+    ) public view virtual returns (bytes4) {
+        return
+            SignatureChecker.isValidSignatureNow(_associatedSigners[msg.sender], hash, signature)
+                ? IERC1271.isValidSignature.selector
+                : bytes4(0xffffffff);
     }
 }

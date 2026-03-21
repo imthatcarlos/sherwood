@@ -21,10 +21,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * make the contract pause mechanism of the contract unreachable, and thus unusable.
  */
 abstract contract ERC721PausableUpgradeable is Initializable, ERC721Upgradeable, PausableUpgradeable {
-    function __ERC721Pausable_init() internal onlyInitializing {}
+    function __ERC721Pausable_init() internal onlyInitializing {
+    }
 
-    function __ERC721Pausable_init_unchained() internal onlyInitializing {}
-
+    function __ERC721Pausable_init_unchained() internal onlyInitializing {
+    }
     /**
      * @dev See {ERC721-_update}.
      *
@@ -32,13 +33,11 @@ abstract contract ERC721PausableUpgradeable is Initializable, ERC721Upgradeable,
      *
      * - the contract must not be paused.
      */
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        virtual
-        override
-        whenNotPaused
-        returns (address)
-    {
+    function _update(
+        address to,
+        uint256 tokenId,
+        address auth
+    ) internal virtual override whenNotPaused returns (address) {
         return super._update(to, tokenId, auth);
     }
 }

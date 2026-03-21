@@ -28,15 +28,13 @@ abstract contract CrosschainLinkedUpgradeable is Initializable, ERC7786Recipient
         address gateway;
         bytes counterpart; // Full InteroperableAddress (chain ref + address)
     }
-
     /// @custom:storage-location erc7201:openzeppelin.storage.CrosschainLinked
     struct CrosschainLinkedStorage {
         mapping(bytes chain => Link) _links;
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.CrosschainLinked")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant CrosschainLinkedStorageLocation =
-        0xb1919b8acb826911820798909343454eff798c0ea16342cfea7647f1c8b2df00;
+    bytes32 private constant CrosschainLinkedStorageLocation = 0xb1919b8acb826911820798909343454eff798c0ea16342cfea7647f1c8b2df00;
 
     function _getCrosschainLinkedStorage() private pure returns (CrosschainLinkedStorage storage $) {
         assembly {
@@ -105,29 +103,26 @@ abstract contract CrosschainLinkedUpgradeable is Initializable, ERC7786Recipient
      *
      * Note: The `chain` parameter is a "chain-only" InteroperableAddress (empty address).
      */
-    function _sendMessageToCounterpart(bytes memory chain, bytes memory payload, bytes[] memory attributes)
-        internal
-        virtual
-        returns (bytes32)
-    {
+    function _sendMessageToCounterpart(
+        bytes memory chain,
+        bytes memory payload,
+        bytes[] memory attributes
+    ) internal virtual returns (bytes32) {
         (address gateway, bytes memory counterpart) = getLink(chain);
         return IERC7786GatewaySource(gateway).sendMessage(counterpart, payload, attributes);
     }
 
     /// @inheritdoc ERC7786Recipient
-    function _isAuthorizedGateway(address instance, bytes calldata sender)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _isAuthorizedGateway(
+        address instance,
+        bytes calldata sender
+    ) internal view virtual override returns (bool) {
         (address gateway, bytes memory router) = getLink(_extractChain(sender));
         return instance == gateway && sender.equal(router);
     }
 
     function _extractChain(bytes memory self) private pure returns (bytes memory) {
-        (bytes2 chainType, bytes memory chainReference,) = self.parseV1();
+        (bytes2 chainType, bytes memory chainReference, ) = self.parseV1();
         return InteroperableAddress.formatV1(chainType, chainReference, hex"");
     }
 }

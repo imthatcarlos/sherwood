@@ -338,8 +338,7 @@ library Math {
             while (remainder != 0) {
                 uint256 quotient = gcd / remainder;
 
-                (gcd, remainder) =
-                (
+                (gcd, remainder) = (
                     // The old remainder is the next gcd to try.
                     remainder,
                     // Compute the next remainder.
@@ -348,8 +347,7 @@ library Math {
                     gcd - remainder * quotient
                 );
 
-                (x, y) =
-                (
+                (x, y) = (
                     // Increment the coefficient of a.
                     y,
                     // Decrement the coefficient of n.
@@ -450,11 +448,11 @@ library Math {
     /**
      * @dev Variant of {tryModExp} that supports inputs of arbitrary length.
      */
-    function tryModExp(bytes memory b, bytes memory e, bytes memory m)
-        internal
-        view
-        returns (bool success, bytes memory result)
-    {
+    function tryModExp(
+        bytes memory b,
+        bytes memory e,
+        bytes memory m
+    ) internal view returns (bool success, bytes memory result) {
         if (_zeroBytes(m)) return (false, new bytes(0));
 
         uint256 mLen = m.length;

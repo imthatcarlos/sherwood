@@ -42,10 +42,7 @@ interface IERC7786GatewaySource {
         bytes calldata recipient, // Binary Interoperable Address
         bytes calldata payload,
         bytes[] calldata attributes
-    )
-        external
-        payable
-        returns (bytes32 sendId);
+    ) external payable returns (bytes32 sendId);
 }
 
 /**
@@ -63,8 +60,5 @@ interface IERC7786Recipient {
         bytes32 receiveId,
         bytes calldata sender, // Binary Interoperable Address
         bytes calldata payload
-    )
-        external
-        payable
-        returns (bytes4);
+    ) external payable returns (bytes4);
 }

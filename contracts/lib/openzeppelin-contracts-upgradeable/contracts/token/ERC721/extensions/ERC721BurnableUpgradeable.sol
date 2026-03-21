@@ -12,10 +12,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * @dev ERC-721 Token that can be burned (destroyed).
  */
 abstract contract ERC721BurnableUpgradeable is Initializable, ContextUpgradeable, ERC721Upgradeable {
-    function __ERC721Burnable_init() internal onlyInitializing {}
+    function __ERC721Burnable_init() internal onlyInitializing {
+    }
 
-    function __ERC721Burnable_init_unchained() internal onlyInitializing {}
-
+    function __ERC721Burnable_init_unchained() internal onlyInitializing {
+    }
     /**
      * @dev Burns `tokenId`. See {ERC721-_burn}.
      *

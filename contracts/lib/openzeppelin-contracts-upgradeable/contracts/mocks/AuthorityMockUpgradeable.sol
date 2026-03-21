@@ -7,21 +7,12 @@ import {IAuthority} from "@openzeppelin/contracts/access/manager/IAuthority.sol"
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract NotAuthorityMockUpgradeable is Initializable, IAuthority {
-    function __NotAuthorityMock_init() internal onlyInitializing {}
+    function __NotAuthorityMock_init() internal onlyInitializing {
+    }
 
-    function __NotAuthorityMock_init_unchained() internal onlyInitializing {}
-
-    function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
-        bytes4 /* selector */
-    )
-        external
-        pure
-        returns (bool)
-    {
+    function __NotAuthorityMock_init_unchained() internal onlyInitializing {
+    }
+    function canCall(address /* caller */, address /* target */, bytes4 /* selector */) external pure returns (bool) {
         revert("NotAuthorityMock: not implemented");
     }
 }
@@ -29,21 +20,16 @@ contract NotAuthorityMockUpgradeable is Initializable, IAuthority {
 contract AuthorityNoDelayMockUpgradeable is Initializable, IAuthority {
     bool private _immediate;
 
-    function __AuthorityNoDelayMock_init() internal onlyInitializing {}
+    function __AuthorityNoDelayMock_init() internal onlyInitializing {
+    }
 
-    function __AuthorityNoDelayMock_init_unchained() internal onlyInitializing {}
-
+    function __AuthorityNoDelayMock_init_unchained() internal onlyInitializing {
+    }
     function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
+        address /* caller */,
+        address /* target */,
         bytes4 /* selector */
-    )
-        external
-        view
-        returns (bool immediate)
-    {
+    ) external view returns (bool immediate) {
         return _immediate;
     }
 
@@ -56,21 +42,16 @@ contract AuthorityDelayMockUpgradeable is Initializable {
     bool private _immediate;
     uint256 private _delay;
 
-    function __AuthorityDelayMock_init() internal onlyInitializing {}
+    function __AuthorityDelayMock_init() internal onlyInitializing {
+    }
 
-    function __AuthorityDelayMock_init_unchained() internal onlyInitializing {}
-
+    function __AuthorityDelayMock_init_unchained() internal onlyInitializing {
+    }
     function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
+        address /* caller */,
+        address /* target */,
         bytes4 /* selector */
-    )
-        external
-        view
-        returns (bool immediate, uint256 delay)
-    {
+    ) external view returns (bool immediate, uint256 delay) {
         return (_immediate, _delay);
     }
 
@@ -84,38 +65,27 @@ contract AuthorityDelayMockUpgradeable is Initializable {
 }
 
 contract AuthorityNoResponseUpgradeable is Initializable {
-    function __AuthorityNoResponse_init() internal onlyInitializing {}
+    function __AuthorityNoResponse_init() internal onlyInitializing {
+    }
 
-    function __AuthorityNoResponse_init_unchained() internal onlyInitializing {}
-    function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
-        bytes4 /* selector */
-    )
-        external
-        view {}
+    function __AuthorityNoResponse_init_unchained() internal onlyInitializing {
+    }
+    function canCall(address /* caller */, address /* target */, bytes4 /* selector */) external view {}
 }
 
 contract AuthorityObserveIsConsumingUpgradeable is Initializable {
     event ConsumeScheduledOpCalled(address caller, bytes data, bytes4 isConsuming);
 
-    function __AuthorityObserveIsConsuming_init() internal onlyInitializing {}
+    function __AuthorityObserveIsConsuming_init() internal onlyInitializing {
+    }
 
-    function __AuthorityObserveIsConsuming_init_unchained() internal onlyInitializing {}
-
+    function __AuthorityObserveIsConsuming_init_unchained() internal onlyInitializing {
+    }
     function canCall(
-        address,
-        /* caller */
-        address,
-        /* target */
+        address /* caller */,
+        address /* target */,
         bytes4 /* selector */
-    )
-        external
-        pure
-        returns (bool immediate, uint32 delay)
-    {
+    ) external pure returns (bool immediate, uint32 delay) {
         return (false, 1);
     }
 

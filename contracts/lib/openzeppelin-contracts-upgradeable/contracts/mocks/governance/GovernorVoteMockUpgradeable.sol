@@ -6,15 +6,12 @@ import {GovernorCountingSimpleUpgradeable} from "../../governance/extensions/Gov
 import {GovernorVotesUpgradeable} from "../../governance/extensions/GovernorVotesUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-abstract contract GovernorVoteMocksUpgradeable is
-    Initializable,
-    GovernorVotesUpgradeable,
-    GovernorCountingSimpleUpgradeable
-{
-    function __GovernorVoteMocks_init() internal onlyInitializing {}
+abstract contract GovernorVoteMocksUpgradeable is Initializable, GovernorVotesUpgradeable, GovernorCountingSimpleUpgradeable {
+    function __GovernorVoteMocks_init() internal onlyInitializing {
+    }
 
-    function __GovernorVoteMocks_init_unchained() internal onlyInitializing {}
-
+    function __GovernorVoteMocks_init_unchained() internal onlyInitializing {
+    }
     function quorum(uint256) public pure override returns (uint256) {
         return 0;
     }

@@ -10,10 +10,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 contract ClashingImplementationUpgradeable is Initializable {
     event ClashingImplementationCall();
 
-    function __ClashingImplementation_init() internal onlyInitializing {}
+    function __ClashingImplementation_init() internal onlyInitializing {
+    }
 
-    function __ClashingImplementation_init_unchained() internal onlyInitializing {}
-
+    function __ClashingImplementation_init_unchained() internal onlyInitializing {
+    }
     function upgradeToAndCall(address, bytes calldata) external payable {
         emit ClashingImplementationCall();
     }

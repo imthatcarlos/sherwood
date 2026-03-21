@@ -34,13 +34,10 @@ abstract contract SignerWebAuthn is SignerP256 {
      *
      * Returns `false` if the signature is not a valid WebAuthn authentication assertion.
      */
-    function _rawSignatureValidation(bytes32 hash, bytes calldata signature)
-        internal
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function _rawSignatureValidation(
+        bytes32 hash,
+        bytes calldata signature
+    ) internal view virtual override returns (bool) {
         (bool decodeSuccess, WebAuthn.WebAuthnAuth calldata auth) = WebAuthn.tryDecodeAuth(signature);
         if (!decodeSuccess) return false;
         (bytes32 qx, bytes32 qy) = signer();

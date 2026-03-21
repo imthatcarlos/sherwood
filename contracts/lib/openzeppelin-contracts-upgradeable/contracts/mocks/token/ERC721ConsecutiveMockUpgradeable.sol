@@ -12,12 +12,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 /**
  * @title ERC721ConsecutiveMock
  */
-contract ERC721ConsecutiveMockUpgradeable is
-    Initializable,
-    ERC721ConsecutiveUpgradeable,
-    ERC721PausableUpgradeable,
-    ERC721VotesUpgradeable
-{
+contract ERC721ConsecutiveMockUpgradeable is Initializable, ERC721ConsecutiveUpgradeable, ERC721PausableUpgradeable, ERC721VotesUpgradeable {
     uint96 private _offset;
 
     function __ERC721ConsecutiveMock_init(
@@ -56,47 +51,30 @@ contract ERC721ConsecutiveMockUpgradeable is
         return _offset;
     }
 
-    function _ownerOf(uint256 tokenId)
-        internal
-        view
-        virtual
-        override(ERC721Upgradeable, ERC721ConsecutiveUpgradeable)
-        returns (address)
-    {
+    function _ownerOf(uint256 tokenId) internal view virtual override(ERC721Upgradeable, ERC721ConsecutiveUpgradeable) returns (address) {
         return super._ownerOf(tokenId);
     }
 
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        virtual
-        override(ERC721ConsecutiveUpgradeable, ERC721PausableUpgradeable, ERC721VotesUpgradeable)
-        returns (address)
-    {
+    function _update(
+        address to,
+        uint256 tokenId,
+        address auth
+    ) internal virtual override(ERC721ConsecutiveUpgradeable, ERC721PausableUpgradeable, ERC721VotesUpgradeable) returns (address) {
         return super._update(to, tokenId, auth);
     }
 
-    function _increaseBalance(address account, uint128 amount)
-        internal
-        virtual
-        override(ERC721Upgradeable, ERC721VotesUpgradeable)
-    {
+    function _increaseBalance(address account, uint128 amount) internal virtual override(ERC721Upgradeable, ERC721VotesUpgradeable) {
         super._increaseBalance(account, amount);
     }
 }
 
 contract ERC721ConsecutiveNoConstructorMintMockUpgradeable is Initializable, ERC721ConsecutiveUpgradeable {
-    function __ERC721ConsecutiveNoConstructorMintMock_init(string memory name, string memory symbol)
-        internal
-        onlyInitializing
-    {
+    function __ERC721ConsecutiveNoConstructorMintMock_init(string memory name, string memory symbol) internal onlyInitializing {
         __ERC721_init_unchained(name, symbol);
         __ERC721ConsecutiveNoConstructorMintMock_init_unchained(name, symbol);
     }
 
-    function __ERC721ConsecutiveNoConstructorMintMock_init_unchained(string memory, string memory)
-        internal
-        onlyInitializing
-    {
+    function __ERC721ConsecutiveNoConstructorMintMock_init_unchained(string memory, string memory) internal onlyInitializing {
         _mint(msg.sender, 0);
     }
 }

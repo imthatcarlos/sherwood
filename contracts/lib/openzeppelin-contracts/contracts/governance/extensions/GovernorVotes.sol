@@ -57,13 +57,7 @@ abstract contract GovernorVotes is Governor {
         address account,
         uint256 timepoint,
         bytes memory /*params*/
-    )
-        internal
-        view
-        virtual
-        override
-        returns (uint256)
-    {
+    ) internal view virtual override returns (uint256) {
         return token().getPastVotes(account, timepoint);
     }
 }

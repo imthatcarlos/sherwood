@@ -44,11 +44,12 @@ abstract contract BridgeERC1155 is BridgeMultiToken, ERC1155Holder {
      *
      * Note: The `to` parameter is the full InteroperableAddress (chain ref + address).
      */
-    function crosschainTransferFrom(address from, bytes memory to, uint256[] memory ids, uint256[] memory values)
-        public
-        virtual
-        returns (bytes32)
-    {
+    function crosschainTransferFrom(
+        address from,
+        bytes memory to,
+        uint256[] memory ids,
+        uint256[] memory values
+    ) public virtual returns (bytes32) {
         // Permission is handled using the ERC1155's allowance system. This check replicates `ERC1155._checkAuthorized`.
         address spender = _msgSender();
         require(
@@ -73,42 +74,28 @@ abstract contract BridgeERC1155 is BridgeMultiToken, ERC1155Holder {
     /// @dev Support receiving tokens only if the transfer was initiated by the bridge itself.
     function onERC1155Received(
         address operator,
-        address,
-        /* from */
-        uint256,
-        /* id */
-        uint256,
-        /* value */
+        address /* from */,
+        uint256 /* id */,
+        uint256 /* value */,
         bytes memory /* data */
-    )
-        public
-        virtual
-        override
-        returns (bytes4)
-    {
-        return msg.sender == address(_token) && operator == address(this)
-            ? IERC1155Receiver.onERC1155Received.selector
-            : bytes4(0);
+    ) public virtual override returns (bytes4) {
+        return
+            msg.sender == address(_token) && operator == address(this)
+                ? IERC1155Receiver.onERC1155Received.selector
+                : bytes4(0);
     }
 
     /// @dev Support receiving tokens only if the transfer was initiated by the bridge itself.
     function onERC1155BatchReceived(
         address operator,
-        address,
-        /* from */
-        uint256[] memory,
-        /* ids */
-        uint256[] memory,
-        /* values */
+        address /* from */,
+        uint256[] memory /* ids */,
+        uint256[] memory /* values */,
         bytes memory /* data */
-    )
-        public
-        virtual
-        override
-        returns (bytes4)
-    {
-        return msg.sender == address(_token) && operator == address(this)
-            ? IERC1155Receiver.onERC1155BatchReceived.selector
-            : bytes4(0);
+    ) public virtual override returns (bytes4) {
+        return
+            msg.sender == address(_token) && operator == address(this)
+                ? IERC1155Receiver.onERC1155BatchReceived.selector
+                : bytes4(0);
     }
 }

@@ -30,8 +30,7 @@ abstract contract ERC1155SupplyUpgradeable is Initializable, ERC1155Upgradeable 
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC1155Supply")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC1155SupplyStorageLocation =
-        0x4a593662ee04d27b6a00ebb31be7fe0c102c2ade82a7c5d764f2df05dc4e2800;
+    bytes32 private constant ERC1155SupplyStorageLocation = 0x4a593662ee04d27b6a00ebb31be7fe0c102c2ade82a7c5d764f2df05dc4e2800;
 
     function _getERC1155SupplyStorage() private pure returns (ERC1155SupplyStorage storage $) {
         assembly {
@@ -39,10 +38,11 @@ abstract contract ERC1155SupplyUpgradeable is Initializable, ERC1155Upgradeable 
         }
     }
 
-    function __ERC1155Supply_init() internal onlyInitializing {}
+    function __ERC1155Supply_init() internal onlyInitializing {
+    }
 
-    function __ERC1155Supply_init_unchained() internal onlyInitializing {}
-
+    function __ERC1155Supply_init_unchained() internal onlyInitializing {
+    }
     /**
      * @dev Total value of tokens with a given id.
      */
@@ -67,11 +67,12 @@ abstract contract ERC1155SupplyUpgradeable is Initializable, ERC1155Upgradeable 
     }
 
     /// @inheritdoc ERC1155Upgradeable
-    function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
-        internal
-        virtual
-        override
-    {
+    function _update(
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory values
+    ) internal virtual override {
         ERC1155SupplyStorage storage $ = _getERC1155SupplyStorage();
         super._update(from, to, ids, values);
 

@@ -6,10 +6,11 @@ import {ERC20MulticallMockUpgradeable} from "./token/ERC20MulticallMockUpgradeab
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract MulticallHelperUpgradeable is Initializable {
-    function __MulticallHelper_init() internal onlyInitializing {}
+    function __MulticallHelper_init() internal onlyInitializing {
+    }
 
-    function __MulticallHelper_init_unchained() internal onlyInitializing {}
-
+    function __MulticallHelper_init_unchained() internal onlyInitializing {
+    }
     function checkReturnValues(
         ERC20MulticallMockUpgradeable multicallToken,
         address[] calldata recipients,

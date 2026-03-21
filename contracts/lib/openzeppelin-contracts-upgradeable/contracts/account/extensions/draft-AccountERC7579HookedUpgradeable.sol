@@ -29,8 +29,7 @@ abstract contract AccountERC7579HookedUpgradeable is Initializable, AccountERC75
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.AccountERC7579Hooked")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant AccountERC7579HookedStorageLocation =
-        0x2b49b75317ffc1021ca7da4ca3423bf8403e18b223e63e6bc7abe8f39a5ed700;
+    bytes32 private constant AccountERC7579HookedStorageLocation = 0x2b49b75317ffc1021ca7da4ca3423bf8403e18b223e63e6bc7abe8f39a5ed700;
 
     function _getAccountERC7579HookedStorage() private pure returns (AccountERC7579HookedStorage storage $) {
         assembly {
@@ -55,10 +54,11 @@ abstract contract AccountERC7579HookedUpgradeable is Initializable, AccountERC75
         if (hook_ != address(0)) IERC7579Hook(hook_).postCheck(hookData);
     }
 
-    function __AccountERC7579Hooked_init() internal onlyInitializing {}
+    function __AccountERC7579Hooked_init() internal onlyInitializing {
+    }
 
-    function __AccountERC7579Hooked_init_unchained() internal onlyInitializing {}
-
+    function __AccountERC7579Hooked_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc AccountERC7579Upgradeable
     function accountId() public view virtual override returns (string memory) {
         // vendorname.accountname.semver
@@ -77,24 +77,22 @@ abstract contract AccountERC7579HookedUpgradeable is Initializable, AccountERC75
     }
 
     /// @inheritdoc AccountERC7579Upgradeable
-    function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata data)
-        public
-        view
-        virtual
-        override
-        returns (bool)
-    {
-        return (moduleTypeId == MODULE_TYPE_HOOK && module == hook())
-            || super.isModuleInstalled(moduleTypeId, module, data);
+    function isModuleInstalled(
+        uint256 moduleTypeId,
+        address module,
+        bytes calldata data
+    ) public view virtual override returns (bool) {
+        return
+            (moduleTypeId == MODULE_TYPE_HOOK && module == hook()) ||
+            super.isModuleInstalled(moduleTypeId, module, data);
     }
 
     /// @dev Installs a module with support for hook modules. See {AccountERC7579-_installModule}
-    function _installModule(uint256 moduleTypeId, address module, bytes memory initData)
-        internal
-        virtual
-        override
-        withHook
-    {
+    function _installModule(
+        uint256 moduleTypeId,
+        address module,
+        bytes memory initData
+    ) internal virtual override withHook {
         AccountERC7579HookedStorage storage $ = _getAccountERC7579HookedStorage();
         if (moduleTypeId == MODULE_TYPE_HOOK) {
             require($._hook == address(0), ERC7579HookModuleAlreadyPresent($._hook));
@@ -117,7 +115,8 @@ abstract contract AccountERC7579HookedUpgradeable is Initializable, AccountERC75
         // slither-disable-next-line reentrancy-no-eth
         if (hook_ != address(0)) {
             preCheckSuccess = LowLevelCall.callNoReturn(
-                hook_, abi.encodeCall(IERC7579Hook.preCheck, (msg.sender, msg.value, msg.data))
+                hook_,
+                abi.encodeCall(IERC7579Hook.preCheck, (msg.sender, msg.value, msg.data))
             );
             if (preCheckSuccess) {
                 // Note: abi.decode could revert, and we wouldn't be able to catch it.
@@ -140,7 +139,10 @@ abstract contract AccountERC7579HookedUpgradeable is Initializable, AccountERC75
         // === End of the body (`_` part of the modifier) -- Beginning of the postcheck ===
 
         if (hook_ != address(0) && preCheckSuccess) {
-            bool postCheckSuccess = LowLevelCall.callNoReturn(hook_, abi.encodeCall(IERC7579Hook.postCheck, (hookData)));
+            bool postCheckSuccess = LowLevelCall.callNoReturn(
+                hook_,
+                abi.encodeCall(IERC7579Hook.postCheck, (hookData))
+            );
             if (!postCheckSuccess && moduleTypeId != MODULE_TYPE_HOOK) {
                 LowLevelCall.bubbleRevert();
             }
@@ -150,13 +152,10 @@ abstract contract AccountERC7579HookedUpgradeable is Initializable, AccountERC75
     }
 
     /// @dev Hooked version of {AccountERC7579-_execute}.
-    function _execute(Mode mode, bytes calldata executionCalldata)
-        internal
-        virtual
-        override
-        withHook
-        returns (bytes[] memory)
-    {
+    function _execute(
+        Mode mode,
+        bytes calldata executionCalldata
+    ) internal virtual override withHook returns (bytes[] memory) {
         return super._execute(mode, executionCalldata);
     }
 
@@ -169,11 +168,9 @@ abstract contract AccountERC7579HookedUpgradeable is Initializable, AccountERC75
      * @dev Try to abi.decode a bytes array. If successful, the decoding is done in place, overriding the original
      * data. If decoding fails, the original data is left untouched.
      */
-    function _tryInPlaceAbiDecodeBytes(bytes memory data)
-        private
-        pure
-        returns (bool success, bytes memory passthrough)
-    {
+    function _tryInPlaceAbiDecodeBytes(
+        bytes memory data
+    ) private pure returns (bool success, bytes memory passthrough) {
         unchecked {
             if (data.length < 0x20) return (false, data);
             uint256 offset = uint256(_unsafeReadBytesOffset(data, 0));

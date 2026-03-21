@@ -2,19 +2,15 @@
 
 pragma solidity ^0.8.20;
 
-import {
-    CallType,
-    ExecType,
-    ModeSelector,
-    ModePayload
-} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
+import {CallType, ExecType, ModeSelector, ModePayload} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract ERC7579UtilsGlobalMockUpgradeable is Initializable {
-    function __ERC7579UtilsGlobalMock_init() internal onlyInitializing {}
+    function __ERC7579UtilsGlobalMock_init() internal onlyInitializing {
+    }
 
-    function __ERC7579UtilsGlobalMock_init_unchained() internal onlyInitializing {}
-
+    function __ERC7579UtilsGlobalMock_init_unchained() internal onlyInitializing {
+    }
     function eqCallTypeGlobal(CallType callType1, CallType callType2) internal pure returns (bool) {
         return callType1 == callType2;
     }

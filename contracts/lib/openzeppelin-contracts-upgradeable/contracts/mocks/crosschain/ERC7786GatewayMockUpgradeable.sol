@@ -14,29 +14,22 @@ abstract contract ERC7786GatewayMockUpgradeable is Initializable, IERC7786Gatewa
 
     uint256 private _lastReceiveId;
 
-    function __ERC7786GatewayMock_init() internal onlyInitializing {}
+    function __ERC7786GatewayMock_init() internal onlyInitializing {
+    }
 
-    function __ERC7786GatewayMock_init_unchained() internal onlyInitializing {}
-
+    function __ERC7786GatewayMock_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc IERC7786GatewaySource
-    function supportsAttribute(
-        bytes4 /*selector*/
-    )
-        public
-        view
-        virtual
-        returns (bool)
-    {
+    function supportsAttribute(bytes4 /*selector*/) public view virtual returns (bool) {
         return false;
     }
 
     /// @inheritdoc IERC7786GatewaySource
-    function sendMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
-        public
-        payable
-        virtual
-        returns (bytes32 sendId)
-    {
+    function sendMessage(
+        bytes calldata recipient,
+        bytes calldata payload,
+        bytes[] calldata attributes
+    ) public payable virtual returns (bytes32 sendId) {
         // attributes are not supported
         if (attributes.length > 0) {
             revert UnsupportedAttribute(bytes4(attributes[0]));
@@ -48,7 +41,9 @@ abstract contract ERC7786GatewayMockUpgradeable is Initializable, IERC7786Gatewa
 
         // perform call
         bytes4 magic = IERC7786Recipient(target).receiveMessage{value: msg.value}(
-            bytes32(++_lastReceiveId), InteroperableAddress.formatEvmV1(block.chainid, msg.sender), payload
+            bytes32(++_lastReceiveId),
+            InteroperableAddress.formatEvmV1(block.chainid, msg.sender),
+            payload
         );
         require(magic == IERC7786Recipient.receiveMessage.selector, ReceiverError());
 
