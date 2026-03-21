@@ -273,15 +273,16 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         emit UpgradesEnabledUpdated(enabled);
     }
 
-    /// @notice Upgrade a vault to a new implementation (only when upgrades enabled)
+    /// @notice Upgrade a vault to a new implementation. Callable by the syndicate owner (vault owner).
+    /// @dev Factory must have upgrades enabled, and newImpl must be the current factory vaultImpl.
     /// @param vault The vault proxy to upgrade
-    /// @param newImpl The new implementation address
-    function upgradeVault(address vault, address newImpl) external onlyOwner {
+    function upgradeVault(address vault) external {
         if (!upgradesEnabled) revert UpgradesDisabled();
-        if (vaultToSyndicate[vault] == 0) revert VaultNotDeployed();
-        if (newImpl == address(0)) revert InvalidVaultImpl();
-        UUPSUpgradeable(vault).upgradeToAndCall(newImpl, "");
-        emit VaultUpgraded(vault, newImpl);
+        uint256 syndicateId = vaultToSyndicate[vault];
+        if (syndicateId == 0) revert VaultNotDeployed();
+        if (syndicates[syndicateId].creator != msg.sender) revert NotCreator();
+        UUPSUpgradeable(vault).upgradeToAndCall(vaultImpl, "");
+        emit VaultUpgraded(vault, vaultImpl);
     }
 
     // ==================== VIEWS ====================
