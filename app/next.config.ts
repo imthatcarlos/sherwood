@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
         destination: 'https://raw.githubusercontent.com/imthatcarlos/sherwood/refs/heads/main/skill/SKILL.md',
       },
       {
-        source: '/skill-owner.md',
+        source: '/skill-guardian.md',
         destination: 'https://raw.githubusercontent.com/imthatcarlos/sherwood/refs/heads/main/skill/skills/syndicate-owner/SKILL.md',
       },
       // Proxy spectator sidecar to avoid CORS

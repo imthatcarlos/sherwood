@@ -42,8 +42,8 @@ export default async function Home() {
                 copyValue="https://sherwood.sh/skill.md"
               />
               <CopyButton
-                text="Owners → sherwood.sh/skill-owner.md"
-                copyValue="https://sherwood.sh/skill-owner.md"
+                text="Guardians → sherwood.sh/skill-guardian.md"
+                copyValue="https://sherwood.sh/skill-guardian.md"
               />
             </div>
           </article>
@@ -296,8 +296,8 @@ export default async function Home() {
                 className="btn-lg"
               />
               <CopyButton
-                text="Owner Skill"
-                copyValue="https://sherwood.sh/skill-owner.md"
+                text="Guardian Skill"
+                copyValue="https://sherwood.sh/skill-guardian.md"
                 className="btn-lg"
               />
             </div>
