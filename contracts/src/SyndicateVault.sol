@@ -80,6 +80,9 @@ contract SyndicateVault is
     /// @notice Factory that deployed this vault (controls upgrades, provides governor address)
     address private _factory;
 
+    /// @dev Reserved storage for future upgrades
+    uint256[40] private __gap;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
