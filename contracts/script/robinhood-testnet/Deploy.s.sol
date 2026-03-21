@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {Script, console} from "forge-std/Script.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {SyndicateVault} from "../../src/SyndicateVault.sol";
+import {BatchExecutorLib} from "../../src/BatchExecutorLib.sol";
+import {SyndicateFactory} from "../../src/SyndicateFactory.sol";
+import {SyndicateGovernor} from "../../src/SyndicateGovernor.sol";
+
+/**
+ * @notice Deploy Sherwood protocol infrastructure to Robinhood L2 testnet.
+ *
+ *         Robinhood L2 is Arbitrum Orbit — no ENS/Durin or ERC-8004 agent
+ *         identity registry. The factory is deployed with address(0) for both,
+ *         which disables identity verification and ENS subname registration.
+ *
+ *   Usage:
+ *     forge script script/robinhood-testnet/Deploy.s.sol:DeployRobinhoodTestnet \
+ *       --rpc-url robinhood_testnet \
+ *       --account sherwood-agent \
+ *       --broadcast
+ */
+contract DeployRobinhoodTestnet is Script {
+    // No ENS or ERC-8004 on Robinhood L2
+    address constant L2_REGISTRAR = address(0);
+    address constant AGENT_REGISTRY = address(0);
+
+    function run() external {
+        address deployer = msg.sender;
+
+        console.log("Deployer:", deployer);
+        console.log("Network: Robinhood L2 Testnet (chain ID 46630)");
+
+        vm.startBroadcast();
+
+        // 1. Deploy BatchExecutorLib (shared, stateless)
+        BatchExecutorLib executorLib = new BatchExecutorLib();
+        console.log("BatchExecutorLib:", address(executorLib));
+
+        // 2. Deploy SyndicateVault implementation
+        SyndicateVault vaultImpl = new SyndicateVault();
+        console.log("Vault implementation:", address(vaultImpl));
+
+        // 3. Deploy SyndicateGovernor (UUPS proxy)
+        SyndicateGovernor govImpl = new SyndicateGovernor();
+        bytes memory govInitData = abi.encodeCall(
+            SyndicateGovernor.initialize,
+            (
+                deployer, // owner
+                1 days, // votingPeriod
+                1 days, // executionWindow
+                4000, // vetoThresholdBps (40%)
+                3000, // maxPerformanceFeeBps (30%)
+                7 days, // maxStrategyDuration
+                1 days, // cooldownPeriod
+                200, // protocolFeeBps (2%)
+                deployer // protocolFeeRecipient
+            )
+        );
+        address governorProxy = address(new ERC1967Proxy(address(govImpl), govInitData));
+        console.log("SyndicateGovernor:", governorProxy);
+
+        // 4. Deploy SyndicateFactory (UUPS proxy, no ENS registrar, no agent registry)
+        SyndicateFactory factoryImpl = new SyndicateFactory();
+        bytes memory factoryInitData = abi.encodeCall(
+            SyndicateFactory.initialize,
+            (SyndicateFactory.InitParams({
+                    owner: deployer,
+                    executorImpl: address(executorLib),
+                    vaultImpl: address(vaultImpl),
+                    ensRegistrar: L2_REGISTRAR,
+                    agentRegistry: AGENT_REGISTRY,
+                    governor: governorProxy,
+                    managementFeeBps: 50
+                }))
+        );
+        SyndicateFactory factory = SyndicateFactory(address(new ERC1967Proxy(address(factoryImpl), factoryInitData)));
+        console.log("SyndicateFactory:", address(factory));
+
+        vm.stopBroadcast();
+
+        // Summary
+        console.log("\n=== Robinhood L2 Testnet Deployment Summary ===");
+        console.log("FACTORY_ADDRESS=%s", address(factory));
+        console.log("GOVERNOR_ADDRESS=%s", governorProxy);
+        console.log("EXECUTOR_LIB_ADDRESS=%s", address(executorLib));
+        console.log("\nNote: No ENS or ERC-8004 on this chain.");
+        console.log("Identity and attestations remain on Base.");
+        console.log("\nNext steps:");
+        console.log("  1. sherwood --chain robinhood-testnet syndicate create --subdomain <name> --name <name>");
+        console.log("Explorer: https://explorer.testnet.chain.robinhood.com/address/%s", address(factory));
+    }
+}
