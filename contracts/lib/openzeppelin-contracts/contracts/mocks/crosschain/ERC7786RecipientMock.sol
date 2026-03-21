@@ -16,16 +16,21 @@ contract ERC7786RecipientMock is ERC7786Recipient {
     function _isAuthorizedGateway(
         address gateway,
         bytes calldata /*sender*/
-    ) internal view virtual override returns (bool) {
+    )
+        internal
+        view
+        virtual
+        override
+        returns (bool)
+    {
         return gateway == _gateway;
     }
 
-    function _processMessage(
-        address gateway,
-        bytes32 receiveId,
-        bytes calldata sender,
-        bytes calldata payload
-    ) internal virtual override {
+    function _processMessage(address gateway, bytes32 receiveId, bytes calldata sender, bytes calldata payload)
+        internal
+        virtual
+        override
+    {
         emit MessageReceived(gateway, receiveId, sender, payload, msg.value);
     }
 }

@@ -18,7 +18,14 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * the Metadata extension, but not including the Enumerable extension, which is available separately as
  * {ERC721Enumerable}.
  */
-abstract contract ERC721Upgradeable is Initializable, ContextUpgradeable, ERC165Upgradeable, IERC721, IERC721Metadata, IERC721Errors {
+abstract contract ERC721Upgradeable is
+    Initializable,
+    ContextUpgradeable,
+    ERC165Upgradeable,
+    IERC721,
+    IERC721Metadata,
+    IERC721Errors
+{
     using Strings for uint256;
 
     /// @custom:storage-location erc7201:openzeppelin.storage.ERC721
@@ -61,11 +68,15 @@ abstract contract ERC721Upgradeable is Initializable, ContextUpgradeable, ERC165
     }
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165Upgradeable, IERC165) returns (bool) {
-        return
-            interfaceId == type(IERC721).interfaceId ||
-            interfaceId == type(IERC721Metadata).interfaceId ||
-            super.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(ERC165Upgradeable, IERC165)
+        returns (bool)
+    {
+        return interfaceId == type(IERC721).interfaceId || interfaceId == type(IERC721Metadata).interfaceId
+            || super.supportsInterface(interfaceId);
     }
 
     /// @inheritdoc IERC721
@@ -187,9 +198,8 @@ abstract contract ERC721Upgradeable is Initializable, ContextUpgradeable, ERC165
      * assumption.
      */
     function _isAuthorized(address owner, address spender, uint256 tokenId) internal view virtual returns (bool) {
-        return
-            spender != address(0) &&
-            (owner == spender || isApprovedForAll(owner, spender) || _getApproved(tokenId) == spender);
+        return spender != address(0)
+            && (owner == spender || isApprovedForAll(owner, spender) || _getApproved(tokenId) == spender);
     }
 
     /**

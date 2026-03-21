@@ -28,13 +28,10 @@ contract ERC1155ReceiverMock is ERC165, IERC1155Receiver {
         _error = error;
     }
 
-    function onERC1155Received(
-        address operator,
-        address from,
-        uint256 id,
-        uint256 value,
-        bytes calldata data
-    ) external returns (bytes4) {
+    function onERC1155Received(address operator, address from, uint256 id, uint256 value, bytes calldata data)
+        external
+        returns (bytes4)
+    {
         if (_error == RevertType.RevertWithoutMessage) {
             revert();
         } else if (_error == RevertType.RevertWithMessage) {

@@ -21,7 +21,8 @@ abstract contract NoncesKeyedUpgradeable is Initializable, NoncesUpgradeable {
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.NoncesKeyed")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant NoncesKeyedStorageLocation = 0x06e302b11020b9cca26edb75da0d4c952e2c49f7ac00d8954230e81bd5769c00;
+    bytes32 private constant NoncesKeyedStorageLocation =
+        0x06e302b11020b9cca26edb75da0d4c952e2c49f7ac00d8954230e81bd5769c00;
 
     function _getNoncesKeyedStorage() private pure returns (NoncesKeyedStorage storage $) {
         assembly {
@@ -29,11 +30,10 @@ abstract contract NoncesKeyedUpgradeable is Initializable, NoncesUpgradeable {
         }
     }
 
-    function __NoncesKeyed_init() internal onlyInitializing {
-    }
+    function __NoncesKeyed_init() internal onlyInitializing {}
 
-    function __NoncesKeyed_init_unchained() internal onlyInitializing {
-    }
+    function __NoncesKeyed_init_unchained() internal onlyInitializing {}
+
     /// @dev Returns the next unused nonce for an address and key. Result contains the key prefix.
     function nonces(address owner, uint192 key) public view virtual returns (uint256) {
         NoncesKeyedStorage storage $ = _getNoncesKeyedStorage();
@@ -64,7 +64,7 @@ abstract contract NoncesKeyedUpgradeable is Initializable, NoncesUpgradeable {
      * - use the last 8 bytes for the nonce
      */
     function _useCheckedNonce(address owner, uint256 keyNonce) internal virtual override {
-        (uint192 key, ) = _unpack(keyNonce);
+        (uint192 key,) = _unpack(keyNonce);
         if (key == 0) {
             super._useCheckedNonce(owner, keyNonce);
         } else {

@@ -30,7 +30,8 @@ abstract contract GovernorStorageUpgradeable is Initializable, GovernorUpgradeab
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorStorage")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GovernorStorageStorageLocation = 0x7fd223d3380145bd26132714391e777c488a0df7ac2dd4b66419d8549fb3a600;
+    bytes32 private constant GovernorStorageStorageLocation =
+        0x7fd223d3380145bd26132714391e777c488a0df7ac2dd4b66419d8549fb3a600;
 
     function _getGovernorStorageStorage() private pure returns (GovernorStorageStorage storage $) {
         assembly {
@@ -38,11 +39,10 @@ abstract contract GovernorStorageUpgradeable is Initializable, GovernorUpgradeab
         }
     }
 
-    function __GovernorStorage_init() internal onlyInitializing {
-    }
+    function __GovernorStorage_init() internal onlyInitializing {}
 
-    function __GovernorStorage_init_unchained() internal onlyInitializing {
-    }
+    function __GovernorStorage_init_unchained() internal onlyInitializing {}
+
     /**
      * @dev Hook into the proposing mechanism
      */
@@ -59,10 +59,7 @@ abstract contract GovernorStorageUpgradeable is Initializable, GovernorUpgradeab
         // store
         $._proposalIds.push(proposalId);
         $._proposalDetails[proposalId] = ProposalDetails({
-            targets: targets,
-            values: values,
-            calldatas: calldatas,
-            descriptionHash: keccak256(bytes(description))
+            targets: targets, values: values, calldatas: calldatas, descriptionHash: keccak256(bytes(description))
         });
 
         return proposalId;
@@ -118,9 +115,7 @@ abstract contract GovernorStorageUpgradeable is Initializable, GovernorUpgradeab
     /**
      * @dev Returns the details of a proposalId. Reverts if `proposalId` is not a known proposal.
      */
-    function proposalDetails(
-        uint256 proposalId
-    )
+    function proposalDetails(uint256 proposalId)
         public
         view
         virtual
@@ -138,9 +133,7 @@ abstract contract GovernorStorageUpgradeable is Initializable, GovernorUpgradeab
     /**
      * @dev Returns the details (including the proposalId) of a proposal given its sequential index.
      */
-    function proposalDetailsAt(
-        uint256 index
-    )
+    function proposalDetailsAt(uint256 index)
         public
         view
         virtual

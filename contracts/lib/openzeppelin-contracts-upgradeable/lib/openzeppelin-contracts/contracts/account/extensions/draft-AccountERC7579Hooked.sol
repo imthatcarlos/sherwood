@@ -58,22 +58,24 @@ abstract contract AccountERC7579Hooked is AccountERC7579 {
     }
 
     /// @inheritdoc AccountERC7579
-    function isModuleInstalled(
-        uint256 moduleTypeId,
-        address module,
-        bytes calldata data
-    ) public view virtual override returns (bool) {
-        return
-            (moduleTypeId == MODULE_TYPE_HOOK && module == hook()) ||
-            super.isModuleInstalled(moduleTypeId, module, data);
+    function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata data)
+        public
+        view
+        virtual
+        override
+        returns (bool)
+    {
+        return (moduleTypeId == MODULE_TYPE_HOOK && module == hook())
+            || super.isModuleInstalled(moduleTypeId, module, data);
     }
 
     /// @dev Installs a module with support for hook modules. See {AccountERC7579-_installModule}
-    function _installModule(
-        uint256 moduleTypeId,
-        address module,
-        bytes memory initData
-    ) internal virtual override withHook {
+    function _installModule(uint256 moduleTypeId, address module, bytes memory initData)
+        internal
+        virtual
+        override
+        withHook
+    {
         if (moduleTypeId == MODULE_TYPE_HOOK) {
             require(_hook == address(0), ERC7579HookModuleAlreadyPresent(_hook));
             _hook = module;
@@ -94,8 +96,7 @@ abstract contract AccountERC7579Hooked is AccountERC7579 {
         // slither-disable-next-line reentrancy-no-eth
         if (hook_ != address(0)) {
             preCheckSuccess = LowLevelCall.callNoReturn(
-                hook_,
-                abi.encodeCall(IERC7579Hook.preCheck, (msg.sender, msg.value, msg.data))
+                hook_, abi.encodeCall(IERC7579Hook.preCheck, (msg.sender, msg.value, msg.data))
             );
             if (preCheckSuccess) {
                 // Note: abi.decode could revert, and we wouldn't be able to catch it.
@@ -118,10 +119,7 @@ abstract contract AccountERC7579Hooked is AccountERC7579 {
         // === End of the body (`_` part of the modifier) -- Beginning of the postcheck ===
 
         if (hook_ != address(0) && preCheckSuccess) {
-            bool postCheckSuccess = LowLevelCall.callNoReturn(
-                hook_,
-                abi.encodeCall(IERC7579Hook.postCheck, (hookData))
-            );
+            bool postCheckSuccess = LowLevelCall.callNoReturn(hook_, abi.encodeCall(IERC7579Hook.postCheck, (hookData)));
             if (!postCheckSuccess && moduleTypeId != MODULE_TYPE_HOOK) {
                 LowLevelCall.bubbleRevert();
             }
@@ -131,10 +129,13 @@ abstract contract AccountERC7579Hooked is AccountERC7579 {
     }
 
     /// @dev Hooked version of {AccountERC7579-_execute}.
-    function _execute(
-        Mode mode,
-        bytes calldata executionCalldata
-    ) internal virtual override withHook returns (bytes[] memory) {
+    function _execute(Mode mode, bytes calldata executionCalldata)
+        internal
+        virtual
+        override
+        withHook
+        returns (bytes[] memory)
+    {
         return super._execute(mode, executionCalldata);
     }
 
@@ -147,9 +148,11 @@ abstract contract AccountERC7579Hooked is AccountERC7579 {
      * @dev Try to abi.decode a bytes array. If successful, the decoding is done in place, overriding the original
      * data. If decoding fails, the original data is left untouched.
      */
-    function _tryInPlaceAbiDecodeBytes(
-        bytes memory data
-    ) private pure returns (bool success, bytes memory passthrough) {
+    function _tryInPlaceAbiDecodeBytes(bytes memory data)
+        private
+        pure
+        returns (bool success, bytes memory passthrough)
+    {
         unchecked {
             if (data.length < 0x20) return (false, data);
             uint256 offset = uint256(_unsafeReadBytesOffset(data, 0));

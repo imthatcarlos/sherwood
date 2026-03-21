@@ -46,11 +46,14 @@ abstract contract SignerECDSA is AbstractSigner {
     }
 
     /// @inheritdoc AbstractSigner
-    function _rawSignatureValidation(
-        bytes32 hash,
-        bytes calldata signature
-    ) internal view virtual override returns (bool) {
-        (address recovered, ECDSA.RecoverError err, ) = ECDSA.tryRecoverCalldata(hash, signature);
+    function _rawSignatureValidation(bytes32 hash, bytes calldata signature)
+        internal
+        view
+        virtual
+        override
+        returns (bool)
+    {
+        (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecoverCalldata(hash, signature);
         return signer() == recovered && err == ECDSA.RecoverError.NoError;
     }
 }

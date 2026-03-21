@@ -28,19 +28,18 @@ abstract contract ERC7821 is IERC7821 {
      * Reverts and bubbles up error if any call fails.
      */
     function execute(bytes32 mode, bytes calldata executionData) public payable virtual {
-        if (!_erc7821AuthorizedExecutor(msg.sender, mode, executionData))
+        if (!_erc7821AuthorizedExecutor(msg.sender, mode, executionData)) {
             revert Account.AccountUnauthorized(msg.sender);
+        }
         if (!supportsExecutionMode(mode)) revert UnsupportedExecutionMode();
         executionData.execBatch(ERC7579Utils.EXECTYPE_DEFAULT);
     }
 
     /// @inheritdoc IERC7821
     function supportsExecutionMode(bytes32 mode) public view virtual returns (bool result) {
-        (CallType callType, ExecType execType, ModeSelector modeSelector, ) = Mode.wrap(mode).decodeMode();
-        return
-            callType == ERC7579Utils.CALLTYPE_BATCH &&
-            execType == ERC7579Utils.EXECTYPE_DEFAULT &&
-            modeSelector == ModeSelector.wrap(0x00000000);
+        (CallType callType, ExecType execType, ModeSelector modeSelector,) = Mode.wrap(mode).decodeMode();
+        return callType == ERC7579Utils.CALLTYPE_BATCH && execType == ERC7579Utils.EXECTYPE_DEFAULT
+            && modeSelector == ModeSelector.wrap(0x00000000);
     }
 
     /**
@@ -62,9 +61,15 @@ abstract contract ERC7821 is IERC7821 {
      */
     function _erc7821AuthorizedExecutor(
         address caller,
-        bytes32 /* mode */,
+        bytes32,
+        /* mode */
         bytes calldata /* executionData */
-    ) internal view virtual returns (bool) {
+    )
+        internal
+        view
+        virtual
+        returns (bool)
+    {
         return caller == address(this);
     }
 }

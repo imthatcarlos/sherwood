@@ -122,7 +122,8 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.AccessManager")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant AccessManagerStorageLocation = 0x40c6c8c28789853c7efd823ab20824bbd71718a8a5915e855f6f288c9a26ad00;
+    bytes32 private constant AccessManagerStorageLocation =
+        0x40c6c8c28789853c7efd823ab20824bbd71718a8a5915e855f6f288c9a26ad00;
 
     function _getAccessManagerStorage() private pure returns (AccessManagerStorage storage $) {
         assembly {
@@ -142,6 +143,7 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
     function initialize(address initialAdmin) public virtual initializer {
         __AccessManager_init(initialAdmin);
     }
+
     function __AccessManager_init(address initialAdmin) internal onlyInitializing {
         __AccessManager_init_unchained(initialAdmin);
     }
@@ -157,11 +159,12 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
 
     // =================================================== GETTERS ====================================================
     /// @inheritdoc IAccessManager
-    function canCall(
-        address caller,
-        address target,
-        bytes4 selector
-    ) public view virtual returns (bool immediate, uint32 delay) {
+    function canCall(address caller, address target, bytes4 selector)
+        public
+        view
+        virtual
+        returns (bool immediate, uint32 delay)
+    {
         if (isTargetClosed(target)) {
             return (false, 0);
         } else if (caller == address(this)) {
@@ -227,10 +230,12 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
     }
 
     /// @inheritdoc IAccessManager
-    function getAccess(
-        uint64 roleId,
-        address account
-    ) public view virtual returns (uint48 since, uint32 currentDelay, uint32 pendingDelay, uint48 effect) {
+    function getAccess(uint64 roleId, address account)
+        public
+        view
+        virtual
+        returns (uint48 since, uint32 currentDelay, uint32 pendingDelay, uint48 effect)
+    {
         AccessManagerStorage storage $ = _getAccessManagerStorage();
         Access storage access = $._roles[roleId].members[account];
 
@@ -241,14 +246,16 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
     }
 
     /// @inheritdoc IAccessManager
-    function hasRole(
-        uint64 roleId,
-        address account
-    ) public view virtual returns (bool isMember, uint32 executionDelay) {
+    function hasRole(uint64 roleId, address account)
+        public
+        view
+        virtual
+        returns (bool isMember, uint32 executionDelay)
+    {
         if (roleId == PUBLIC_ROLE) {
             return (true, 0);
         } else {
-            (uint48 hasRoleSince, uint32 currentDelay, , ) = getAccess(roleId, account);
+            (uint48 hasRoleSince, uint32 currentDelay,,) = getAccess(roleId, account);
             return (hasRoleSince != 0 && hasRoleSince <= Time.timestamp(), currentDelay);
         }
     }
@@ -300,12 +307,11 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
      *
      * Emits a {RoleGranted} event.
      */
-    function _grantRole(
-        uint64 roleId,
-        address account,
-        uint32 grantDelay,
-        uint32 executionDelay
-    ) internal virtual returns (bool) {
+    function _grantRole(uint64 roleId, address account, uint32 grantDelay, uint32 executionDelay)
+        internal
+        virtual
+        returns (bool)
+    {
         AccessManagerStorage storage $ = _getAccessManagerStorage();
         if (roleId == PUBLIC_ROLE) {
             revert AccessManagerLockedRole(roleId);
@@ -320,10 +326,8 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
         } else {
             // No setback here. Value can be reset by doing revoke + grant, effectively allowing the admin to perform
             // any change to the execution delay within the duration of the role admin delay.
-            ($._roles[roleId].members[account].delay, since) = $._roles[roleId].members[account].delay.withUpdate(
-                executionDelay,
-                0
-            );
+            ($._roles[roleId].members[account].delay, since) =
+                $._roles[roleId].members[account].delay.withUpdate(executionDelay, 0);
         }
 
         emit RoleGranted(roleId, account, executionDelay, since, newMember);
@@ -409,11 +413,11 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
 
     // ============================================= FUNCTION MANAGEMENT ==============================================
     /// @inheritdoc IAccessManager
-    function setTargetFunctionRole(
-        address target,
-        bytes4[] calldata selectors,
-        uint64 roleId
-    ) public virtual onlyAuthorized {
+    function setTargetFunctionRole(address target, bytes4[] calldata selectors, uint64 roleId)
+        public
+        virtual
+        onlyAuthorized
+    {
         for (uint256 i = 0; i < selectors.length; ++i) {
             _setTargetFunctionRole(target, selectors[i], roleId);
         }
@@ -485,11 +489,11 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
     }
 
     /// @inheritdoc IAccessManager
-    function schedule(
-        address target,
-        bytes calldata data,
-        uint48 when
-    ) public virtual returns (bytes32 operationId, uint32 nonce) {
+    function schedule(address target, bytes calldata data, uint48 when)
+        public
+        virtual
+        returns (bytes32 operationId, uint32 nonce)
+    {
         AccessManagerStorage storage $ = _getAccessManagerStorage();
         address caller = _msgSender();
 
@@ -584,8 +588,8 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
             revert AccessManagerNotScheduled(operationId);
         } else if (caller != msgsender) {
             // calls can only be canceled by the account that scheduled them, a global admin, or by a guardian of the required role.
-            (bool isAdmin, ) = hasRole(ADMIN_ROLE, msgsender);
-            (bool isGuardian, ) = hasRole(getRoleGuardian(getTargetFunctionRole(target, selector)), msgsender);
+            (bool isAdmin,) = hasRole(ADMIN_ROLE, msgsender);
+            (bool isGuardian,) = hasRole(getRoleGuardian(getTargetFunctionRole(target, selector)), msgsender);
             if (!isAdmin && !isGuardian) {
                 revert AccessManagerUnauthorizedCancel(msgsender, caller, target, selector);
             }
@@ -653,7 +657,7 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
         (bool immediate, uint32 delay) = _canCallSelf(caller, _msgData());
         if (!immediate) {
             if (delay == 0) {
-                (, uint64 requiredRole, ) = _getAdminRestrictions(_msgData());
+                (, uint64 requiredRole,) = _getAdminRestrictions(_msgData());
                 revert AccessManagerUnauthorizedAccount(caller, requiredRole);
             } else {
                 _consumeScheduledOp(hashOperation(caller, address(this), _msgData()));
@@ -669,9 +673,11 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
      * - uint64: which role is this operation restricted to
      * - uint32: minimum delay to enforce for that operation (max between operation's delay and admin's execution delay)
      */
-    function _getAdminRestrictions(
-        bytes calldata data
-    ) private view returns (bool adminRestricted, uint64 roleAdminId, uint32 executionDelay) {
+    function _getAdminRestrictions(bytes calldata data)
+        private
+        view
+        returns (bool adminRestricted, uint64 roleAdminId, uint32 executionDelay)
+    {
         if (data.length < 4) {
             return (false, 0, 0);
         }
@@ -680,20 +686,17 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
 
         // Restricted to ADMIN with no delay beside any execution delay the caller may have
         if (
-            selector == this.labelRole.selector ||
-            selector == this.setRoleAdmin.selector ||
-            selector == this.setRoleGuardian.selector ||
-            selector == this.setGrantDelay.selector ||
-            selector == this.setTargetAdminDelay.selector
+            selector == this.labelRole.selector || selector == this.setRoleAdmin.selector
+                || selector == this.setRoleGuardian.selector || selector == this.setGrantDelay.selector
+                || selector == this.setTargetAdminDelay.selector
         ) {
             return (true, ADMIN_ROLE, 0);
         }
 
         // Restricted to ADMIN with the admin delay corresponding to the target
         if (
-            selector == this.updateAuthority.selector ||
-            selector == this.setTargetClosed.selector ||
-            selector == this.setTargetFunctionRole.selector
+            selector == this.updateAuthority.selector || selector == this.setTargetClosed.selector
+                || selector == this.setTargetFunctionRole.selector
         ) {
             // First argument is a target.
             address target = abi.decode(data[0x04:0x24], (address));
@@ -720,11 +723,11 @@ contract AccessManagerUpgradeable is Initializable, ContextUpgradeable, Multical
      * - bool immediate: whether the operation can be executed immediately (with no delay)
      * - uint32 delay: the execution delay
      */
-    function _canCallExtended(
-        address caller,
-        address target,
-        bytes calldata data
-    ) private view returns (bool immediate, uint32 delay) {
+    function _canCallExtended(address caller, address target, bytes calldata data)
+        private
+        view
+        returns (bool immediate, uint32 delay)
+    {
         if (target == address(this)) {
             return _canCallSelf(caller, data);
         } else {

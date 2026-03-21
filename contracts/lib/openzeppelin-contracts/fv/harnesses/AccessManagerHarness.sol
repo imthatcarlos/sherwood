@@ -20,19 +20,27 @@ contract AccessManagerHarness is AccessManager {
     }
 
     function canCall_delay(address caller, address target, bytes4 selector) external view returns (uint32 result) {
-        (,result) = canCall(caller, target, selector);
+        (, result) = canCall(caller, target, selector);
     }
 
     function canCallExtended(address caller, address target, bytes calldata data) external view returns (bool, uint32) {
         return _canCallExtended(caller, target, data);
     }
 
-    function canCallExtended_immediate(address caller, address target, bytes calldata data) external view returns (bool result) {
+    function canCallExtended_immediate(address caller, address target, bytes calldata data)
+        external
+        view
+        returns (bool result)
+    {
         (result,) = _canCallExtended(caller, target, data);
     }
 
-    function canCallExtended_delay(address caller, address target, bytes calldata data) external view returns (uint32 result) {
-        (,result) = _canCallExtended(caller, target, data);
+    function canCallExtended_delay(address caller, address target, bytes calldata data)
+        external
+        view
+        returns (uint32 result)
+    {
+        (, result) = _canCallExtended(caller, target, data);
     }
 
     function getAdminRestrictions_restricted(bytes calldata data) external view returns (bool result) {
@@ -40,11 +48,11 @@ contract AccessManagerHarness is AccessManager {
     }
 
     function getAdminRestrictions_roleAdminId(bytes calldata data) external view returns (uint64 result) {
-        (,result,) = _getAdminRestrictions(data);
+        (, result,) = _getAdminRestrictions(data);
     }
 
     function getAdminRestrictions_executionDelay(bytes calldata data) external view returns (uint32 result) {
-        (,,result) = _getAdminRestrictions(data);
+        (,, result) = _getAdminRestrictions(data);
     }
 
     function hasRole_isMember(uint64 roleId, address account) external view returns (bool result) {
@@ -52,7 +60,7 @@ contract AccessManagerHarness is AccessManager {
     }
 
     function hasRole_executionDelay(uint64 roleId, address account) external view returns (uint32 result) {
-        (,result) = hasRole(roleId, account);
+        (, result) = hasRole(roleId, account);
     }
 
     function getAccess_since(uint64 roleId, address account) external view returns (uint48 result) {
@@ -60,31 +68,31 @@ contract AccessManagerHarness is AccessManager {
     }
 
     function getAccess_currentDelay(uint64 roleId, address account) external view returns (uint32 result) {
-        (,result,,) = getAccess(roleId, account);
+        (, result,,) = getAccess(roleId, account);
     }
 
     function getAccess_pendingDelay(uint64 roleId, address account) external view returns (uint32 result) {
-        (,,result,) = getAccess(roleId, account);
+        (,, result,) = getAccess(roleId, account);
     }
 
     function getAccess_effect(uint64 roleId, address account) external view returns (uint48 result) {
-        (,,,result) = getAccess(roleId, account);
+        (,,, result) = getAccess(roleId, account);
     }
 
     function getTargetAdminDelay_after(address target) public view virtual returns (uint32 result) {
-        (,result,) = _getTargetAdminDelayFull(target);
+        (, result,) = _getTargetAdminDelayFull(target);
     }
 
     function getTargetAdminDelay_effect(address target) public view virtual returns (uint48 result) {
-        (,,result) = _getTargetAdminDelayFull(target);
+        (,, result) = _getTargetAdminDelayFull(target);
     }
 
     function getRoleGrantDelay_after(uint64 roleId) public view virtual returns (uint32 result) {
-        (,result,) = _getRoleGrantDelayFull(roleId);
+        (, result,) = _getRoleGrantDelayFull(roleId);
     }
 
     function getRoleGrantDelay_effect(uint64 roleId) public view virtual returns (uint48 result) {
-        (,,result) = _getRoleGrantDelayFull(roleId);
+        (,, result) = _getRoleGrantDelayFull(roleId);
     }
 
     function hashExecutionId(address target, bytes4 selector) external pure returns (bytes32) {

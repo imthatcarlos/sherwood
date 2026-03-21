@@ -101,12 +101,11 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
      * * Try (`0x01`): Try execution type (emits ERC7579TryExecuteFail on failure).
      */
     function supportsExecutionMode(bytes32 encodedMode) public view virtual returns (bool) {
-        (CallType callType, ExecType execType, , ) = Mode.wrap(encodedMode).decodeMode();
-        return
-            (callType == ERC7579Utils.CALLTYPE_SINGLE ||
-                callType == ERC7579Utils.CALLTYPE_BATCH ||
-                callType == ERC7579Utils.CALLTYPE_DELEGATECALL) &&
-            (execType == ERC7579Utils.EXECTYPE_DEFAULT || execType == ERC7579Utils.EXECTYPE_TRY);
+        (CallType callType, ExecType execType,,) = Mode.wrap(encodedMode).decodeMode();
+        return (callType == ERC7579Utils.CALLTYPE_SINGLE
+                || callType == ERC7579Utils.CALLTYPE_BATCH
+                || callType == ERC7579Utils.CALLTYPE_DELEGATECALL)
+            && (execType == ERC7579Utils.EXECTYPE_DEFAULT || execType == ERC7579Utils.EXECTYPE_TRY);
     }
 
     /**
@@ -120,41 +119,43 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
      * * Fallback Handler: A module that can extend the fallback functionality of a smart account.
      */
     function supportsModule(uint256 moduleTypeId) public view virtual returns (bool) {
-        return
-            moduleTypeId == MODULE_TYPE_VALIDATOR ||
-            moduleTypeId == MODULE_TYPE_EXECUTOR ||
-            moduleTypeId == MODULE_TYPE_FALLBACK;
+        return moduleTypeId == MODULE_TYPE_VALIDATOR || moduleTypeId == MODULE_TYPE_EXECUTOR
+            || moduleTypeId == MODULE_TYPE_FALLBACK;
     }
 
     /// @inheritdoc IERC7579ModuleConfig
-    function installModule(
-        uint256 moduleTypeId,
-        address module,
-        bytes calldata initData
-    ) public virtual onlyEntryPointOrSelf {
+    function installModule(uint256 moduleTypeId, address module, bytes calldata initData)
+        public
+        virtual
+        onlyEntryPointOrSelf
+    {
         _installModule(moduleTypeId, module, initData);
     }
 
     /// @inheritdoc IERC7579ModuleConfig
-    function uninstallModule(
-        uint256 moduleTypeId,
-        address module,
-        bytes calldata deInitData
-    ) public virtual onlyEntryPointOrSelf {
+    function uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData)
+        public
+        virtual
+        onlyEntryPointOrSelf
+    {
         _uninstallModule(moduleTypeId, module, deInitData);
     }
 
     /// @inheritdoc IERC7579ModuleConfig
-    function isModuleInstalled(
-        uint256 moduleTypeId,
-        address module,
-        bytes calldata additionalContext
-    ) public view virtual returns (bool) {
+    function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext)
+        public
+        view
+        virtual
+        returns (bool)
+    {
         if (moduleTypeId == MODULE_TYPE_VALIDATOR) return _validators.contains(module);
         if (moduleTypeId == MODULE_TYPE_EXECUTOR) return _executors.contains(module);
-        if (moduleTypeId == MODULE_TYPE_FALLBACK)
+        if (
+            moduleTypeId == MODULE_TYPE_FALLBACK
             // ERC-7579 requires this function to return bool, never revert. Check length to avoid out-of-bounds access.
+        ) {
             return additionalContext.length > 3 && _fallbacks[bytes4(additionalContext[0:4])] == module;
+        }
         return false;
     }
 
@@ -164,10 +165,7 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
     }
 
     /// @inheritdoc IERC7579Execution
-    function executeFromExecutor(
-        bytes32 mode,
-        bytes calldata executionCalldata
-    )
+    function executeFromExecutor(bytes32 mode, bytes calldata executionCalldata)
         public
         payable
         virtual
@@ -208,16 +206,16 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
      *
      * See {_extractUserOpValidator} for the module extraction logic.
      */
-    function _validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        bytes calldata signature
-    ) internal virtual override returns (uint256) {
+    function _validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, bytes calldata signature)
+        internal
+        virtual
+        override
+        returns (uint256)
+    {
         address module = _extractUserOpValidator(userOp);
-        return
-            isModuleInstalled(MODULE_TYPE_VALIDATOR, module, Calldata.emptyBytes())
-                ? IERC7579Validator(module).validateUserOp(userOp, _signableUserOpHash(userOp, userOpHash))
-                : super._validateUserOp(userOp, userOpHash, signature);
+        return isModuleInstalled(MODULE_TYPE_VALIDATOR, module, Calldata.emptyBytes())
+            ? IERC7579Validator(module).validateUserOp(userOp, _signableUserOpHash(userOp, userOpHash))
+            : super._validateUserOp(userOp, userOpHash, signature);
     }
 
     /**
@@ -225,11 +223,12 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
      *
      * Reverts if the call type is not supported.
      */
-    function _execute(
-        Mode mode,
-        bytes calldata executionCalldata
-    ) internal virtual returns (bytes[] memory returnData) {
-        (CallType callType, ExecType execType, , ) = mode.decodeMode();
+    function _execute(Mode mode, bytes calldata executionCalldata)
+        internal
+        virtual
+        returns (bytes[] memory returnData)
+    {
+        (CallType callType, ExecType execType,,) = mode.decodeMode();
         if (callType == ERC7579Utils.CALLTYPE_SINGLE) return executionCalldata.execSingle(execType);
         if (callType == ERC7579Utils.CALLTYPE_BATCH) return executionCalldata.execBatch(execType);
         if (callType == ERC7579Utils.CALLTYPE_DELEGATECALL) return executionCalldata.execDelegateCall(execType);
@@ -265,8 +264,7 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
             bytes4 selector;
             (selector, initData) = _decodeFallbackData(initData);
             require(
-                _fallbacks[selector] == address(0),
-                ERC7579Utils.ERC7579AlreadyInstalledModule(moduleTypeId, module)
+                _fallbacks[selector] == address(0), ERC7579Utils.ERC7579AlreadyInstalledModule(moduleTypeId, module)
             );
             _fallbacks[selector] = module;
         }
@@ -335,11 +333,11 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
     }
 
     /// @dev Checks if the module is installed. Reverts if the module is not installed.
-    function _checkModule(
-        uint256 moduleTypeId,
-        address module,
-        bytes calldata additionalContext
-    ) internal view virtual {
+    function _checkModule(uint256 moduleTypeId, address module, bytes calldata additionalContext)
+        internal
+        view
+        virtual
+    {
         require(
             isModuleInstalled(moduleTypeId, module, additionalContext),
             ERC7579Utils.ERC7579UninstalledModule(moduleTypeId, module)
@@ -388,9 +386,12 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
      *
      * NOTE: This function expects the signature to be at least 20 bytes long. Panics with {Panic-ARRAY_OUT_OF_BOUNDS} (0x32) otherwise.
      */
-    function _extractSignatureValidator(
-        bytes calldata signature
-    ) internal pure virtual returns (address module, bytes calldata innerSignature) {
+    function _extractSignatureValidator(bytes calldata signature)
+        internal
+        pure
+        virtual
+        returns (address module, bytes calldata innerSignature)
+    {
         return (address(bytes20(signature)), signature[20:]);
     }
 
@@ -403,18 +404,28 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
      * of external initializers. That may change in the future, as most accounts will probably be deployed as
      * clones/proxy/EIP-7702 delegates and therefore rely on initializers anyway.
      */
-    function _decodeFallbackData(
-        bytes memory data
-    ) internal pure virtual returns (bytes4 selector, bytes memory remaining) {
+    function _decodeFallbackData(bytes memory data)
+        internal
+        pure
+        virtual
+        returns (bytes4 selector, bytes memory remaining)
+    {
         require(data.length > 3, ERC7579CannotDecodeFallbackData());
         return (bytes4(data), data.slice(4));
     }
 
     /// @dev By default, only use the modules for validation of userOp and signature. Disable raw signatures.
     function _rawSignatureValidation(
-        bytes32 /*hash*/,
+        bytes32,
+        /*hash*/
         bytes calldata /*signature*/
-    ) internal view virtual override returns (bool) {
+    )
+        internal
+        view
+        virtual
+        override
+        returns (bool)
+    {
         return false;
     }
 }

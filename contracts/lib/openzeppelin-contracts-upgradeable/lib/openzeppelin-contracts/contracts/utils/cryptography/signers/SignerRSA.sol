@@ -55,10 +55,13 @@ abstract contract SignerRSA is AbstractSigner {
      * provided `hash` is used as the `M` (message) and rehashed using SHA256 according to EMSA-PKCS1-v1_5
      * encoding as per section 9.2 (step 1) of the RFC.
      */
-    function _rawSignatureValidation(
-        bytes32 hash,
-        bytes calldata signature
-    ) internal view virtual override returns (bool) {
+    function _rawSignatureValidation(bytes32 hash, bytes calldata signature)
+        internal
+        view
+        virtual
+        override
+        returns (bool)
+    {
         (bytes memory e, bytes memory n) = signer();
         return RSA.pkcs1Sha256(abi.encodePacked(hash), signature, e, n);
     }

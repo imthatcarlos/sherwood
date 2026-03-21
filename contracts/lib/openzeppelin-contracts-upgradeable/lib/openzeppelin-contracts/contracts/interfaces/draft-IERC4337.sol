@@ -61,16 +61,18 @@ interface IAggregator {
      * @dev Validates the signature for a user operation.
      * Returns an alternative signature that should be used during bundling.
      */
-    function validateUserOpSignature(
-        PackedUserOperation calldata userOp
-    ) external view returns (bytes memory sigForUserOp);
+    function validateUserOpSignature(PackedUserOperation calldata userOp)
+        external
+        view
+        returns (bytes memory sigForUserOp);
 
     /**
      * @dev Returns an aggregated signature for a batch of user operation's signatures.
      */
-    function aggregateSignatures(
-        PackedUserOperation[] calldata userOps
-    ) external view returns (bytes memory aggregatesSignature);
+    function aggregateSignatures(PackedUserOperation[] calldata userOps)
+        external
+        view
+        returns (bytes memory aggregatesSignature);
 
     /**
      * @dev Validates that the aggregated signature is valid for the user operations.
@@ -174,10 +176,7 @@ interface IEntryPoint is IEntryPointNonces, IEntryPointStake {
      * @dev Executes a batch of aggregated user operations per aggregator.
      * @param beneficiary Address to which gas is refunded upon completing the execution.
      */
-    function handleAggregatedOps(
-        UserOpsPerAggregator[] calldata opsPerAggregator,
-        address payable beneficiary
-    ) external;
+    function handleAggregatedOps(UserOpsPerAggregator[] calldata opsPerAggregator, address payable beneficiary) external;
 }
 
 /**
@@ -199,11 +198,9 @@ interface IAccount {
      * - `validUntil` (`uint48`): The UserOp is valid only up to this time. Zero for “infinite”.
      * - `validAfter` (`uint48`): The UserOp is valid only after this time.
      */
-    function validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 missingAccountFunds
-    ) external returns (uint256 validationData);
+    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
+        external
+        returns (uint256 validationData);
 }
 
 /**
@@ -235,21 +232,15 @@ interface IPaymaster {
      *
      * NOTE: Bundlers will reject this method if it modifies the state, unless it's whitelisted.
      */
-    function validatePaymasterUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 maxCost
-    ) external returns (bytes memory context, uint256 validationData);
+    function validatePaymasterUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 maxCost)
+        external
+        returns (bytes memory context, uint256 validationData);
 
     /**
      * @dev Verifies the sender is the entrypoint.
      * @param actualGasCost the actual amount paid (by account or paymaster) for this UserOperation
      * @param actualUserOpFeePerGas total gas used by this UserOperation (including preVerification, creation, validation and execution)
      */
-    function postOp(
-        PostOpMode mode,
-        bytes calldata context,
-        uint256 actualGasCost,
-        uint256 actualUserOpFeePerGas
-    ) external;
+    function postOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost, uint256 actualUserOpFeePerGas)
+        external;
 }

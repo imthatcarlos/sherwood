@@ -33,7 +33,9 @@ import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337U
 import {ERC7579Utils} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {ERC7913P256Verifier} from "@openzeppelin/contracts/utils/cryptography/verifiers/ERC7913P256Verifier.sol";
 import {ERC7913RSAVerifier} from "@openzeppelin/contracts/utils/cryptography/verifiers/ERC7913RSAVerifier.sol";
-import {ERC7913WebAuthnVerifier} from "@openzeppelin/contracts/utils/cryptography/verifiers/ERC7913WebAuthnVerifier.sol";
+import {
+    ERC7913WebAuthnVerifier
+} from "@openzeppelin/contracts/utils/cryptography/verifiers/ERC7913WebAuthnVerifier.sol";
 import {Heap} from "@openzeppelin/contracts/utils/structs/Heap.sol";
 import {InteroperableAddress} from "@openzeppelin/contracts/utils/draft-InteroperableAddress.sol";
 import {LowLevelCall} from "@openzeppelin/contracts/utils/LowLevelCall.sol";
@@ -61,9 +63,8 @@ import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {TrieProof} from "@openzeppelin/contracts/utils/cryptography/TrieProof.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-contract Dummy1234Upgradeable is Initializable {    function __Dummy1234_init() internal onlyInitializing {
-    }
+contract Dummy1234Upgradeable is Initializable {
+    function __Dummy1234_init() internal onlyInitializing {}
 
-    function __Dummy1234_init_unchained() internal onlyInitializing {
-    }
+    function __Dummy1234_init_unchained() internal onlyInitializing {}
 }

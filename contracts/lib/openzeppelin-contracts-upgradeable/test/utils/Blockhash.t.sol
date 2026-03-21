@@ -45,9 +45,8 @@ contract BlockhashTest is Test {
         _setHistoryBlockhash(targetBlock, expectedHash);
 
         bytes32 result = Blockhash.blockHash(targetBlock);
-        (bool success, bytes memory returndata) = Blockhash.HISTORY_STORAGE_ADDRESS.staticcall(
-            abi.encodePacked(bytes32(targetBlock))
-        );
+        (bool success, bytes memory returndata) =
+            Blockhash.HISTORY_STORAGE_ADDRESS.staticcall(abi.encodePacked(bytes32(targetBlock)));
         assertTrue(success);
         assertEq(result, abi.decode(returndata, (bytes32)));
         assertEq(result, expectedHash);
@@ -94,7 +93,7 @@ contract BlockhashTest is Test {
         vm.assume(blockNumber < type(uint256).max);
         vm.roll(blockNumber + 1); // roll to the next block so the storage contract sets the parent's blockhash
         vm.prank(SYSTEM_ADDRESS);
-        (bool success, ) = Blockhash.HISTORY_STORAGE_ADDRESS.call(abi.encode(blockHash)); // set parent's blockhash
+        (bool success,) = Blockhash.HISTORY_STORAGE_ADDRESS.call(abi.encode(blockHash)); // set parent's blockhash
         assertTrue(success);
         vm.roll(currentBlock + 1);
     }

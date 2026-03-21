@@ -10,11 +10,10 @@ contract Base64DirtyUpgradeable is Initializable {
         uint256 value;
     }
 
-    function __Base64Dirty_init() internal onlyInitializing {
-    }
+    function __Base64Dirty_init() internal onlyInitializing {}
 
-    function __Base64Dirty_init_unchained() internal onlyInitializing {
-    }
+    function __Base64Dirty_init_unchained() internal onlyInitializing {}
+
     function encode(bytes memory input) public pure returns (string memory) {
         A memory unused = A({value: type(uint256).max});
         // To silence warning

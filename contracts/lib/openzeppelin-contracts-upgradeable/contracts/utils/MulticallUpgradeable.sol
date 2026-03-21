@@ -20,19 +20,17 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * {Context-_msgSender} are not propagated to subcalls.
  */
 abstract contract MulticallUpgradeable is Initializable, ContextUpgradeable {
-    function __Multicall_init() internal onlyInitializing {
-    }
+    function __Multicall_init() internal onlyInitializing {}
 
-    function __Multicall_init_unchained() internal onlyInitializing {
-    }
+    function __Multicall_init_unchained() internal onlyInitializing {}
+
     /**
      * @dev Receives and executes a batch of function calls on this contract.
      * @custom:oz-upgrades-unsafe-allow-reachable delegatecall
      */
     function multicall(bytes[] calldata data) public virtual returns (bytes[] memory results) {
-        bytes memory context = msg.sender == _msgSender()
-            ? new bytes(0)
-            : msg.data[msg.data.length - _contextSuffixLength():];
+        bytes memory context =
+            msg.sender == _msgSender() ? new bytes(0) : msg.data[msg.data.length - _contextSuffixLength():];
 
         results = new bytes[](data.length);
         for (uint256 i = 0; i < data.length; i++) {

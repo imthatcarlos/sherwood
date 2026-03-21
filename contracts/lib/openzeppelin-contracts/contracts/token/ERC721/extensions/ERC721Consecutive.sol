@@ -148,9 +148,9 @@ abstract contract ERC721Consecutive is IERC2309, ERC721 {
 
         // record burn
         if (
-            to == address(0) && // if we burn
-            tokenId < _nextConsecutiveId() && // and the tokenId was minted in a batch
-            !_sequentialBurn.get(tokenId) // and the token was never marked as burnt
+            to == address(0) // if we burn
+                && tokenId < _nextConsecutiveId() // and the tokenId was minted in a batch
+                && !_sequentialBurn.get(tokenId) // and the token was never marked as burnt
         ) {
             _sequentialBurn.set(tokenId);
         }
@@ -170,7 +170,7 @@ abstract contract ERC721Consecutive is IERC2309, ERC721 {
      * if no consecutive tokenId has been minted before.
      */
     function _nextConsecutiveId() private view returns (uint96) {
-        (bool exists, uint96 latestId, ) = _sequentialOwnership.latestCheckpoint();
+        (bool exists, uint96 latestId,) = _sequentialOwnership.latestCheckpoint();
         return exists ? latestId + 1 : _firstConsecutiveId();
     }
 }

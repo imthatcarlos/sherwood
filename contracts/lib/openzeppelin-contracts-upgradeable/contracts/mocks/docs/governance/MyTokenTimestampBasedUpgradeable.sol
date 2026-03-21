@@ -7,7 +7,12 @@ import {ERC20VotesUpgradeable} from "../../../token/ERC20/extensions/ERC20VotesU
 import {NoncesUpgradeable} from "../../../utils/NoncesUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-contract MyTokenTimestampBasedUpgradeable is Initializable, ERC20Upgradeable, ERC20PermitUpgradeable, ERC20VotesUpgradeable {
+contract MyTokenTimestampBasedUpgradeable is
+    Initializable,
+    ERC20Upgradeable,
+    ERC20PermitUpgradeable,
+    ERC20VotesUpgradeable
+{
     function __MyTokenTimestampBased_init() internal onlyInitializing {
         __ERC20_init_unchained("MyTokenTimestampBased", "MTK");
         __EIP712_init_unchained("MyTokenTimestampBased", "1");
@@ -29,11 +34,20 @@ contract MyTokenTimestampBasedUpgradeable is Initializable, ERC20Upgradeable, ER
 
     // The functions below are overrides required by Solidity.
 
-    function _update(address from, address to, uint256 amount) internal override(ERC20Upgradeable, ERC20VotesUpgradeable) {
+    function _update(address from, address to, uint256 amount)
+        internal
+        override(ERC20Upgradeable, ERC20VotesUpgradeable)
+    {
         super._update(from, to, amount);
     }
 
-    function nonces(address owner) public view virtual override(ERC20PermitUpgradeable, NoncesUpgradeable) returns (uint256) {
+    function nonces(address owner)
+        public
+        view
+        virtual
+        override(ERC20PermitUpgradeable, NoncesUpgradeable)
+        returns (uint256)
+    {
         return super.nonces(owner);
     }
 }

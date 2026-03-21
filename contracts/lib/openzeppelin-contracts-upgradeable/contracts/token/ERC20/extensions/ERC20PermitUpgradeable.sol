@@ -18,7 +18,13 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * presenting a message signed by the account. By not relying on `{IERC20-approve}`, the token holder account doesn't
  * need to send a transaction, and thus is not required to hold Ether at all.
  */
-abstract contract ERC20PermitUpgradeable is Initializable, ERC20Upgradeable, IERC20Permit, EIP712Upgradeable, NoncesUpgradeable {
+abstract contract ERC20PermitUpgradeable is
+    Initializable,
+    ERC20Upgradeable,
+    IERC20Permit,
+    EIP712Upgradeable,
+    NoncesUpgradeable
+{
     bytes32 private constant PERMIT_TYPEHASH =
         keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
@@ -44,15 +50,10 @@ abstract contract ERC20PermitUpgradeable is Initializable, ERC20Upgradeable, IER
     function __ERC20Permit_init_unchained(string memory) internal onlyInitializing {}
 
     /// @inheritdoc IERC20Permit
-    function permit(
-        address owner,
-        address spender,
-        uint256 value,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) public virtual {
+    function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        public
+        virtual
+    {
         if (block.timestamp > deadline) {
             revert ERC2612ExpiredSignature(deadline);
         }

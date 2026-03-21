@@ -43,12 +43,11 @@ contract CallReceiverMock {
         return (a, b);
     }
 
-    function mockFunctionWithArgsReturnWritesStorage(
-        bytes32 slot,
-        bytes32 value,
-        uint256 a,
-        uint256 b
-    ) public payable returns (uint256, uint256) {
+    function mockFunctionWithArgsReturnWritesStorage(bytes32 slot, bytes32 value, uint256 a, uint256 b)
+        public
+        payable
+        returns (uint256, uint256)
+    {
         assembly ("memory-safe") {
             sstore(slot, value)
         }
@@ -83,7 +82,7 @@ contract CallReceiverMock {
     }
 
     function mockFunctionOutOfGas() public payable {
-        for (uint256 i = 0; ; ++i) {
+        for (uint256 i = 0;; ++i) {
             _array.push(i);
         }
     }

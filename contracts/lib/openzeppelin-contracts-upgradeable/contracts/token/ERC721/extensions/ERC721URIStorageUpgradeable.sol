@@ -24,7 +24,8 @@ abstract contract ERC721URIStorageUpgradeable is Initializable, IERC4906, ERC721
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC721URIStorage")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC721URIStorageStorageLocation = 0x0542a41881ee128a365a727b282c86fa859579490b9bb45aab8503648c8e7900;
+    bytes32 private constant ERC721URIStorageStorageLocation =
+        0x0542a41881ee128a365a727b282c86fa859579490b9bb45aab8503648c8e7900;
 
     function _getERC721URIStorageStorage() private pure returns (ERC721URIStorageStorage storage $) {
         assembly {
@@ -32,13 +33,18 @@ abstract contract ERC721URIStorageUpgradeable is Initializable, IERC4906, ERC721
         }
     }
 
-    function __ERC721URIStorage_init() internal onlyInitializing {
-    }
+    function __ERC721URIStorage_init() internal onlyInitializing {}
 
-    function __ERC721URIStorage_init_unchained() internal onlyInitializing {
-    }
+    function __ERC721URIStorage_init_unchained() internal onlyInitializing {}
+
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721Upgradeable, IERC165) returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(ERC721Upgradeable, IERC165)
+        returns (bool)
+    {
         return interfaceId == ERC4906_INTERFACE_ID || super.supportsInterface(interfaceId);
     }
 

@@ -23,10 +23,7 @@ interface IERC1363Receiver {
      * @param data Additional data with no specified format.
      * @return `bytes4(keccak256("onTransferReceived(address,address,uint256,bytes)"))` if transfer is allowed unless throwing.
      */
-    function onTransferReceived(
-        address operator,
-        address from,
-        uint256 value,
-        bytes calldata data
-    ) external returns (bytes4);
+    function onTransferReceived(address operator, address from, uint256 value, bytes calldata data)
+        external
+        returns (bytes4);
 }

@@ -6,35 +6,56 @@ import {GovernorUpgradeable} from "../../governance/GovernorUpgradeable.sol";
 import {GovernorTimelockControlUpgradeable} from "../../governance/extensions/GovernorTimelockControlUpgradeable.sol";
 import {GovernorSettingsUpgradeable} from "../../governance/extensions/GovernorSettingsUpgradeable.sol";
 import {GovernorCountingSimpleUpgradeable} from "../../governance/extensions/GovernorCountingSimpleUpgradeable.sol";
-import {GovernorVotesQuorumFractionUpgradeable} from "../../governance/extensions/GovernorVotesQuorumFractionUpgradeable.sol";
+import {
+    GovernorVotesQuorumFractionUpgradeable
+} from "../../governance/extensions/GovernorVotesQuorumFractionUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 abstract contract GovernorTimelockControlMockUpgradeable is
-    Initializable, GovernorSettingsUpgradeable,
+    Initializable,
+    GovernorSettingsUpgradeable,
     GovernorTimelockControlUpgradeable,
     GovernorVotesQuorumFractionUpgradeable,
     GovernorCountingSimpleUpgradeable
 {
-    function __GovernorTimelockControlMock_init() internal onlyInitializing {
-    }
+    function __GovernorTimelockControlMock_init() internal onlyInitializing {}
 
-    function __GovernorTimelockControlMock_init_unchained() internal onlyInitializing {
-    }
-    function quorum(uint256 blockNumber) public view override(GovernorUpgradeable, GovernorVotesQuorumFractionUpgradeable) returns (uint256) {
+    function __GovernorTimelockControlMock_init_unchained() internal onlyInitializing {}
+
+    function quorum(uint256 blockNumber)
+        public
+        view
+        override(GovernorUpgradeable, GovernorVotesQuorumFractionUpgradeable)
+        returns (uint256)
+    {
         return super.quorum(blockNumber);
     }
 
-    function state(uint256 proposalId) public view override(GovernorUpgradeable, GovernorTimelockControlUpgradeable) returns (ProposalState) {
+    function state(uint256 proposalId)
+        public
+        view
+        override(GovernorUpgradeable, GovernorTimelockControlUpgradeable)
+        returns (ProposalState)
+    {
         return super.state(proposalId);
     }
 
-    function proposalThreshold() public view override(GovernorUpgradeable, GovernorSettingsUpgradeable) returns (uint256) {
+    function proposalThreshold()
+        public
+        view
+        override(GovernorUpgradeable, GovernorSettingsUpgradeable)
+        returns (uint256)
+    {
         return super.proposalThreshold();
     }
 
-    function proposalNeedsQueuing(
-        uint256 proposalId
-    ) public view virtual override(GovernorUpgradeable, GovernorTimelockControlUpgradeable) returns (bool) {
+    function proposalNeedsQueuing(uint256 proposalId)
+        public
+        view
+        virtual
+        override(GovernorUpgradeable, GovernorTimelockControlUpgradeable)
+        returns (bool)
+    {
         return super.proposalNeedsQueuing(proposalId);
     }
 
@@ -67,7 +88,12 @@ abstract contract GovernorTimelockControlMockUpgradeable is
         return super._cancel(targets, values, calldatas, descriptionHash);
     }
 
-    function _executor() internal view override(GovernorUpgradeable, GovernorTimelockControlUpgradeable) returns (address) {
+    function _executor()
+        internal
+        view
+        override(GovernorUpgradeable, GovernorTimelockControlUpgradeable)
+        returns (address)
+    {
         return super._executor();
     }
 

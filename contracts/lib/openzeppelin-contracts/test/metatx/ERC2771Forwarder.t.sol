@@ -19,25 +19,25 @@ enum TamperType {
 contract ERC2771ForwarderMock is ERC2771Forwarder {
     constructor(string memory name) ERC2771Forwarder(name) {}
 
-    function forwardRequestStructHash(
-        ERC2771Forwarder.ForwardRequestData calldata request,
-        uint256 nonce
-    ) external view returns (bytes32) {
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        FORWARD_REQUEST_TYPEHASH,
-                        request.from,
-                        request.to,
-                        request.value,
-                        request.gas,
-                        nonce,
-                        request.deadline,
-                        keccak256(request.data)
-                    )
+    function forwardRequestStructHash(ERC2771Forwarder.ForwardRequestData calldata request, uint256 nonce)
+        external
+        view
+        returns (bytes32)
+    {
+        return _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    FORWARD_REQUEST_TYPEHASH,
+                    request.from,
+                    request.to,
+                    request.value,
+                    request.gas,
+                    nonce,
+                    request.deadline,
+                    keccak256(request.data)
                 )
-            );
+            )
+        );
     }
 }
 
@@ -59,36 +59,33 @@ contract ERC2771ForwarderTest is Test {
 
     // Forge a new ForwardRequestData
     function _forgeRequestData() private view returns (ERC2771Forwarder.ForwardRequestData memory) {
-        return
-            _forgeRequestData({
-                value: 0,
-                deadline: uint48(block.timestamp + 1),
-                data: abi.encodeCall(CallReceiverMock.mockFunction, ())
-            });
+        return _forgeRequestData({
+            value: 0, deadline: uint48(block.timestamp + 1), data: abi.encodeCall(CallReceiverMock.mockFunction, ())
+        });
     }
 
-    function _forgeRequestData(
-        uint256 value,
-        uint48 deadline,
-        bytes memory data
-    ) private view returns (ERC2771Forwarder.ForwardRequestData memory) {
-        return
-            ERC2771Forwarder.ForwardRequestData({
-                from: _signer,
-                to: address(_receiver),
-                value: value,
-                gas: 30000,
-                deadline: deadline,
-                data: data,
-                signature: ""
-            });
+    function _forgeRequestData(uint256 value, uint48 deadline, bytes memory data)
+        private
+        view
+        returns (ERC2771Forwarder.ForwardRequestData memory)
+    {
+        return ERC2771Forwarder.ForwardRequestData({
+            from: _signer,
+            to: address(_receiver),
+            value: value,
+            gas: 30000,
+            deadline: deadline,
+            data: data,
+            signature: ""
+        });
     }
 
     // Sign a ForwardRequestData (in place) for a given nonce. Also returns it for convenience.
-    function _signRequestData(
-        ERC2771Forwarder.ForwardRequestData memory request,
-        uint256 nonce
-    ) private view returns (ERC2771Forwarder.ForwardRequestData memory) {
+    function _signRequestData(ERC2771Forwarder.ForwardRequestData memory request, uint256 nonce)
+        private
+        view
+        returns (ERC2771Forwarder.ForwardRequestData memory)
+    {
         bytes32 digest = _erc2771Forwarder.forwardRequestStructHash(request, nonce);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(_signerPrivateKey, digest);
         request.signature = abi.encodePacked(r, s, v);
@@ -96,10 +93,10 @@ contract ERC2771ForwarderTest is Test {
     }
 
     // Tamper a ForwardRequestData (in place). Also returns it for convenience.
-    function _tamperRequestData(
-        ERC2771Forwarder.ForwardRequestData memory request,
-        TamperType tamper
-    ) private returns (ERC2771Forwarder.ForwardRequestData memory) {
+    function _tamperRequestData(ERC2771Forwarder.ForwardRequestData memory request, TamperType tamper)
+        private
+        returns (ERC2771Forwarder.ForwardRequestData memory)
+    {
         if (tamper == TamperType.FROM) request.from = vm.randomAddress();
         else if (tamper == TamperType.TO) request.to = vm.randomAddress();
         else if (tamper == TamperType.VALUE) request.value = vm.randomUint();
@@ -110,26 +107,22 @@ contract ERC2771ForwarderTest is Test {
     }
 
     // Predict the revert error for a tampered request, and expect it is emitted.
-    function _tamperedExpectRevert(
-        ERC2771Forwarder.ForwardRequestData memory request,
-        TamperType tamper,
-        uint256 nonce
-    ) private returns (ERC2771Forwarder.ForwardRequestData memory) {
+    function _tamperedExpectRevert(ERC2771Forwarder.ForwardRequestData memory request, TamperType tamper, uint256 nonce)
+        private
+        returns (ERC2771Forwarder.ForwardRequestData memory)
+    {
         if (tamper == TamperType.FROM) nonce = _erc2771Forwarder.nonces(request.from);
 
         // predict revert
         if (tamper == TamperType.TO) {
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    ERC2771Forwarder.ERC2771UntrustfulTarget.selector,
-                    request.to,
-                    address(_erc2771Forwarder)
+                    ERC2771Forwarder.ERC2771UntrustfulTarget.selector, request.to, address(_erc2771Forwarder)
                 )
             );
         } else {
-            (address recovered, , ) = _erc2771Forwarder.forwardRequestStructHash(request, nonce).tryRecover(
-                request.signature
-            );
+            (address recovered,,) =
+                _erc2771Forwarder.forwardRequestStructHash(request, nonce).tryRecover(request.signature);
             vm.expectRevert(
                 abi.encodeWithSelector(ERC2771Forwarder.ERC2771ForwarderInvalidSigner.selector, recovered, request.from)
             );
@@ -233,9 +226,7 @@ contract ERC2771ForwarderTest is Test {
         ERC2771Forwarder.ForwardRequestData[] memory requests = new ERC2771Forwarder.ForwardRequestData[](3);
         for (uint256 i = 0; i < requests.length; ++i) {
             requests[i] = _forgeRequestData({
-                value: 0,
-                deadline: uint48(block.timestamp + 1),
-                data: abi.encodeCall(CallReceiverMock.mockFunction, ())
+                value: 0, deadline: uint48(block.timestamp + 1), data: abi.encodeCall(CallReceiverMock.mockFunction, ())
             });
             _signRequestData(requests[i], nonce + i);
         }
@@ -256,9 +247,7 @@ contract ERC2771ForwarderTest is Test {
         ERC2771Forwarder.ForwardRequestData[] memory requests = new ERC2771Forwarder.ForwardRequestData[](3);
         for (uint256 i = 0; i < requests.length; ++i) {
             requests[i] = _forgeRequestData({
-                value: 0,
-                deadline: uint48(block.timestamp + 1),
-                data: abi.encodeCall(CallReceiverMock.mockFunction, ())
+                value: 0, deadline: uint48(block.timestamp + 1), data: abi.encodeCall(CallReceiverMock.mockFunction, ())
             });
             _signRequestData(requests[i], nonce + i);
         }

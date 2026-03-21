@@ -131,13 +131,9 @@ library SafeERC20 {
      *
      * Reverts if the returned value is other than `true`.
      */
-    function transferFromAndCallRelaxed(
-        IERC1363 token,
-        address from,
-        address to,
-        uint256 value,
-        bytes memory data
-    ) internal {
+    function transferFromAndCallRelaxed(IERC1363 token, address from, address to, uint256 value, bytes memory data)
+        internal
+    {
         if (to.code.length == 0) {
             safeTransferFrom(token, from, to, value);
         } else if (!token.transferFromAndCall(from, to, value, data)) {
@@ -209,13 +205,10 @@ library SafeERC20 {
      * @param value The amount of token to transfer
      * @param bubble Behavior switch if the transfer call reverts: bubble the revert reason or return a false boolean.
      */
-    function _safeTransferFrom(
-        IERC20 token,
-        address from,
-        address to,
-        uint256 value,
-        bool bubble
-    ) private returns (bool success) {
+    function _safeTransferFrom(IERC20 token, address from, address to, uint256 value, bool bubble)
+        private
+        returns (bool success)
+    {
         bytes4 selector = IERC20.transferFrom.selector;
 
         assembly ("memory-safe") {

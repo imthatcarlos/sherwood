@@ -6,9 +6,8 @@ import {ERC20Upgradeable} from "../../token/ERC20/ERC20Upgradeable.sol";
 import {MulticallUpgradeable} from "../../utils/MulticallUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-abstract contract ERC20MulticallMockUpgradeable is Initializable, ERC20Upgradeable, MulticallUpgradeable {    function __ERC20MulticallMock_init() internal onlyInitializing {
-    }
+abstract contract ERC20MulticallMockUpgradeable is Initializable, ERC20Upgradeable, MulticallUpgradeable {
+    function __ERC20MulticallMock_init() internal onlyInitializing {}
 
-    function __ERC20MulticallMock_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20MulticallMock_init_unchained() internal onlyInitializing {}
 }

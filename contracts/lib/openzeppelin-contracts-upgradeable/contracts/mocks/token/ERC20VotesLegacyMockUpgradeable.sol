@@ -25,11 +25,10 @@ abstract contract ERC20VotesLegacyMockUpgradeable is Initializable, IVotes, ERC2
     mapping(address delegatee => Checkpoint[]) private _checkpoints;
     Checkpoint[] private _totalSupplyCheckpoints;
 
-    function __ERC20VotesLegacyMock_init() internal onlyInitializing {
-    }
+    function __ERC20VotesLegacyMock_init() internal onlyInitializing {}
 
-    function __ERC20VotesLegacyMock_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20VotesLegacyMock_init_unchained() internal onlyInitializing {}
+
     /**
      * @dev Get the `pos`-th checkpoint for `account`.
      */
@@ -141,20 +140,13 @@ abstract contract ERC20VotesLegacyMockUpgradeable is Initializable, IVotes, ERC2
     /**
      * @dev Delegates votes from signer to `delegatee`
      */
-    function delegateBySig(
-        address delegatee,
-        uint256 nonce,
-        uint256 expiry,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) public virtual {
+    function delegateBySig(address delegatee, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s)
+        public
+        virtual
+    {
         require(block.timestamp <= expiry, "ERC20Votes: signature expired");
         address signer = ECDSA.recover(
-            _hashTypedDataV4(keccak256(abi.encode(_DELEGATION_TYPEHASH, delegatee, nonce, expiry))),
-            v,
-            r,
-            s
+            _hashTypedDataV4(keccak256(abi.encode(_DELEGATION_TYPEHASH, delegatee, nonce, expiry))), v, r, s
         );
         require(nonce == _useNonce(signer), "ERC20Votes: invalid nonce");
         _delegate(signer, delegatee);

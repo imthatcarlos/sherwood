@@ -24,21 +24,15 @@ library InteroperableAddress {
      * and `addr`. This is a generic function that supports any chain type, chain reference and address supported by
      * ERC-7930, including interoperable addresses with empty chain reference or empty address.
      */
-    function formatV1(
-        bytes2 chainType,
-        bytes memory chainReference,
-        bytes memory addr
-    ) internal pure returns (bytes memory) {
+    function formatV1(bytes2 chainType, bytes memory chainReference, bytes memory addr)
+        internal
+        pure
+        returns (bytes memory)
+    {
         require(chainReference.length > 0 || addr.length > 0, InteroperableAddressEmptyReferenceAndAddress());
-        return
-            abi.encodePacked(
-                bytes2(0x0001),
-                chainType,
-                chainReference.length.toUint8(),
-                chainReference,
-                addr.length.toUint8(),
-                addr
-            );
+        return abi.encodePacked(
+            bytes2(0x0001), chainType, chainReference.length.toUint8(), chainReference, addr.length.toUint8(), addr
+        );
     }
 
     /**
@@ -72,9 +66,11 @@ library InteroperableAddress {
      * NOTE: Trailing bytes after a valid v1 encoding are ignored. The same decoded address may therefore correspond
      * to multiple distinct input byte strings.
      */
-    function parseV1(
-        bytes memory self
-    ) internal pure returns (bytes2 chainType, bytes memory chainReference, bytes memory addr) {
+    function parseV1(bytes memory self)
+        internal
+        pure
+        returns (bytes2 chainType, bytes memory chainReference, bytes memory addr)
+    {
         bool success;
         (success, chainType, chainReference, addr) = tryParseV1(self);
         require(success, InteroperableAddressParsingError(self));
@@ -83,9 +79,11 @@ library InteroperableAddress {
     /**
      * @dev Variant of {parseV1} that handles calldata slices to reduce memory copy costs.
      */
-    function parseV1Calldata(
-        bytes calldata self
-    ) internal pure returns (bytes2 chainType, bytes calldata chainReference, bytes calldata addr) {
+    function parseV1Calldata(bytes calldata self)
+        internal
+        pure
+        returns (bytes2 chainType, bytes calldata chainReference, bytes calldata addr)
+    {
         bool success;
         (success, chainType, chainReference, addr) = tryParseV1Calldata(self);
         require(success, InteroperableAddressParsingError(self));
@@ -95,9 +93,11 @@ library InteroperableAddress {
      * @dev Variant of {parseV1} that does not revert on invalid input. Instead, it returns `false` as the first
      * return value to indicate parsing failure when the input does not follow version 1 of ERC-7930.
      */
-    function tryParseV1(
-        bytes memory self
-    ) internal pure returns (bool success, bytes2 chainType, bytes memory chainReference, bytes memory addr) {
+    function tryParseV1(bytes memory self)
+        internal
+        pure
+        returns (bool success, bytes2 chainType, bytes memory chainReference, bytes memory addr)
+    {
         unchecked {
             if (self.length < 0x06) return (false, 0x0000, _emptyBytesMemory(), _emptyBytesMemory());
 
@@ -105,13 +105,15 @@ library InteroperableAddress {
             if (version != bytes2(0x0001)) return (false, 0x0000, _emptyBytesMemory(), _emptyBytesMemory());
 
             uint256 chainReferenceLength = uint8(self[0x04]);
-            if (self.length < 0x06 + chainReferenceLength)
+            if (self.length < 0x06 + chainReferenceLength) {
                 return (false, 0x0000, _emptyBytesMemory(), _emptyBytesMemory());
+            }
             chainReference = self.slice(0x05, 0x05 + chainReferenceLength);
 
             uint256 addrLength = uint8(self[0x05 + chainReferenceLength]);
-            if (self.length < 0x06 + chainReferenceLength + addrLength)
+            if (self.length < 0x06 + chainReferenceLength + addrLength) {
                 return (false, 0x0000, _emptyBytesMemory(), _emptyBytesMemory());
+            }
             addr = self.slice(0x06 + chainReferenceLength, 0x06 + chainReferenceLength + addrLength);
 
             // At least one of chainReference or addr must be non-empty
@@ -123,9 +125,11 @@ library InteroperableAddress {
     /**
      * @dev Variant of {tryParseV1} that handles calldata slices to reduce memory copy costs.
      */
-    function tryParseV1Calldata(
-        bytes calldata self
-    ) internal pure returns (bool success, bytes2 chainType, bytes calldata chainReference, bytes calldata addr) {
+    function tryParseV1Calldata(bytes calldata self)
+        internal
+        pure
+        returns (bool success, bytes2 chainType, bytes calldata chainReference, bytes calldata addr)
+    {
         unchecked {
             if (self.length < 0x06) return (false, 0x0000, Calldata.emptyBytes(), Calldata.emptyBytes());
 
@@ -133,13 +137,15 @@ library InteroperableAddress {
             if (version != bytes2(0x0001)) return (false, 0x0000, Calldata.emptyBytes(), Calldata.emptyBytes());
 
             uint256 chainReferenceLength = uint8(self[0x04]);
-            if (self.length < 0x06 + chainReferenceLength)
+            if (self.length < 0x06 + chainReferenceLength) {
                 return (false, 0x0000, Calldata.emptyBytes(), Calldata.emptyBytes());
+            }
             chainReference = self[0x05:0x05 + chainReferenceLength];
 
             uint256 addrLength = uint8(self[0x05 + chainReferenceLength]);
-            if (self.length < 0x06 + chainReferenceLength + addrLength)
+            if (self.length < 0x06 + chainReferenceLength + addrLength) {
                 return (false, 0x0000, Calldata.emptyBytes(), Calldata.emptyBytes());
+            }
             addr = self[0x06 + chainReferenceLength:0x06 + chainReferenceLength + addrLength];
 
             // At least one of chainReference or addr must be non-empty
@@ -181,39 +187,26 @@ library InteroperableAddress {
      */
     function tryParseEvmV1(bytes memory self) internal pure returns (bool success, uint256 chainId, address addr) {
         (bool success_, bytes2 chainType_, bytes memory chainReference_, bytes memory addr_) = tryParseV1(self);
-        return
-            (success_ &&
-                chainType_ == 0x0000 &&
-                chainReference_.length < 33 &&
-                (addr_.length == 0 || addr_.length == 20))
-                ? (
-                    true,
-                    uint256(bytes32(chainReference_)) >> (256 - 8 * chainReference_.length),
-                    address(bytes20(addr_))
-                )
-                : (false, 0, address(0));
+        return (success_ && chainType_ == 0x0000 && chainReference_.length < 33
+                && (addr_.length == 0 || addr_.length == 20))
+            ? (true, uint256(bytes32(chainReference_)) >> (256 - 8 * chainReference_.length), address(bytes20(addr_)))
+            : (false, 0, address(0));
     }
 
     /**
      * @dev Variant of {tryParseEvmV1} that handles calldata slices to reduce memory copy costs.
      */
-    function tryParseEvmV1Calldata(
-        bytes calldata self
-    ) internal pure returns (bool success, uint256 chainId, address addr) {
-        (bool success_, bytes2 chainType_, bytes calldata chainReference_, bytes calldata addr_) = tryParseV1Calldata(
-            self
-        );
-        return
-            (success_ &&
-                chainType_ == 0x0000 &&
-                chainReference_.length < 33 &&
-                (addr_.length == 0 || addr_.length == 20))
-                ? (
-                    true,
-                    uint256(bytes32(chainReference_)) >> (256 - 8 * chainReference_.length),
-                    address(bytes20(addr_))
-                )
-                : (false, 0, address(0));
+    function tryParseEvmV1Calldata(bytes calldata self)
+        internal
+        pure
+        returns (bool success, uint256 chainId, address addr)
+    {
+        (bool success_, bytes2 chainType_, bytes calldata chainReference_, bytes calldata addr_) =
+            tryParseV1Calldata(self);
+        return (success_ && chainType_ == 0x0000 && chainReference_.length < 33
+                && (addr_.length == 0 || addr_.length == 20))
+            ? (true, uint256(bytes32(chainReference_)) >> (256 - 8 * chainReference_.length), address(bytes20(addr_)))
+            : (false, 0, address(0));
     }
 
     function _toChainReference(uint256 chainid) private pure returns (bytes memory) {

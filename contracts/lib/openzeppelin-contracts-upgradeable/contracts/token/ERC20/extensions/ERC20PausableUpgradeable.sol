@@ -21,11 +21,10 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * make the contract pause mechanism of the contract unreachable, and thus unusable.
  */
 abstract contract ERC20PausableUpgradeable is Initializable, ERC20Upgradeable, PausableUpgradeable {
-    function __ERC20Pausable_init() internal onlyInitializing {
-    }
+    function __ERC20Pausable_init() internal onlyInitializing {}
 
-    function __ERC20Pausable_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20Pausable_init_unchained() internal onlyInitializing {}
+
     /**
      * @dev See {ERC20-_update}.
      *

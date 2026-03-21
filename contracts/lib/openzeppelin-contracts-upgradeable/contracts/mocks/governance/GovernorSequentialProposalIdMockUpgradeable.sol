@@ -5,22 +5,31 @@ pragma solidity ^0.8.24;
 import {GovernorUpgradeable} from "../../governance/GovernorUpgradeable.sol";
 import {GovernorSettingsUpgradeable} from "../../governance/extensions/GovernorSettingsUpgradeable.sol";
 import {GovernorCountingSimpleUpgradeable} from "../../governance/extensions/GovernorCountingSimpleUpgradeable.sol";
-import {GovernorVotesQuorumFractionUpgradeable} from "../../governance/extensions/GovernorVotesQuorumFractionUpgradeable.sol";
-import {GovernorSequentialProposalIdUpgradeable} from "../../governance/extensions/GovernorSequentialProposalIdUpgradeable.sol";
+import {
+    GovernorVotesQuorumFractionUpgradeable
+} from "../../governance/extensions/GovernorVotesQuorumFractionUpgradeable.sol";
+import {
+    GovernorSequentialProposalIdUpgradeable
+} from "../../governance/extensions/GovernorSequentialProposalIdUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 abstract contract GovernorSequentialProposalIdMockUpgradeable is
-    Initializable, GovernorSettingsUpgradeable,
+    Initializable,
+    GovernorSettingsUpgradeable,
     GovernorVotesQuorumFractionUpgradeable,
     GovernorCountingSimpleUpgradeable,
     GovernorSequentialProposalIdUpgradeable
 {
-    function __GovernorSequentialProposalIdMock_init() internal onlyInitializing {
-    }
+    function __GovernorSequentialProposalIdMock_init() internal onlyInitializing {}
 
-    function __GovernorSequentialProposalIdMock_init_unchained() internal onlyInitializing {
-    }
-    function proposalThreshold() public view override(GovernorUpgradeable, GovernorSettingsUpgradeable) returns (uint256) {
+    function __GovernorSequentialProposalIdMock_init_unchained() internal onlyInitializing {}
+
+    function proposalThreshold()
+        public
+        view
+        override(GovernorUpgradeable, GovernorSettingsUpgradeable)
+        returns (uint256)
+    {
         return super.proposalThreshold();
     }
 
@@ -39,7 +48,12 @@ abstract contract GovernorSequentialProposalIdMockUpgradeable is
         bytes[] memory calldatas,
         string memory description,
         address proposer
-    ) internal virtual override(GovernorUpgradeable, GovernorSequentialProposalIdUpgradeable) returns (uint256 proposalId) {
+    )
+        internal
+        virtual
+        override(GovernorUpgradeable, GovernorSequentialProposalIdUpgradeable)
+        returns (uint256 proposalId)
+    {
         return super._propose(targets, values, calldatas, description, proposer);
     }
 }

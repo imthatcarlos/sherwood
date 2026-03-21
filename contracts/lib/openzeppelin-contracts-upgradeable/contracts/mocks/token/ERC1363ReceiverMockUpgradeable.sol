@@ -34,12 +34,11 @@ contract ERC1363ReceiverMockUpgradeable is Initializable, IERC1363Receiver {
         _error = error;
     }
 
-    function onTransferReceived(
-        address operator,
-        address from,
-        uint256 value,
-        bytes calldata data
-    ) external override returns (bytes4) {
+    function onTransferReceived(address operator, address from, uint256 value, bytes calldata data)
+        external
+        override
+        returns (bytes4)
+    {
         if (_error == RevertType.RevertWithoutMessage) {
             revert();
         } else if (_error == RevertType.RevertWithMessage) {

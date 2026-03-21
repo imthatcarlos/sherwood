@@ -15,9 +15,8 @@ contract ERC7913RSAVerifier is IERC7913SignatureVerifier {
     /// @inheritdoc IERC7913SignatureVerifier
     function verify(bytes calldata key, bytes32 hash, bytes calldata signature) public view virtual returns (bytes4) {
         (bytes memory e, bytes memory n) = abi.decode(key, (bytes, bytes));
-        return
-            RSA.pkcs1Sha256(abi.encodePacked(hash), signature, e, n)
-                ? IERC7913SignatureVerifier.verify.selector
-                : bytes4(0xFFFFFFFF);
+        return RSA.pkcs1Sha256(abi.encodePacked(hash), signature, e, n)
+            ? IERC7913SignatureVerifier.verify.selector
+            : bytes4(0xFFFFFFFF);
     }
 }

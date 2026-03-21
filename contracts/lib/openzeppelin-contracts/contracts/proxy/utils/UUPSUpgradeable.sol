@@ -96,8 +96,8 @@ abstract contract UUPSUpgradeable is IERC1822Proxiable {
      */
     function _checkProxy() internal view virtual {
         if (
-            address(this) == __self || // Must be called through delegatecall
-            ERC1967Utils.getImplementation() != __self // Must be called through an active proxy
+            address(this) == __self // Must be called through delegatecall
+                || ERC1967Utils.getImplementation() != __self // Must be called through an active proxy
         ) {
             revert UUPSUnauthorizedCallContext();
         }

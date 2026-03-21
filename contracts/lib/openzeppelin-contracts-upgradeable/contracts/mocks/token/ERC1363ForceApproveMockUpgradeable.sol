@@ -7,11 +7,10 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 
 // contract that replicate USDT approval behavior in approveAndCall
 abstract contract ERC1363ForceApproveMockUpgradeable is Initializable, ERC1363Upgradeable {
-    function __ERC1363ForceApproveMock_init() internal onlyInitializing {
-    }
+    function __ERC1363ForceApproveMock_init() internal onlyInitializing {}
 
-    function __ERC1363ForceApproveMock_init_unchained() internal onlyInitializing {
-    }
+    function __ERC1363ForceApproveMock_init_unchained() internal onlyInitializing {}
+
     function approveAndCall(address spender, uint256 amount, bytes memory data) public virtual override returns (bool) {
         require(amount == 0 || allowance(msg.sender, spender) == 0, "USDT approval failure");
         return super.approveAndCall(spender, amount, data);

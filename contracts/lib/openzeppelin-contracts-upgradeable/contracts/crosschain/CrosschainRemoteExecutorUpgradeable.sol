@@ -29,7 +29,8 @@ contract CrosschainRemoteExecutorUpgradeable is Initializable, ERC7786Recipient 
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.CrosschainRemoteExecutor")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant CrosschainRemoteExecutorStorageLocation = 0xc94e33a15f57bbc0c5cbe7e25f8dc0896436959887c81a5d1bd05a73aa47bf00;
+    bytes32 private constant CrosschainRemoteExecutorStorageLocation =
+        0xc94e33a15f57bbc0c5cbe7e25f8dc0896436959887c81a5d1bd05a73aa47bf00;
 
     function _getCrosschainRemoteExecutorStorage() private pure returns (CrosschainRemoteExecutorStorage storage $) {
         assembly {
@@ -43,11 +44,17 @@ contract CrosschainRemoteExecutorUpgradeable is Initializable, ERC7786Recipient 
     /// @dev Reverted when a non-controller tries to relay instructions to this executor.
     error AccessRestricted();
 
-    function __CrosschainRemoteExecutor_init(address initialGateway, bytes memory initialController) internal onlyInitializing {
+    function __CrosschainRemoteExecutor_init(address initialGateway, bytes memory initialController)
+        internal
+        onlyInitializing
+    {
         __CrosschainRemoteExecutor_init_unchained(initialGateway, initialController);
     }
 
-    function __CrosschainRemoteExecutor_init_unchained(address initialGateway, bytes memory initialController) internal onlyInitializing {
+    function __CrosschainRemoteExecutor_init_unchained(address initialGateway, bytes memory initialController)
+        internal
+        onlyInitializing
+    {
         _setup(initialGateway, initialController);
     }
 
@@ -89,22 +96,32 @@ contract CrosschainRemoteExecutorUpgradeable is Initializable, ERC7786Recipient 
     }
 
     /// @inheritdoc ERC7786Recipient
-    function _isAuthorizedGateway(
-        address instance,
-        bytes calldata sender
-    ) internal view virtual override returns (bool) {
+    function _isAuthorizedGateway(address instance, bytes calldata sender)
+        internal
+        view
+        virtual
+        override
+        returns (bool)
+    {
         return gateway() == instance && controller().equal(sender);
     }
 
     /// @inheritdoc ERC7786Recipient
     function _processMessage(
-        address /*gateway*/,
-        bytes32 /*receiveId*/,
-        bytes calldata /*sender*/,
+        address,
+        /*gateway*/
+        bytes32,
+        /*receiveId*/
+        bytes calldata,
+        /*sender*/
         bytes calldata payload
-    ) internal virtual override {
+    )
+        internal
+        virtual
+        override
+    {
         // split payload
-        (CallType callType, ExecType execType, , ) = Mode.wrap(bytes32(payload[0x00:0x20])).decodeMode();
+        (CallType callType, ExecType execType,,) = Mode.wrap(bytes32(payload[0x00:0x20])).decodeMode();
         bytes calldata executionCalldata = payload[0x20:];
 
         if (callType == ERC7579Utils.CALLTYPE_SINGLE) {
@@ -113,6 +130,8 @@ contract CrosschainRemoteExecutorUpgradeable is Initializable, ERC7786Recipient 
             executionCalldata.execBatch(execType);
         } else if (callType == ERC7579Utils.CALLTYPE_DELEGATECALL) {
             executionCalldata.execDelegateCall(execType);
-        } else revert ERC7579Utils.ERC7579UnsupportedCallType(callType);
+        } else {
+            revert ERC7579Utils.ERC7579UnsupportedCallType(callType);
+        }
     }
 }

@@ -71,7 +71,16 @@ abstract contract ERC20FlashMint is ERC20, IERC3156FlashLender {
      * the flash loan mechanism deflationary.
      * @return The fees applied to the corresponding flash loan.
      */
-    function _flashFee(address /*token*/, uint256 /*value*/) internal view virtual returns (uint256) {
+    function _flashFee(
+        address,
+        /*token*/
+        uint256 /*value*/
+    )
+        internal
+        view
+        virtual
+        returns (uint256)
+    {
         return 0;
     }
 
@@ -102,12 +111,11 @@ abstract contract ERC20FlashMint is ERC20, IERC3156FlashLender {
     // This function can reenter, but it doesn't pose a risk because it always preserves the property that the amount
     // minted at the beginning is always recovered and burned at the end, or else the entire function will revert.
     // slither-disable-next-line reentrancy-no-eth
-    function flashLoan(
-        IERC3156FlashBorrower receiver,
-        address token,
-        uint256 value,
-        bytes calldata data
-    ) public virtual returns (bool) {
+    function flashLoan(IERC3156FlashBorrower receiver, address token, uint256 value, bytes calldata data)
+        public
+        virtual
+        returns (bool)
+    {
         uint256 maxLoan = maxFlashLoan(token);
         if (value > maxLoan) {
             revert ERC3156ExceededMaxLoan(maxLoan);

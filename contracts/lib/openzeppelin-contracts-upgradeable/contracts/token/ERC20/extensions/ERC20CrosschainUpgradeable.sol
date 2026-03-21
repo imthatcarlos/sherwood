@@ -22,11 +22,10 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  */
 // slither-disable-next-line locked-ether
 abstract contract ERC20CrosschainUpgradeable is Initializable, ERC20Upgradeable, BridgeFungibleUpgradeable {
-    function __ERC20Crosschain_init() internal onlyInitializing {
-    }
+    function __ERC20Crosschain_init() internal onlyInitializing {}
 
-    function __ERC20Crosschain_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20Crosschain_init_unchained() internal onlyInitializing {}
+
     /// @dev Variant of {crosschainTransfer} that allows an authorized account (using ERC20 allowance) to operate on `from`'s assets.
     function crosschainTransferFrom(address from, bytes memory to, uint256 amount) public virtual returns (bytes32) {
         _spendAllowance(from, _msgSender(), amount);

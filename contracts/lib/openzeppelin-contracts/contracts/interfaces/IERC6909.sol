@@ -25,11 +25,7 @@ interface IERC6909 is IERC165 {
      * @dev Emitted when `amount` tokens of type `id` are moved from `sender` to `receiver` initiated by `caller`.
      */
     event Transfer(
-        address caller,
-        address indexed sender,
-        address indexed receiver,
-        uint256 indexed id,
-        uint256 amount
+        address caller, address indexed sender, address indexed receiver, uint256 indexed id, uint256 amount
     );
 
     /**

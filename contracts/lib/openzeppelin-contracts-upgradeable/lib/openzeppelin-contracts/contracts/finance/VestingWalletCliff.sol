@@ -45,10 +45,13 @@ abstract contract VestingWalletCliff is VestingWallet {
      * effect from calling the inherited implementation (i.e. `super._vestingSchedule`). Carefully consider
      * this caveat if the overridden implementation of this function has any (e.g. writing to memory or reverting).
      */
-    function _vestingSchedule(
-        uint256 totalAllocation,
-        uint64 timestamp
-    ) internal view virtual override returns (uint256) {
+    function _vestingSchedule(uint256 totalAllocation, uint64 timestamp)
+        internal
+        view
+        virtual
+        override
+        returns (uint256)
+    {
         return timestamp < cliff() ? 0 : super._vestingSchedule(totalAllocation, timestamp);
     }
 }

@@ -30,10 +30,8 @@ abstract contract ERC20TemporaryApproval is ERC20, IERC7674 {
      * adding up the persistent and the temporary allowances result in an overflow, type(uint256).max is returned.
      */
     function allowance(address owner, address spender) public view virtual override(IERC20, ERC20) returns (uint256) {
-        (bool success, uint256 amount) = Math.tryAdd(
-            super.allowance(owner, spender),
-            _temporaryAllowance(owner, spender)
-        );
+        (bool success, uint256 amount) =
+            Math.tryAdd(super.allowance(owner, spender), _temporaryAllowance(owner, spender));
         return success ? amount : type(uint256).max;
     }
 

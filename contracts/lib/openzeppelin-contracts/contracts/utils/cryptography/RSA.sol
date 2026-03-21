@@ -19,12 +19,11 @@ library RSA {
     /**
      * @dev Same as {pkcs1Sha256} but using SHA256 to calculate the digest of `data`.
      */
-    function pkcs1Sha256(
-        bytes memory data,
-        bytes memory s,
-        bytes memory e,
-        bytes memory n
-    ) internal view returns (bool) {
+    function pkcs1Sha256(bytes memory data, bytes memory s, bytes memory e, bytes memory n)
+        internal
+        view
+        returns (bool)
+    {
         return pkcs1Sha256(sha256(data), s, e, n);
     }
 
@@ -54,8 +53,8 @@ library RSA {
             // cache and check length
             uint256 length = n.length;
             if (
-                length < 0x100 || // Enforce 2048 bits minimum
-                length != s.length // signature must have the same length as the finite field
+                length < 0x100 // Enforce 2048 bits minimum
+                    || length != s.length // signature must have the same length as the finite field
             ) {
                 return false;
             }
@@ -134,10 +133,11 @@ library RSA {
             }
 
             // All the other parameters are small enough to fit in a bytes32, so we can check them directly.
-            return
-                bytes2(0x0001) == bytes2(_unsafeReadBytes32(buffer, 0x00)) && // 00 | 01
+            return bytes2(0x0001) == bytes2(_unsafeReadBytes32(buffer, 0x00)) // 00 | 01
+                && 
                 // PS was checked in the loop
-                params == _unsafeReadBytes32(buffer, paddingEnd) & mask && // DigestInfo
+                params == _unsafeReadBytes32(buffer, paddingEnd) & mask // DigestInfo
+                && 
                 // Optional parameters are not checked
                 digest == _unsafeReadBytes32(buffer, length - 0x20); // Digest
         }

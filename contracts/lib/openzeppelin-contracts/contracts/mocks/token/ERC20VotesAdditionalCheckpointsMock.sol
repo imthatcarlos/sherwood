@@ -10,11 +10,11 @@ abstract contract ERC20VotesExtendedMock is ERC20Votes, VotesExtended {
         return super._delegate(account, delegatee);
     }
 
-    function _transferVotingUnits(
-        address from,
-        address to,
-        uint256 amount
-    ) internal virtual override(Votes, VotesExtended) {
+    function _transferVotingUnits(address from, address to, uint256 amount)
+        internal
+        virtual
+        override(Votes, VotesExtended)
+    {
         return super._transferVotingUnits(from, to, amount);
     }
 }

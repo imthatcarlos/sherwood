@@ -62,10 +62,9 @@ contract ERC2771ForwarderUpgradeable is Initializable, EIP712Upgradeable, Nonces
         bytes signature;
     }
 
-    bytes32 internal constant FORWARD_REQUEST_TYPEHASH =
-        keccak256(
-            "ForwardRequest(address from,address to,uint256 value,uint256 gas,uint256 nonce,uint48 deadline,bytes data)"
-        );
+    bytes32 internal constant FORWARD_REQUEST_TYPEHASH = keccak256(
+        "ForwardRequest(address from,address to,uint256 value,uint256 gas,uint256 nonce,uint48 deadline,bytes data)"
+    );
 
     /**
      * @dev Emitted when a `ForwardRequest` is executed.
@@ -104,6 +103,7 @@ contract ERC2771ForwarderUpgradeable is Initializable, EIP712Upgradeable, Nonces
     function initialize(string memory name) public virtual initializer {
         __ERC2771Forwarder_init(name);
     }
+
     /**
      * @dev See {EIP712-constructor}.
      */
@@ -123,7 +123,7 @@ contract ERC2771ForwarderUpgradeable is Initializable, EIP712Upgradeable, Nonces
      * receiver is provided.
      */
     function verify(ForwardRequestData calldata request) public view virtual returns (bool) {
-        (bool isTrustedForwarder, bool active, bool signerMatch, ) = _validate(request);
+        (bool isTrustedForwarder, bool active, bool signerMatch,) = _validate(request);
         return isTrustedForwarder && active && signerMatch;
     }
 
@@ -173,10 +173,11 @@ contract ERC2771ForwarderUpgradeable is Initializable, EIP712Upgradeable, Nonces
      * the first-level forwarded calls. In case a forwarded request calls to a contract with another
      * subcall, the second-level call may revert without the top-level call reverting.
      */
-    function executeBatch(
-        ForwardRequestData[] calldata requests,
-        address payable refundReceiver
-    ) public payable virtual {
+    function executeBatch(ForwardRequestData[] calldata requests, address payable refundReceiver)
+        public
+        payable
+        virtual
+    {
         bool atomic = refundReceiver == address(0);
 
         uint256 requestsValue;
@@ -212,9 +213,12 @@ contract ERC2771ForwarderUpgradeable is Initializable, EIP712Upgradeable, Nonces
      * @dev Validates if the provided request can be executed at current block timestamp with
      * the given `request.signature` on behalf of `request.from`.
      */
-    function _validate(
-        ForwardRequestData calldata request
-    ) internal view virtual returns (bool isTrustedForwarder, bool active, bool signerMatch, address signer) {
+    function _validate(ForwardRequestData calldata request)
+        internal
+        view
+        virtual
+        returns (bool isTrustedForwarder, bool active, bool signerMatch, address signer)
+    {
         (bool isValid, address recovered) = _recoverForwardRequestSigner(request);
 
         return (
@@ -231,23 +235,26 @@ contract ERC2771ForwarderUpgradeable is Initializable, EIP712Upgradeable, Nonces
      *
      * NOTE: The signature is considered valid if {ECDSA-tryRecoverCalldata} indicates no recover error for it.
      */
-    function _recoverForwardRequestSigner(
-        ForwardRequestData calldata request
-    ) internal view virtual returns (bool isValid, address signer) {
-        (address recovered, ECDSA.RecoverError err, ) = _hashTypedDataV4(
-            keccak256(
-                abi.encode(
-                    FORWARD_REQUEST_TYPEHASH,
-                    request.from,
-                    request.to,
-                    request.value,
-                    request.gas,
-                    nonces(request.from),
-                    request.deadline,
-                    keccak256(request.data)
+    function _recoverForwardRequestSigner(ForwardRequestData calldata request)
+        internal
+        view
+        virtual
+        returns (bool isValid, address signer)
+    {
+        (address recovered, ECDSA.RecoverError err,) = _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        FORWARD_REQUEST_TYPEHASH,
+                        request.from,
+                        request.to,
+                        request.value,
+                        request.gas,
+                        nonces(request.from),
+                        request.deadline,
+                        keccak256(request.data)
+                    )
                 )
-            )
-        ).tryRecoverCalldata(request.signature);
+            ).tryRecoverCalldata(request.signature);
 
         return (err == ECDSA.RecoverError.NoError, recovered);
     }
@@ -267,10 +274,11 @@ contract ERC2771ForwarderUpgradeable is Initializable, EIP712Upgradeable, Nonces
      * IMPORTANT: Using this function doesn't check that all the `msg.value` was sent, potentially
      * leaving value stuck in the contract.
      */
-    function _execute(
-        ForwardRequestData calldata request,
-        bool requireValidRequest
-    ) internal virtual returns (bool success) {
+    function _execute(ForwardRequestData calldata request, bool requireValidRequest)
+        internal
+        virtual
+        returns (bool success)
+    {
         (bool isTrustedForwarder, bool active, bool signerMatch, address signer) = _validate(request);
 
         // Need to explicitly specify if a revert is required since non-reverting is default for

@@ -8,9 +8,11 @@ import {ERC20Wrapper} from "../../../token/ERC20/extensions/ERC20Wrapper.sol";
 import {Nonces} from "../../../utils/Nonces.sol";
 
 contract MyTokenWrapped is ERC20, ERC20Permit, ERC20Votes, ERC20Wrapper {
-    constructor(
-        IERC20 wrappedToken
-    ) ERC20("MyTokenWrapped", "MTK") ERC20Permit("MyTokenWrapped") ERC20Wrapper(wrappedToken) {}
+    constructor(IERC20 wrappedToken)
+        ERC20("MyTokenWrapped", "MTK")
+        ERC20Permit("MyTokenWrapped")
+        ERC20Wrapper(wrappedToken)
+    {}
 
     // The functions below are overrides required by Solidity.
 

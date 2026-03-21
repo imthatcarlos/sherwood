@@ -131,11 +131,10 @@ library MerkleTree {
      * This variant uses a custom hashing function to hash internal nodes. It should only be called with the same
      * function as the one used during the initial setup of the merkle tree.
      */
-    function push(
-        Bytes32PushTree storage self,
-        bytes32 leaf,
-        function(bytes32, bytes32) view returns (bytes32) fnHash
-    ) internal returns (uint256 index, bytes32 newRoot) {
+    function push(Bytes32PushTree storage self, bytes32 leaf, function(bytes32, bytes32) view returns (bytes32) fnHash)
+        internal
+        returns (uint256 index, bytes32 newRoot)
+    {
         // Cache read
         uint256 treeDepth = depth(self);
 
@@ -245,14 +244,10 @@ library MerkleTree {
                 }
 
                 bytes32 sibling = proof[i];
-                currentLevelHashOld = fnHash(
-                    isLeft ? currentLevelHashOld : sibling,
-                    isLeft ? sibling : currentLevelHashOld
-                );
-                currentLevelHashNew = fnHash(
-                    isLeft ? currentLevelHashNew : sibling,
-                    isLeft ? sibling : currentLevelHashNew
-                );
+                currentLevelHashOld =
+                    fnHash(isLeft ? currentLevelHashOld : sibling, isLeft ? sibling : currentLevelHashOld);
+                currentLevelHashNew =
+                    fnHash(isLeft ? currentLevelHashNew : sibling, isLeft ? sibling : currentLevelHashNew);
             }
             return (currentLevelHashOld, currentLevelHashNew);
         }

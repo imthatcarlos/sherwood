@@ -10,17 +10,18 @@ import {SignerEIP7702} from "@openzeppelin/contracts/utils/cryptography/signers/
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract MyAccountEIP7702Upgradeable is Initializable, Account, SignerEIP7702, ERC7821, ERC721Holder, ERC1155Holder {
-    function __MyAccountEIP7702_init() internal onlyInitializing {
-    }
+    function __MyAccountEIP7702_init() internal onlyInitializing {}
 
-    function __MyAccountEIP7702_init_unchained() internal onlyInitializing {
-    }
+    function __MyAccountEIP7702_init_unchained() internal onlyInitializing {}
+
     /// @dev Allows the entry point as an authorized executor.
-    function _erc7821AuthorizedExecutor(
-        address caller,
-        bytes32 mode,
-        bytes calldata executionData
-    ) internal view virtual override returns (bool) {
+    function _erc7821AuthorizedExecutor(address caller, bytes32 mode, bytes calldata executionData)
+        internal
+        view
+        virtual
+        override
+        returns (bool)
+    {
         return caller == address(entryPoint()) || super._erc7821AuthorizedExecutor(caller, mode, executionData);
     }
 }

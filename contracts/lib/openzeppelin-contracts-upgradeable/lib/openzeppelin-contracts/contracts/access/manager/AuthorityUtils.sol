@@ -11,12 +11,11 @@ library AuthorityUtils {
      * for the preexisting `IAuthority` interface requires special care to avoid reverting on insufficient return data.
      * This helper function takes care of invoking `canCall` in a backwards compatible way without reverting.
      */
-    function canCallWithDelay(
-        address authority,
-        address caller,
-        address target,
-        bytes4 selector
-    ) internal view returns (bool immediate, uint32 delay) {
+    function canCallWithDelay(address authority, address caller, address target, bytes4 selector)
+        internal
+        view
+        returns (bool immediate, uint32 delay)
+    {
         bytes memory data = abi.encodeCall(IAuthority.canCall, (caller, target, selector));
 
         assembly ("memory-safe") {

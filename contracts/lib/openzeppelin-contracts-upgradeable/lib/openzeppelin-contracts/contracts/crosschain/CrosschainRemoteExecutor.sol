@@ -69,22 +69,32 @@ contract CrosschainRemoteExecutor is ERC7786Recipient {
     }
 
     /// @inheritdoc ERC7786Recipient
-    function _isAuthorizedGateway(
-        address instance,
-        bytes calldata sender
-    ) internal view virtual override returns (bool) {
+    function _isAuthorizedGateway(address instance, bytes calldata sender)
+        internal
+        view
+        virtual
+        override
+        returns (bool)
+    {
         return gateway() == instance && controller().equal(sender);
     }
 
     /// @inheritdoc ERC7786Recipient
     function _processMessage(
-        address /*gateway*/,
-        bytes32 /*receiveId*/,
-        bytes calldata /*sender*/,
+        address,
+        /*gateway*/
+        bytes32,
+        /*receiveId*/
+        bytes calldata,
+        /*sender*/
         bytes calldata payload
-    ) internal virtual override {
+    )
+        internal
+        virtual
+        override
+    {
         // split payload
-        (CallType callType, ExecType execType, , ) = Mode.wrap(bytes32(payload[0x00:0x20])).decodeMode();
+        (CallType callType, ExecType execType,,) = Mode.wrap(bytes32(payload[0x00:0x20])).decodeMode();
         bytes calldata executionCalldata = payload[0x20:];
 
         if (callType == ERC7579Utils.CALLTYPE_SINGLE) {
@@ -93,6 +103,8 @@ contract CrosschainRemoteExecutor is ERC7786Recipient {
             executionCalldata.execBatch(execType);
         } else if (callType == ERC7579Utils.CALLTYPE_DELEGATECALL) {
             executionCalldata.execDelegateCall(execType);
-        } else revert ERC7579Utils.ERC7579UnsupportedCallType(callType);
+        } else {
+            revert ERC7579Utils.ERC7579UnsupportedCallType(callType);
+        }
     }
 }

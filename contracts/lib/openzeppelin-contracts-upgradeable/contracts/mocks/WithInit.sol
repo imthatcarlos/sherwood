@@ -117,16 +117,17 @@ contract VestingWalletCliffUpgradeableWithInit is VestingWalletCliffUpgradeable 
 import "../governance/TimelockControllerUpgradeable.sol";
 
 contract TimelockControllerUpgradeableWithInit is TimelockControllerUpgradeable {
-    constructor(uint256 minDelay, address[] memory proposers, address[] memory executors, address admin) payable initializer {
+    constructor(uint256 minDelay, address[] memory proposers, address[] memory executors, address admin)
+        payable
+        initializer
+    {
         __TimelockController_init(minDelay, proposers, executors, admin);
     }
 }
 import "../metatx/ERC2771ContextUpgradeable.sol";
 
 contract ERC2771ContextUpgradeableWithInit is ERC2771ContextUpgradeable {
-    constructor(address trustedForwarder_) ERC2771ContextUpgradeable(trustedForwarder_) payable initializer {
-
-    }
+    constructor(address trustedForwarder_) payable ERC2771ContextUpgradeable(trustedForwarder_) initializer {}
 }
 import "../metatx/ERC2771ForwarderUpgradeable.sol";
 
@@ -495,10 +496,7 @@ contract ERC4626FeesUpgradeableWithInit is ERC4626FeesUpgradeable {
 import "./docs/governance/MyGovernorUpgradeable.sol";
 
 contract MyGovernorUpgradeableWithInit is MyGovernorUpgradeable {
-    constructor(
-        IVotes _token,
-        TimelockControllerUpgradeable _timelock
-    ) payable initializer {
+    constructor(IVotes _token, TimelockControllerUpgradeable _timelock) payable initializer {
         __MyGovernor_init(_token, _timelock);
     }
 }
@@ -519,9 +517,7 @@ contract MyTokenTimestampBasedUpgradeableWithInit is MyTokenTimestampBasedUpgrad
 import "./docs/governance/MyTokenWrappedUpgradeable.sol";
 
 contract MyTokenWrappedUpgradeableWithInit is MyTokenWrappedUpgradeable {
-    constructor(
-        IERC20 wrappedToken
-    ) payable initializer {
+    constructor(IERC20 wrappedToken) payable initializer {
         __MyTokenWrapped_init(wrappedToken);
     }
 }
@@ -668,9 +664,7 @@ contract ERC165ReturnBombMockUpgradeableWithInit is ERC165ReturnBombMockUpgradea
 import "./ERC2771ContextMockUpgradeable.sol";
 
 contract ERC2771ContextMockUpgradeableWithInit is ERC2771ContextMockUpgradeable {
-    constructor(address trustedForwarder) ERC2771ContextMockUpgradeable(trustedForwarder) payable initializer {
-
-    }
+    constructor(address trustedForwarder) payable ERC2771ContextMockUpgradeable(trustedForwarder) initializer {}
 }
 import "./ERC3156FlashBorrowerMockUpgradeable.sol";
 
@@ -1121,12 +1115,10 @@ contract ERC4626FeesMockUpgradeableWithInit is ERC4626FeesMockUpgradeable {
 import "./token/ERC721ConsecutiveEnumerableMockUpgradeable.sol";
 
 contract ERC721ConsecutiveEnumerableMockUpgradeableWithInit is ERC721ConsecutiveEnumerableMockUpgradeable {
-    constructor(
-        string memory name,
-        string memory symbol,
-        address[] memory receivers,
-        uint96[] memory amounts
-    ) payable initializer {
+    constructor(string memory name, string memory symbol, address[] memory receivers, uint96[] memory amounts)
+        payable
+        initializer
+    {
         __ERC721ConsecutiveEnumerableMock_init(name, symbol, receivers, amounts);
     }
 }
@@ -1146,7 +1138,9 @@ contract ERC721ConsecutiveMockUpgradeableWithInit is ERC721ConsecutiveMockUpgrad
 }
 import "./token/ERC721ConsecutiveMockUpgradeable.sol";
 
-contract ERC721ConsecutiveNoConstructorMintMockUpgradeableWithInit is ERC721ConsecutiveNoConstructorMintMockUpgradeable {
+contract ERC721ConsecutiveNoConstructorMintMockUpgradeableWithInit is
+    ERC721ConsecutiveNoConstructorMintMockUpgradeable
+{
     constructor(string memory name, string memory symbol) payable initializer {
         __ERC721ConsecutiveNoConstructorMintMock_init(name, symbol);
     }

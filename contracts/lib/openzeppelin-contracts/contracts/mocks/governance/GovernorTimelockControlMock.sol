@@ -26,9 +26,13 @@ abstract contract GovernorTimelockControlMock is
         return super.proposalThreshold();
     }
 
-    function proposalNeedsQueuing(
-        uint256 proposalId
-    ) public view virtual override(Governor, GovernorTimelockControl) returns (bool) {
+    function proposalNeedsQueuing(uint256 proposalId)
+        public
+        view
+        virtual
+        override(Governor, GovernorTimelockControl)
+        returns (bool)
+    {
         return super.proposalNeedsQueuing(proposalId);
     }
 

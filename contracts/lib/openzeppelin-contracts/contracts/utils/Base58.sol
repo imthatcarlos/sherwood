@@ -147,10 +147,9 @@ library Base58 {
         assembly ("memory-safe") {
             let inputLeadingZeros := 0 // Number of leading '1' in `input`.
             // Count leading zeros. In base58, zeros are represented using '1' (chr(49)).
-            for {} and(
-                eq(byte(0, mload(add(add(input, 0x20), inputLeadingZeros))), 49),
-                lt(inputLeadingZeros, inputLength)
-            ) {} {
+            for {}
+            and(eq(byte(0, mload(add(add(input, 0x20), inputLeadingZeros))), 49), lt(inputLeadingZeros, inputLength)) {}
+            {
                 inputLeadingZeros := add(inputLeadingZeros, 1)
             }
 

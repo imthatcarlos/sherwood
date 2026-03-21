@@ -58,10 +58,11 @@ library ECDSA {
      * - with https://web3js.readthedocs.io/en/v1.3.4/web3-eth-accounts.html#sign[Web3.js]
      * - with https://docs.ethers.io/v5/api/signer/#Signer-signMessage[ethers]
      */
-    function tryRecover(
-        bytes32 hash,
-        bytes memory signature
-    ) internal pure returns (address recovered, RecoverError err, bytes32 errArg) {
+    function tryRecover(bytes32 hash, bytes memory signature)
+        internal
+        pure
+        returns (address recovered, RecoverError err, bytes32 errArg)
+    {
         if (signature.length == 65) {
             bytes32 r;
             bytes32 s;
@@ -82,10 +83,11 @@ library ECDSA {
     /**
      * @dev Variant of {tryRecover} that takes a signature in calldata
      */
-    function tryRecoverCalldata(
-        bytes32 hash,
-        bytes calldata signature
-    ) internal pure returns (address recovered, RecoverError err, bytes32 errArg) {
+    function tryRecoverCalldata(bytes32 hash, bytes calldata signature)
+        internal
+        pure
+        returns (address recovered, RecoverError err, bytes32 errArg)
+    {
         if (signature.length == 65) {
             bytes32 r;
             bytes32 s;
@@ -141,11 +143,11 @@ library ECDSA {
      *
      * See https://eips.ethereum.org/EIPS/eip-2098[ERC-2098 short signatures]
      */
-    function tryRecover(
-        bytes32 hash,
-        bytes32 r,
-        bytes32 vs
-    ) internal pure returns (address recovered, RecoverError err, bytes32 errArg) {
+    function tryRecover(bytes32 hash, bytes32 r, bytes32 vs)
+        internal
+        pure
+        returns (address recovered, RecoverError err, bytes32 errArg)
+    {
         unchecked {
             bytes32 s = vs & bytes32(0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff);
             // We do not check for an overflow here since the shift operation results in 0 or 1.
@@ -167,12 +169,11 @@ library ECDSA {
      * @dev Overload of {ECDSA-tryRecover} that receives the `v`,
      * `r` and `s` signature fields separately.
      */
-    function tryRecover(
-        bytes32 hash,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) internal pure returns (address recovered, RecoverError err, bytes32 errArg) {
+    function tryRecover(bytes32 hash, uint8 v, bytes32 r, bytes32 s)
+        internal
+        pure
+        returns (address recovered, RecoverError err, bytes32 errArg)
+    {
         // EIP-2 still allows signature malleability for ecrecover(). Remove this possibility and make the signature
         // unique. Appendix F in the Ethereum Yellow paper (https://ethereum.github.io/yellowpaper/paper.pdf), defines
         // the valid range for s in (301): 0 < s < secp256k1n ÷ 2 + 1, and for v in (302): v ∈ {27, 28}. Most

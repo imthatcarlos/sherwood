@@ -31,7 +31,8 @@ abstract contract GovernorTimelockControlUpgradeable is Initializable, GovernorU
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorTimelockControl")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GovernorTimelockControlStorageLocation = 0x0d5829787b8befdbc6044ef7457d8a95c2a04bc99235349f1a212c063e59d400;
+    bytes32 private constant GovernorTimelockControlStorageLocation =
+        0x0d5829787b8befdbc6044ef7457d8a95c2a04bc99235349f1a212c063e59d400;
 
     function _getGovernorTimelockControlStorage() private pure returns (GovernorTimelockControlStorage storage $) {
         assembly {
@@ -51,7 +52,10 @@ abstract contract GovernorTimelockControlUpgradeable is Initializable, GovernorU
         __GovernorTimelockControl_init_unchained(timelockAddress);
     }
 
-    function __GovernorTimelockControl_init_unchained(TimelockControllerUpgradeable timelockAddress) internal onlyInitializing {
+    function __GovernorTimelockControl_init_unchained(TimelockControllerUpgradeable timelockAddress)
+        internal
+        onlyInitializing
+    {
         _updateTimelock(timelockAddress);
     }
 

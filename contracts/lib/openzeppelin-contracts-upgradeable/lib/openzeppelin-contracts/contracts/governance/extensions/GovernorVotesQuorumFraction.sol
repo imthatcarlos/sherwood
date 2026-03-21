@@ -101,10 +101,11 @@ abstract contract GovernorVotesQuorumFraction is GovernorVotes {
     /**
      * @dev Returns the numerator at a specific timepoint.
      */
-    function _optimisticUpperLookupRecent(
-        Checkpoints.Trace208 storage ckpts,
-        uint256 timepoint
-    ) internal view returns (uint256) {
+    function _optimisticUpperLookupRecent(Checkpoints.Trace208 storage ckpts, uint256 timepoint)
+        internal
+        view
+        returns (uint256)
+    {
         // If trace is empty, key and value are both equal to 0.
         // In that case `key <= timepoint` is true, and it is ok to return 0.
         (, uint48 key, uint208 value) = ckpts.latestCheckpoint();

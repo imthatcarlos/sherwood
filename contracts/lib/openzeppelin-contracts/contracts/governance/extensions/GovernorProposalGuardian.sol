@@ -51,9 +51,7 @@ abstract contract GovernorProposalGuardian is Governor {
     function _validateCancel(uint256 proposalId, address caller) internal view virtual override returns (bool) {
         address guardian = proposalGuardian();
 
-        return
-            guardian == caller ||
-            (guardian == address(0) && caller == proposalProposer(proposalId)) ||
-            super._validateCancel(proposalId, caller);
+        return guardian == caller || (guardian == address(0) && caller == proposalProposer(proposalId))
+            || super._validateCancel(proposalId, caller);
     }
 }

@@ -17,11 +17,10 @@ library SimulateCall {
     }
 
     /// @dev Same as {simulateCall-address-bytes} but with a value.
-    function simulateCall(
-        address target,
-        uint256 value,
-        bytes memory data
-    ) internal returns (bool success, bytes memory retData) {
+    function simulateCall(address target, uint256 value, bytes memory data)
+        internal
+        returns (bool success, bytes memory retData)
+    {
         (success, retData) = getSimulator().delegatecall(abi.encodePacked(target, value, data));
         success = !success; // getSimulator() returns the success value inverted
     }

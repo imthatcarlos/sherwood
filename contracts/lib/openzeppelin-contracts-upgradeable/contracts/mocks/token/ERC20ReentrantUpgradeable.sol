@@ -20,8 +20,8 @@ contract ERC20ReentrantUpgradeable is Initializable, ERC20Upgradeable {
         __ERC20_init_unchained("TEST", "TST");
     }
 
-    function __ERC20Reentrant_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20Reentrant_init_unchained() internal onlyInitializing {}
+
     function scheduleReenter(Type when, address target, bytes calldata data) external {
         _reenterType = when;
         _reenterTarget = target;

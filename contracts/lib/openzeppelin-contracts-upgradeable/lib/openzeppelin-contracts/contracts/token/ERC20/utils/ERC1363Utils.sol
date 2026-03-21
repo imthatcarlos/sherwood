@@ -68,12 +68,9 @@ library ERC1363Utils {
      * - The target `spender` must implement the {IERC1363Spender} interface.
      * - The target must return the {IERC1363Spender-onApprovalReceived} selector to accept the approval.
      */
-    function checkOnERC1363ApprovalReceived(
-        address operator,
-        address spender,
-        uint256 value,
-        bytes memory data
-    ) internal {
+    function checkOnERC1363ApprovalReceived(address operator, address spender, uint256 value, bytes memory data)
+        internal
+    {
         if (spender.code.length == 0) {
             revert ERC1363InvalidSpender(spender);
         }

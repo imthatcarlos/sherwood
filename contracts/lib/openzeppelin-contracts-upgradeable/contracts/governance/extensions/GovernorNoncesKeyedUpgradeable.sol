@@ -16,12 +16,15 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * NOTE: Traditional (un-keyed) nonces are still supported and can continue to be used as if this extension was not present.
  */
 abstract contract GovernorNoncesKeyedUpgradeable is Initializable, GovernorUpgradeable, NoncesKeyedUpgradeable {
-    function __GovernorNoncesKeyed_init() internal onlyInitializing {
-    }
+    function __GovernorNoncesKeyed_init() internal onlyInitializing {}
 
-    function __GovernorNoncesKeyed_init_unchained() internal onlyInitializing {
-    }
-    function _useCheckedNonce(address owner, uint256 nonce) internal virtual override(NoncesUpgradeable, NoncesKeyedUpgradeable) {
+    function __GovernorNoncesKeyed_init_unchained() internal onlyInitializing {}
+
+    function _useCheckedNonce(address owner, uint256 nonce)
+        internal
+        virtual
+        override(NoncesUpgradeable, NoncesKeyedUpgradeable)
+    {
         super._useCheckedNonce(owner, nonce);
     }
 
@@ -31,14 +34,13 @@ abstract contract GovernorNoncesKeyedUpgradeable is Initializable, GovernorUpgra
      * NOTE: This function won't call `super._validateVoteSig` if the keyed nonce is valid.
      * Side effects may be skipped depending on the linearization of the function.
      */
-    function _validateVoteSig(
-        uint256 proposalId,
-        uint8 support,
-        address voter,
-        bytes memory signature
-    ) internal virtual override returns (bool) {
-        if (
-            SignatureChecker.isValidSignatureNow(
+    function _validateVoteSig(uint256 proposalId, uint8 support, address voter, bytes memory signature)
+        internal
+        virtual
+        override
+        returns (bool)
+    {
+        if (SignatureChecker.isValidSignatureNow(
                 voter,
                 _hashTypedDataV4(
                     keccak256(
@@ -46,8 +48,7 @@ abstract contract GovernorNoncesKeyedUpgradeable is Initializable, GovernorUpgra
                     )
                 ),
                 signature
-            )
-        ) {
+            )) {
             _useNonce(voter, uint192(proposalId));
             return true;
         } else {
@@ -69,8 +70,7 @@ abstract contract GovernorNoncesKeyedUpgradeable is Initializable, GovernorUpgra
         bytes memory params,
         bytes memory signature
     ) internal virtual override returns (bool) {
-        if (
-            SignatureChecker.isValidSignatureNow(
+        if (SignatureChecker.isValidSignatureNow(
                 voter,
                 _hashTypedDataV4(
                     keccak256(
@@ -86,8 +86,7 @@ abstract contract GovernorNoncesKeyedUpgradeable is Initializable, GovernorUpgra
                     )
                 ),
                 signature
-            )
-        ) {
+            )) {
             _useNonce(voter, uint192(proposalId));
             return true;
         } else {

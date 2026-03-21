@@ -44,7 +44,8 @@ abstract contract VotesExtendedUpgradeable is Initializable, VotesUpgradeable {
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.VotesExtended")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant VotesExtendedStorageLocation = 0x4a7bc7aabb540021543c1f28dd259f8776612c96fd248bdcc6fdf56c7778d900;
+    bytes32 private constant VotesExtendedStorageLocation =
+        0x4a7bc7aabb540021543c1f28dd259f8776612c96fd248bdcc6fdf56c7778d900;
 
     function _getVotesExtendedStorage() private pure returns (VotesExtendedStorage storage $) {
         assembly {
@@ -52,11 +53,10 @@ abstract contract VotesExtendedUpgradeable is Initializable, VotesUpgradeable {
         }
     }
 
-    function __VotesExtended_init() internal onlyInitializing {
-    }
+    function __VotesExtended_init() internal onlyInitializing {}
 
-    function __VotesExtended_init_unchained() internal onlyInitializing {
-    }
+    function __VotesExtended_init_unchained() internal onlyInitializing {}
+
     /**
      * @dev Returns the delegate of an `account` at a specific moment in the past. If the `clock()` is
      * configured to use block numbers, this will return the value at the end of the corresponding block.

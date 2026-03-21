@@ -13,11 +13,10 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * recognized off-chain (via event analysis).
  */
 abstract contract ERC20BurnableUpgradeable is Initializable, ContextUpgradeable, ERC20Upgradeable {
-    function __ERC20Burnable_init() internal onlyInitializing {
-    }
+    function __ERC20Burnable_init() internal onlyInitializing {}
 
-    function __ERC20Burnable_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20Burnable_init_unchained() internal onlyInitializing {}
+
     /**
      * @dev Destroys a `value` amount of tokens from the caller.
      *

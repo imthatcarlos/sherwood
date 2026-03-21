@@ -22,13 +22,18 @@ abstract contract ERC20BridgeableUpgradeable is Initializable, ERC20Upgradeable,
         _;
     }
 
-    function __ERC20Bridgeable_init() internal onlyInitializing {
-    }
+    function __ERC20Bridgeable_init() internal onlyInitializing {}
 
-    function __ERC20Bridgeable_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20Bridgeable_init_unchained() internal onlyInitializing {}
+
     /// @inheritdoc ERC165Upgradeable
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165Upgradeable, IERC165) returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(ERC165Upgradeable, IERC165)
+        returns (bool)
+    {
         return interfaceId == type(IERC7802).interfaceId || super.supportsInterface(interfaceId);
     }
 

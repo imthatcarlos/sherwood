@@ -11,11 +11,10 @@ abstract contract AccessManagedTargetUpgradeable is Initializable, AccessManaged
     event CalledUnrestricted(address caller);
     event CalledFallback(address caller);
 
-    function __AccessManagedTarget_init() internal onlyInitializing {
-    }
+    function __AccessManagedTarget_init() internal onlyInitializing {}
 
-    function __AccessManagedTarget_init_unchained() internal onlyInitializing {
-    }
+    function __AccessManagedTarget_init_unchained() internal onlyInitializing {}
+
     function fnRestricted() public restricted {
         emit CalledRestricted(msg.sender);
     }

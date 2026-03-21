@@ -22,7 +22,8 @@ abstract contract PausableUpgradeable is Initializable, ContextUpgradeable {
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.Pausable")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant PausableStorageLocation = 0xcd5ed15c6e187e77e9aee88184c21f4f2182ab5827cb3b7e07fbedcd63f03300;
+    bytes32 private constant PausableStorageLocation =
+        0xcd5ed15c6e187e77e9aee88184c21f4f2182ab5827cb3b7e07fbedcd63f03300;
 
     function _getPausableStorage() private pure returns (PausableStorage storage $) {
         assembly {
@@ -74,11 +75,10 @@ abstract contract PausableUpgradeable is Initializable, ContextUpgradeable {
         _;
     }
 
-    function __Pausable_init() internal onlyInitializing {
-    }
+    function __Pausable_init() internal onlyInitializing {}
 
-    function __Pausable_init_unchained() internal onlyInitializing {
-    }
+    function __Pausable_init_unchained() internal onlyInitializing {}
+
     /**
      * @dev Returns true if the contract is paused, and false otherwise.
      */

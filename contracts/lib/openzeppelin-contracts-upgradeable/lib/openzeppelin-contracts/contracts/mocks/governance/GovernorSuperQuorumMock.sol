@@ -32,9 +32,12 @@ abstract contract GovernorSuperQuorumMock is
         return _superQuorum;
     }
 
-    function state(
-        uint256 proposalId
-    ) public view override(Governor, GovernorSuperQuorum, GovernorTimelockControl) returns (ProposalState) {
+    function state(uint256 proposalId)
+        public
+        view
+        override(Governor, GovernorSuperQuorum, GovernorTimelockControl)
+        returns (ProposalState)
+    {
         return super.state(proposalId);
     }
 
@@ -42,9 +45,7 @@ abstract contract GovernorSuperQuorumMock is
         return super.proposalThreshold();
     }
 
-    function proposalVotes(
-        uint256 proposalId
-    )
+    function proposalVotes(uint256 proposalId)
         public
         view
         virtual
@@ -87,9 +88,12 @@ abstract contract GovernorSuperQuorumMock is
         return super._queueOperations(proposalId, targets, values, calldatas, descriptionHash);
     }
 
-    function proposalNeedsQueuing(
-        uint256 proposalId
-    ) public view override(Governor, GovernorTimelockControl) returns (bool) {
+    function proposalNeedsQueuing(uint256 proposalId)
+        public
+        view
+        override(Governor, GovernorTimelockControl)
+        returns (bool)
+    {
         return super.proposalNeedsQueuing(proposalId);
     }
 }

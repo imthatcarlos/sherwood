@@ -7,20 +7,21 @@ import {ERC721Consecutive} from "../../token/ERC721/extensions/ERC721Consecutive
 import {ERC721Enumerable} from "../../token/ERC721/extensions/ERC721Enumerable.sol";
 
 contract ERC721ConsecutiveEnumerableMock is ERC721Consecutive, ERC721Enumerable {
-    constructor(
-        string memory name,
-        string memory symbol,
-        address[] memory receivers,
-        uint96[] memory amounts
-    ) ERC721(name, symbol) {
+    constructor(string memory name, string memory symbol, address[] memory receivers, uint96[] memory amounts)
+        ERC721(name, symbol)
+    {
         for (uint256 i = 0; i < receivers.length; ++i) {
             _mintConsecutive(receivers[i], amounts[i]);
         }
     }
 
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view virtual override(ERC721, ERC721Enumerable) returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(ERC721, ERC721Enumerable)
+        returns (bool)
+    {
         return super.supportsInterface(interfaceId);
     }
 
@@ -28,11 +29,12 @@ contract ERC721ConsecutiveEnumerableMock is ERC721Consecutive, ERC721Enumerable 
         return super._ownerOf(tokenId);
     }
 
-    function _update(
-        address to,
-        uint256 tokenId,
-        address auth
-    ) internal virtual override(ERC721Consecutive, ERC721Enumerable) returns (address) {
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        virtual
+        override(ERC721Consecutive, ERC721Enumerable)
+        returns (address)
+    {
         return super._update(to, tokenId, auth);
     }
 

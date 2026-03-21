@@ -70,11 +70,12 @@ abstract contract Account is AbstractSigner, IAccount {
     /**
      * @inheritdoc IAccount
      */
-    function validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 missingAccountFunds
-    ) public virtual onlyEntryPoint returns (uint256) {
+    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
+        public
+        virtual
+        onlyEntryPoint
+        returns (uint256)
+    {
         uint256 validationData = _validateUserOp(userOp, userOpHash, userOp.signature);
         _payPrefund(missingAccountFunds);
         return validationData;
@@ -92,15 +93,14 @@ abstract contract Account is AbstractSigner, IAccount {
      * NOTE: The userOpHash is assumed to be correct. Calling this function with a userOpHash that does not match the
      * userOp will result in undefined behavior.
      */
-    function _validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        bytes calldata signature
-    ) internal virtual returns (uint256) {
-        return
-            _rawSignatureValidation(_signableUserOpHash(userOp, userOpHash), signature)
-                ? ERC4337Utils.SIG_VALIDATION_SUCCESS
-                : ERC4337Utils.SIG_VALIDATION_FAILED;
+    function _validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, bytes calldata signature)
+        internal
+        virtual
+        returns (uint256)
+    {
+        return _rawSignatureValidation(_signableUserOpHash(userOp, userOpHash), signature)
+            ? ERC4337Utils.SIG_VALIDATION_SUCCESS
+            : ERC4337Utils.SIG_VALIDATION_FAILED;
     }
 
     /**
@@ -108,9 +108,15 @@ abstract contract Account is AbstractSigner, IAccount {
      * `userOpHash` is an EIP-712 hash that can be signed directly.
      */
     function _signableUserOpHash(
-        PackedUserOperation calldata /*userOp*/,
+        PackedUserOperation calldata,
+        /*userOp*/
         bytes32 userOpHash
-    ) internal view virtual returns (bytes32) {
+    )
+        internal
+        view
+        virtual
+        returns (bytes32)
+    {
         return userOpHash;
     }
 

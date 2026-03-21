@@ -34,11 +34,11 @@ contract SampleAccount is IAccount, Ownable {
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    function validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 missingAccountFunds
-    ) external override returns (uint256 validationData) {
+    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
+        external
+        override
+        returns (uint256 validationData)
+    {
         require(msg.sender == address(ERC4337Utils.ENTRYPOINT_V07), "only from EP");
         // Check signature
         if (userOpHash.toEthSignedMessageHash().recover(userOp.signature) != owner()) {
@@ -47,7 +47,7 @@ contract SampleAccount is IAccount, Ownable {
 
         // If this is an execute call with a batch operation, log the call details from the calldata
         if (bytes4(userOp.callData[0x00:0x04]) == this.execute.selector) {
-            (CallType callType, , , ) = Mode.wrap(bytes32(userOp.callData[0x04:0x24])).decodeMode();
+            (CallType callType,,,) = Mode.wrap(bytes32(userOp.callData[0x04:0x24])).decodeMode();
 
             if (callType == ERC7579Utils.CALLTYPE_BATCH) {
                 // Remove the selector
@@ -79,7 +79,7 @@ contract SampleAccount is IAccount, Ownable {
         }
 
         if (missingAccountFunds > 0) {
-            (bool success, ) = payable(msg.sender).call{value: missingAccountFunds}("");
+            (bool success,) = payable(msg.sender).call{value: missingAccountFunds}("");
             success; // Silence warning. The entrypoint should validate the result.
         }
 
@@ -89,7 +89,7 @@ contract SampleAccount is IAccount, Ownable {
     function execute(Mode mode, bytes calldata executionCalldata) external payable {
         require(msg.sender == address(this) || msg.sender == address(ERC4337Utils.ENTRYPOINT_V07), "not auth");
 
-        (CallType callType, ExecType execType, , ) = mode.decodeMode();
+        (CallType callType, ExecType execType,,) = mode.decodeMode();
 
         // check if calltype is batch or single
         if (callType == ERC7579Utils.CALLTYPE_SINGLE) {
@@ -172,10 +172,8 @@ contract ERC7579UtilsTest is Test {
             signature: ""
         });
 
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            _ownerKey,
-            this.hashUserOperation(userOps[0]).toEthSignedMessageHash()
-        );
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(_ownerKey, this.hashUserOperation(userOps[0]).toEthSignedMessageHash());
         userOps[0].signature = abi.encodePacked(r, s, v);
 
         vm.recordLogs();
@@ -223,10 +221,8 @@ contract ERC7579UtilsTest is Test {
             signature: ""
         });
 
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            _ownerKey,
-            this.hashUserOperation(userOps[0]).toEthSignedMessageHash()
-        );
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(_ownerKey, this.hashUserOperation(userOps[0]).toEthSignedMessageHash());
         userOps[0].signature = abi.encodePacked(r, s, v);
 
         vm.expectRevert(
@@ -281,10 +277,8 @@ contract ERC7579UtilsTest is Test {
             signature: ""
         });
 
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            _ownerKey,
-            this.hashUserOperation(userOps[0]).toEthSignedMessageHash()
-        );
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(_ownerKey, this.hashUserOperation(userOps[0]).toEthSignedMessageHash());
         userOps[0].signature = abi.encodePacked(r, s, v);
 
         vm.expectRevert(
@@ -408,9 +402,7 @@ contract ERC7579UtilsTest is Test {
 
         console.log(
             string.concat(
-                "Batch execute contents, as read during ",
-                duringValidation ? "validation" : "execution",
-                ": "
+                "Batch execute contents, as read during ", duringValidation ? "validation" : "execution", ": "
             )
         );
         console.log("  Execution[] length: %s", calls.length);

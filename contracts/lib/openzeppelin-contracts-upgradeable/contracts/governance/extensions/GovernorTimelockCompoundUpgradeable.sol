@@ -27,7 +27,8 @@ abstract contract GovernorTimelockCompoundUpgradeable is Initializable, Governor
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorTimelockCompound")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GovernorTimelockCompoundStorageLocation = 0x7d1501d734d0ca30b8d26751a7fae89646767b24afe11265192d56e5fe515b00;
+    bytes32 private constant GovernorTimelockCompoundStorageLocation =
+        0x7d1501d734d0ca30b8d26751a7fae89646767b24afe11265192d56e5fe515b00;
 
     function _getGovernorTimelockCompoundStorage() private pure returns (GovernorTimelockCompoundStorage storage $) {
         assembly {
@@ -58,11 +59,10 @@ abstract contract GovernorTimelockCompoundUpgradeable is Initializable, Governor
         GovernorTimelockCompoundStorage storage $ = _getGovernorTimelockCompoundStorage();
         ProposalState currentState = super.state(proposalId);
 
-        return
-            (currentState == ProposalState.Queued &&
-                block.timestamp >= proposalEta(proposalId) + $._timelock.GRACE_PERIOD())
-                ? ProposalState.Expired
-                : currentState;
+        return (currentState == ProposalState.Queued
+                && block.timestamp >= proposalEta(proposalId) + $._timelock.GRACE_PERIOD())
+            ? ProposalState.Expired
+            : currentState;
     }
 
     /**
@@ -92,9 +92,8 @@ abstract contract GovernorTimelockCompoundUpgradeable is Initializable, Governor
         uint48 etaSeconds = SafeCast.toUint48(block.timestamp + $._timelock.delay());
 
         for (uint256 i = 0; i < targets.length; ++i) {
-            if (
-                $._timelock.queuedTransactions(keccak256(abi.encode(targets[i], values[i], "", calldatas[i], etaSeconds)))
-            ) {
+            if ($._timelock
+                    .queuedTransactions(keccak256(abi.encode(targets[i], values[i], "", calldatas[i], etaSeconds)))) {
                 revert GovernorAlreadyQueuedProposal(proposalId);
             }
             $._timelock.queueTransaction(targets[i], values[i], "", calldatas[i], etaSeconds);
@@ -173,7 +172,7 @@ abstract contract GovernorTimelockCompoundUpgradeable is Initializable, Governor
      * Note that if the timelock admin has been handed over in a previous operation, we refuse updates made through the
      * timelock if admin of the timelock has already been accepted and the operation is executed outside the scope of
      * governance.
-
+     *
      * CAUTION: It is not recommended to change the timelock while there are other queued governance proposals.
      */
     function updateTimelock(ICompoundTimelock newTimelock) public virtual onlyGovernance {

@@ -8,21 +8,20 @@ import {SignerP256Upgradeable} from "../../../utils/cryptography/signers/SignerP
 import {SignerRSAUpgradeable} from "../../../utils/cryptography/signers/SignerRSAUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-abstract contract ERC7739ECDSAMockUpgradeable is Initializable, ERC7739Upgradeable, SignerECDSAUpgradeable {    function __ERC7739ECDSAMock_init() internal onlyInitializing {
-    }
+abstract contract ERC7739ECDSAMockUpgradeable is Initializable, ERC7739Upgradeable, SignerECDSAUpgradeable {
+    function __ERC7739ECDSAMock_init() internal onlyInitializing {}
 
-    function __ERC7739ECDSAMock_init_unchained() internal onlyInitializing {
-    }
+    function __ERC7739ECDSAMock_init_unchained() internal onlyInitializing {}
 }
-abstract contract ERC7739P256MockUpgradeable is Initializable, ERC7739Upgradeable, SignerP256Upgradeable {    function __ERC7739P256Mock_init() internal onlyInitializing {
-    }
 
-    function __ERC7739P256Mock_init_unchained() internal onlyInitializing {
-    }
+abstract contract ERC7739P256MockUpgradeable is Initializable, ERC7739Upgradeable, SignerP256Upgradeable {
+    function __ERC7739P256Mock_init() internal onlyInitializing {}
+
+    function __ERC7739P256Mock_init_unchained() internal onlyInitializing {}
 }
-abstract contract ERC7739RSAMockUpgradeable is Initializable, ERC7739Upgradeable, SignerRSAUpgradeable {    function __ERC7739RSAMock_init() internal onlyInitializing {
-    }
 
-    function __ERC7739RSAMock_init_unchained() internal onlyInitializing {
-    }
+abstract contract ERC7739RSAMockUpgradeable is Initializable, ERC7739Upgradeable, SignerRSAUpgradeable {
+    function __ERC7739RSAMock_init() internal onlyInitializing {}
+
+    function __ERC7739RSAMock_init_unchained() internal onlyInitializing {}
 }

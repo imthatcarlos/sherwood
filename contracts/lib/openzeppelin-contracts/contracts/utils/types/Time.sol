@@ -71,10 +71,11 @@ library Time {
      * @dev Get the value at a given timepoint plus the pending value and effect timepoint if there is a scheduled
      * change after this timepoint. If the effect timepoint is 0, then the pending value should not be considered.
      */
-    function _getFullAt(
-        Delay self,
-        uint48 timepoint
-    ) private pure returns (uint32 valueBefore, uint32 valueAfter, uint48 effect) {
+    function _getFullAt(Delay self, uint48 timepoint)
+        private
+        pure
+        returns (uint32 valueBefore, uint32 valueAfter, uint48 effect)
+    {
         (valueBefore, valueAfter, effect) = self.unpack();
         return effect <= timepoint ? (valueAfter, 0, 0) : (valueBefore, valueAfter, effect);
     }
@@ -91,7 +92,7 @@ library Time {
      * @dev Get the current value.
      */
     function get(Delay self) internal view returns (uint32) {
-        (uint32 delay, , ) = self.getFull();
+        (uint32 delay,,) = self.getFull();
         return delay;
     }
 
@@ -100,11 +101,11 @@ library Time {
      * enforce the old delay at the moment of the update. Returns the updated Delay object and the timestamp when the
      * new delay becomes effective.
      */
-    function withUpdate(
-        Delay self,
-        uint32 newValue,
-        uint32 minSetback
-    ) internal view returns (Delay updatedDelay, uint48 effect) {
+    function withUpdate(Delay self, uint32 newValue, uint32 minSetback)
+        internal
+        view
+        returns (Delay updatedDelay, uint48 effect)
+    {
         uint32 value = self.get();
         uint32 setback = uint32(Math.max(minSetback, value > newValue ? value - newValue : 0));
         effect = timestamp() + setback;

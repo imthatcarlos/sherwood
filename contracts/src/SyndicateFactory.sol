@@ -10,6 +10,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {SyndicateVault} from "./SyndicateVault.sol";
 import {ISyndicateVault} from "./interfaces/ISyndicateVault.sol";
+import {ISyndicateGovernor} from "./interfaces/ISyndicateGovernor.sol";
 import {IL2Registrar} from "./interfaces/IL2Registrar.sol";
 
 /**
@@ -44,6 +45,7 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     error ManagementFeeTooHigh();
     error UpgradesDisabled();
     error VaultNotDeployed();
+    error StrategyActive();
 
     struct SyndicateConfig {
         string metadataURI; // ipfs://Qm... (name, description, strategies)
@@ -149,6 +151,7 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         ensRegistrar = IL2Registrar(p.ensRegistrar);
         agentRegistry = IERC721(p.agentRegistry);
         governor = p.governor;
+        if (p.managementFeeBps > 1000) revert ManagementFeeTooHigh();
         managementFeeBps = p.managementFeeBps;
     }
 
@@ -280,6 +283,10 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         uint256 syndicateId = vaultToSyndicate[vault];
         if (syndicateId == 0) revert VaultNotDeployed();
         if (syndicates[syndicateId].creator != msg.sender) revert NotCreator();
+        // Cannot upgrade while a strategy is active
+        if (governor != address(0) && ISyndicateGovernor(governor).getActiveProposal(vault) != 0) {
+            revert StrategyActive();
+        }
         UUPSUpgradeable(vault).upgradeToAndCall(vaultImpl, "");
         emit VaultUpgraded(vault, vaultImpl);
     }

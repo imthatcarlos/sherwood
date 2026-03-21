@@ -20,11 +20,10 @@ abstract contract ERC4626FeesUpgradeable is Initializable, ERC4626Upgradeable {
 
     uint256 private constant _BASIS_POINT_SCALE = 1e4;
 
-    function __ERC4626Fees_init() internal onlyInitializing {
-    }
+    function __ERC4626Fees_init() internal onlyInitializing {}
 
-    function __ERC4626Fees_init_unchained() internal onlyInitializing {
-    }
+    function __ERC4626Fees_init_unchained() internal onlyInitializing {}
+
     // === Overrides ===
 
     /// @dev Preview taking an entry fee on deposit. See {IERC4626-previewDeposit}.
@@ -64,13 +63,11 @@ abstract contract ERC4626FeesUpgradeable is Initializable, ERC4626Upgradeable {
     }
 
     /// @dev Send exit fee to {_exitFeeRecipient}. See {ERC4626-_withdraw}.
-    function _withdraw(
-        address caller,
-        address receiver,
-        address owner,
-        uint256 assets,
-        uint256 shares
-    ) internal virtual override {
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        virtual
+        override
+    {
         uint256 fee = _feeOnRaw(assets, _exitFeeBasisPoints());
         address recipient = _exitFeeRecipient();
 

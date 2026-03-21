@@ -65,29 +65,21 @@ contract ERC721ConsecutiveTest is Test {
         ERC721ConsecutiveTarget token = new ERC721ConsecutiveTarget(toSingleton(receiver), batches, startingTokenId);
 
         if (token.totalMinted() > 0) {
-            uint256 validTokenId = bound(
-                unboundedTokenId[0],
-                startingTokenId,
-                startingTokenId + token.totalMinted() - 1
-            );
+            uint256 validTokenId =
+                bound(unboundedTokenId[0], startingTokenId, startingTokenId + token.totalMinted() - 1);
             assertEq(token.ownerOf(validTokenId), receiver);
         }
 
         uint256 invalidTokenId = bound(
-            unboundedTokenId[1],
-            startingTokenId + token.totalMinted(),
-            startingTokenId + token.totalMinted() + 1
+            unboundedTokenId[1], startingTokenId + token.totalMinted(), startingTokenId + token.totalMinted() + 1
         );
         vm.expectRevert();
         token.ownerOf(invalidTokenId);
     }
 
-    function test_burn(
-        address receiver,
-        uint256[] calldata batches,
-        uint256 unboundedTokenId,
-        uint96 startingId
-    ) public {
+    function test_burn(address receiver, uint256[] calldata batches, uint256 unboundedTokenId, uint96 startingId)
+        public
+    {
         vm.assume(receiver != address(0));
 
         uint256 startingTokenId = bound(startingId, 0, 5000);

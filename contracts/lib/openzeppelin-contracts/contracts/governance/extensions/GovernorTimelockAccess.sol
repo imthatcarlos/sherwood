@@ -127,11 +127,11 @@ abstract contract GovernorTimelockAccess is Governor {
      * @dev Configure whether restrictions from the associated {AccessManager} are ignored for a target function.
      * See Security Considerations above.
      */
-    function setAccessManagerIgnored(
-        address target,
-        bytes4[] calldata selectors,
-        bool ignored
-    ) public virtual onlyGovernance {
+    function setAccessManagerIgnored(address target, bytes4[] calldata selectors, bool ignored)
+        public
+        virtual
+        onlyGovernance
+    {
         for (uint256 i = 0; i < selectors.length; ++i) {
             _setAccessManagerIgnored(target, selectors[i], ignored);
         }
@@ -155,9 +155,11 @@ abstract contract GovernorTimelockAccess is Governor {
      * the associated {AccessManager}, and another indicating which will be scheduled in {queue}. Note that
      * those that must be scheduled are cancellable by `AccessManager` guardians.
      */
-    function proposalExecutionPlan(
-        uint256 proposalId
-    ) public view returns (uint32 delay, bool[] memory indirect, bool[] memory withDelay) {
+    function proposalExecutionPlan(uint256 proposalId)
+        public
+        view
+        returns (uint32 delay, bool[] memory indirect, bool[] memory withDelay)
+    {
         ExecutionPlan storage plan = _executionPlan[proposalId];
 
         uint32 length = plan.length;
@@ -165,7 +167,7 @@ abstract contract GovernorTimelockAccess is Governor {
         indirect = new bool[](length);
         withDelay = new bool[](length);
         for (uint256 i = 0; i < length; ++i) {
-            (indirect[i], withDelay[i], ) = _getManagerData(plan, i);
+            (indirect[i], withDelay[i],) = _getManagerData(plan, i);
         }
 
         return (delay, indirect, withDelay);
@@ -196,12 +198,8 @@ abstract contract GovernorTimelockAccess is Governor {
             }
             address target = targets[i];
             bytes4 selector = bytes4(calldatas[i]);
-            (bool immediate, uint32 delay) = AuthorityUtils.canCallWithDelay(
-                address(_manager),
-                address(this),
-                target,
-                selector
-            );
+            (bool immediate, uint32 delay) =
+                AuthorityUtils.canCallWithDelay(address(_manager), address(this), target, selector);
             if ((immediate || delay > 0) && !isAccessManagerIgnored(target, selector)) {
                 _setManagerData(plan, i, !immediate, 0);
                 // downcast is safe because both arguments are uint32
@@ -223,7 +221,8 @@ abstract contract GovernorTimelockAccess is Governor {
     function _queueOperations(
         uint256 proposalId,
         address[] memory targets,
-        uint256[] memory /* values */,
+        uint256[] memory,
+        /* values */
         bytes[] memory calldatas,
         bytes32 /* descriptionHash */
     ) internal virtual override returns (uint48) {
@@ -231,7 +230,7 @@ abstract contract GovernorTimelockAccess is Governor {
         uint48 etaSeconds = Time.timestamp() + plan.delay;
 
         for (uint256 i = 0; i < targets.length; ++i) {
-            (, bool withDelay, ) = _getManagerData(plan, i);
+            (, bool withDelay,) = _getManagerData(plan, i);
             if (withDelay) {
                 // This function can reenter when calling `_manager.schedule` before performing state updates in `_setManagerData`.
                 // However, the `manager` is a trusted contract in the current context's security model (e.g. an `AccessManager`).
@@ -316,10 +315,11 @@ abstract contract GovernorTimelockAccess is Governor {
     /**
      * @dev Returns whether the operation at an index is delayed by the manager, and its scheduling nonce once queued.
      */
-    function _getManagerData(
-        ExecutionPlan storage plan,
-        uint256 index
-    ) private view returns (bool controlled, bool withDelay, uint32 nonce) {
+    function _getManagerData(ExecutionPlan storage plan, uint256 index)
+        private
+        view
+        returns (bool controlled, bool withDelay, uint32 nonce)
+    {
         (uint256 bucket, uint256 subindex) = _getManagerDataIndices(index);
         uint32 value = plan.managerData[bucket][subindex];
         unchecked {

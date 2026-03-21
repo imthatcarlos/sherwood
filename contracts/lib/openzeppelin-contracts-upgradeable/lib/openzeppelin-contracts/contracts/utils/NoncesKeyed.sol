@@ -44,7 +44,7 @@ abstract contract NoncesKeyed is Nonces {
      * - use the last 8 bytes for the nonce
      */
     function _useCheckedNonce(address owner, uint256 keyNonce) internal virtual override {
-        (uint192 key, ) = _unpack(keyNonce);
+        (uint192 key,) = _unpack(keyNonce);
         if (key == 0) {
             super._useCheckedNonce(owner, keyNonce);
         } else {

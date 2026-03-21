@@ -92,12 +92,11 @@ abstract contract ERC1363 is ERC20, ERC165, IERC1363 {
      * @dev Variant of {transferFromAndCall} that accepts an additional `data` parameter with
      * no specified format.
      */
-    function transferFromAndCall(
-        address from,
-        address to,
-        uint256 value,
-        bytes memory data
-    ) public virtual returns (bool) {
+    function transferFromAndCall(address from, address to, uint256 value, bytes memory data)
+        public
+        virtual
+        returns (bool)
+    {
         if (!transferFrom(from, to, value)) {
             revert ERC1363TransferFromFailed(from, to, value);
         }

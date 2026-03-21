@@ -12,11 +12,9 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * extension must implement {proposalVotes}.
  */
 abstract contract GovernorSuperQuorumUpgradeable is Initializable, GovernorUpgradeable {
-    function __GovernorSuperQuorum_init() internal onlyInitializing {
-    }
+    function __GovernorSuperQuorum_init() internal onlyInitializing {}
 
-    function __GovernorSuperQuorum_init_unchained() internal onlyInitializing {
-    }
+    function __GovernorSuperQuorum_init_unchained() internal onlyInitializing {}
     /**
      * @dev Minimum number of cast votes required for a proposal to reach super quorum. Only FOR votes are counted
      * towards the super quorum. Once the super quorum is reached, an active proposal can proceed to the next state
@@ -34,9 +32,11 @@ abstract contract GovernorSuperQuorumUpgradeable is Initializable, GovernorUpgra
      * @dev Accessor to the internal vote counts. This must be implemented by the counting module. Counting modules
      * that don't implement this function are incompatible with this module
      */
-    function proposalVotes(
-        uint256 proposalId
-    ) public view virtual returns (uint256 againstVotes, uint256 forVotes, uint256 abstainVotes);
+    function proposalVotes(uint256 proposalId)
+        public
+        view
+        virtual
+        returns (uint256 againstVotes, uint256 forVotes, uint256 abstainVotes);
 
     /**
      * @dev Overridden version of the {Governor-state} function that checks if the proposal has reached the super
@@ -53,7 +53,7 @@ abstract contract GovernorSuperQuorumUpgradeable is Initializable, GovernorUpgra
         ProposalState currentState = super.state(proposalId);
         if (currentState != ProposalState.Active) return currentState;
 
-        (, uint256 forVotes, ) = proposalVotes(proposalId);
+        (, uint256 forVotes,) = proposalVotes(proposalId);
         if (forVotes < superQuorum(proposalSnapshot(proposalId)) || !_voteSucceeded(proposalId)) {
             return ProposalState.Active;
         } else if (proposalEta(proposalId) == 0) {

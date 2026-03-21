@@ -74,10 +74,10 @@ library Heap {
      * NOTE: All inserting and removal from a heap should always be done using the same comparator. Mixing comparator
      * during the lifecycle of a heap will result in undefined behavior.
      */
-    function pop(
-        Uint256Heap storage self,
-        function(uint256, uint256) view returns (bool) comp
-    ) internal returns (uint256) {
+    function pop(Uint256Heap storage self, function(uint256, uint256) view returns (bool) comp)
+        internal
+        returns (uint256)
+    {
         unchecked {
             uint256 size = length(self);
             if (size == 0) Panic.panic(Panic.EMPTY_ARRAY_POP);
@@ -115,11 +115,9 @@ library Heap {
      * NOTE: All inserting and removal from a heap should always be done using the same comparator. Mixing comparator
      * during the lifecycle of a heap will result in undefined behavior.
      */
-    function insert(
-        Uint256Heap storage self,
-        uint256 value,
-        function(uint256, uint256) view returns (bool) comp
-    ) internal {
+    function insert(Uint256Heap storage self, uint256 value, function(uint256, uint256) view returns (bool) comp)
+        internal
+    {
         uint256 size = length(self);
 
         // push new item and re-heapify
@@ -145,11 +143,10 @@ library Heap {
      * NOTE: All inserting and removal from a heap should always be done using the same comparator. Mixing comparator
      * during the lifecycle of a heap will result in undefined behavior.
      */
-    function replace(
-        Uint256Heap storage self,
-        uint256 newValue,
-        function(uint256, uint256) view returns (bool) comp
-    ) internal returns (uint256) {
+    function replace(Uint256Heap storage self, uint256 newValue, function(uint256, uint256) view returns (bool) comp)
+        internal
+        returns (uint256)
+    {
         uint256 size = length(self);
         if (size == 0) Panic.panic(Panic.EMPTY_ARRAY_POP);
 

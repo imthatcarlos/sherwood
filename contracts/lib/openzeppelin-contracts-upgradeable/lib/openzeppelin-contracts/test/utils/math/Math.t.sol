@@ -250,7 +250,7 @@ contract MathTest is Test {
 
     /// forge-config: default.allow_internal_expect_revert = true
     function testMulDivDomain(uint256 x, uint256 y, uint256 d) public {
-        (uint256 xyHi, ) = Math.mul512(x, y);
+        (uint256 xyHi,) = Math.mul512(x, y);
 
         // Violate {testMulDiv} assumption (covers d is 0 and result overflow)
         vm.assume(xyHi >= d);
@@ -295,11 +295,8 @@ contract MathTest is Test {
     }
 
     function testTryModExpMemory(uint256 b, uint256 e, uint256 m) public view {
-        (bool success, bytes memory result) = Math.tryModExp(
-            abi.encodePacked(b),
-            abi.encodePacked(e),
-            abi.encodePacked(m)
-        );
+        (bool success, bytes memory result) =
+            Math.tryModExp(abi.encodePacked(b), abi.encodePacked(e), abi.encodePacked(m));
         if (success) {
             assertEq(result.length, 0x20); // m is a uint256, so abi.encodePacked(m).length is 0x20
             uint256 res = abi.decode(result, (uint256));

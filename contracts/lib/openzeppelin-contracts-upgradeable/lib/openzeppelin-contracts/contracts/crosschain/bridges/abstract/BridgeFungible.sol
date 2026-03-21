@@ -47,9 +47,7 @@ abstract contract BridgeFungible is Context, CrosschainLinked {
         bytes memory chain = InteroperableAddress.formatV1(chainType, chainReference, hex"");
 
         bytes32 sendId = _sendMessageToCounterpart(
-            chain,
-            abi.encode(InteroperableAddress.formatEvmV1(block.chainid, from), addr, amount),
-            new bytes[](0)
+            chain, abi.encode(InteroperableAddress.formatEvmV1(block.chainid, from), addr, amount), new bytes[](0)
         );
 
         emit CrosschainFungibleTransferSent(sendId, from, to, amount);
@@ -59,11 +57,17 @@ abstract contract BridgeFungible is Context, CrosschainLinked {
 
     /// @inheritdoc ERC7786Recipient
     function _processMessage(
-        address /*gateway*/,
+        address,
+        /*gateway*/
         bytes32 receiveId,
-        bytes calldata /*sender*/,
+        bytes calldata,
+        /*sender*/
         bytes calldata payload
-    ) internal virtual override {
+    )
+        internal
+        virtual
+        override
+    {
         // NOTE: Gateway is validated by {_isAuthorizedGateway} (implemented in {CrosschainLinked}). No need to check here.
 
         // split payload

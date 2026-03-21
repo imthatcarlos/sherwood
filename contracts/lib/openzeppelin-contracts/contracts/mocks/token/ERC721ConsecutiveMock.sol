@@ -41,11 +41,12 @@ contract ERC721ConsecutiveMock is ERC721Consecutive, ERC721Pausable, ERC721Votes
         return super._ownerOf(tokenId);
     }
 
-    function _update(
-        address to,
-        uint256 tokenId,
-        address auth
-    ) internal virtual override(ERC721Consecutive, ERC721Pausable, ERC721Votes) returns (address) {
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        virtual
+        override(ERC721Consecutive, ERC721Pausable, ERC721Votes)
+        returns (address)
+    {
         return super._update(to, tokenId, auth);
     }
 

@@ -47,7 +47,8 @@ contract VestingWalletUpgradeable is Initializable, ContextUpgradeable, OwnableU
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.VestingWallet")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant VestingWalletStorageLocation = 0xa1eac494560f7591e4da38ed031587f09556afdfc4399dd2e205b935fdfa3900;
+    bytes32 private constant VestingWalletStorageLocation =
+        0xa1eac494560f7591e4da38ed031587f09556afdfc4399dd2e205b935fdfa3900;
 
     function _getVestingWalletStorage() private pure returns (VestingWalletStorage storage $) {
         assembly {
@@ -58,16 +59,23 @@ contract VestingWalletUpgradeable is Initializable, ContextUpgradeable, OwnableU
     function initialize(address beneficiary, uint64 startTimestamp, uint64 durationSeconds) public virtual initializer {
         __VestingWallet_init(beneficiary, startTimestamp, durationSeconds);
     }
+
     /**
      * @dev Sets the beneficiary (owner), the start timestamp and the vesting duration (in seconds) of the vesting
      * wallet.
      */
-    function __VestingWallet_init(address beneficiary, uint64 startTimestamp, uint64 durationSeconds) internal onlyInitializing {
+    function __VestingWallet_init(address beneficiary, uint64 startTimestamp, uint64 durationSeconds)
+        internal
+        onlyInitializing
+    {
         __Ownable_init_unchained(beneficiary);
         __VestingWallet_init_unchained(beneficiary, startTimestamp, durationSeconds);
     }
 
-    function __VestingWallet_init_unchained(address, uint64 startTimestamp, uint64 durationSeconds) internal onlyInitializing {
+    function __VestingWallet_init_unchained(address, uint64 startTimestamp, uint64 durationSeconds)
+        internal
+        onlyInitializing
+    {
         VestingWalletStorage storage $ = _getVestingWalletStorage();
         $._start = startTimestamp;
         $._duration = durationSeconds;

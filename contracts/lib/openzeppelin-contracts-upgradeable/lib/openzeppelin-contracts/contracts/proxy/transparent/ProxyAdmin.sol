@@ -35,11 +35,12 @@ contract ProxyAdmin is Ownable {
      * - This contract must be the admin of `proxy`.
      * - If `data` is empty, `msg.value` must be zero.
      */
-    function upgradeAndCall(
-        ITransparentUpgradeableProxy proxy,
-        address implementation,
-        bytes memory data
-    ) public payable virtual onlyOwner {
+    function upgradeAndCall(ITransparentUpgradeableProxy proxy, address implementation, bytes memory data)
+        public
+        payable
+        virtual
+        onlyOwner
+    {
         proxy.upgradeToAndCall{value: msg.value}(implementation, data);
     }
 }

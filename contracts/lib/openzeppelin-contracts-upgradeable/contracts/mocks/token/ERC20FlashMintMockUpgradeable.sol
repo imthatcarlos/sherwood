@@ -9,11 +9,10 @@ abstract contract ERC20FlashMintMockUpgradeable is Initializable, ERC20FlashMint
     uint256 _flashFeeAmount;
     address _flashFeeReceiverAddress;
 
-    function __ERC20FlashMintMock_init() internal onlyInitializing {
-    }
+    function __ERC20FlashMintMock_init() internal onlyInitializing {}
 
-    function __ERC20FlashMintMock_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20FlashMintMock_init_unchained() internal onlyInitializing {}
+
     function setFlashFee(uint256 amount) public {
         _flashFeeAmount = amount;
     }

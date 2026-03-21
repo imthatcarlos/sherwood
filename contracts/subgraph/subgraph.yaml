@@ -55,7 +55,7 @@ dataSources:
       eventHandlers:
         - event: ProposalCreated(indexed uint256,indexed address,indexed address,uint256,uint256,uint256,uint256,string)
           handler: handleProposalCreated
-        - event: VoteCast(indexed uint256,indexed address,bool,uint256)
+        - event: VoteCast(indexed uint256,indexed address,uint8,uint256)
           handler: handleVoteCast
         - event: ProposalExecuted(indexed uint256,indexed address,uint256)
           handler: handleProposalExecuted

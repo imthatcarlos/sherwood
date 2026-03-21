@@ -29,10 +29,11 @@ library Arrays {
      *
      * IMPORTANT: Consider memory side-effects when using custom comparator functions that access memory in an unsafe way.
      */
-    function sort(
-        uint256[] memory array,
-        function(uint256, uint256) pure returns (bool) comp
-    ) internal pure returns (uint256[] memory) {
+    function sort(uint256[] memory array, function(uint256, uint256) pure returns (bool) comp)
+        internal
+        pure
+        returns (uint256[] memory)
+    {
         _quickSort(_begin(array), _end(array), comp);
         return array;
     }
@@ -58,10 +59,11 @@ library Arrays {
      *
      * IMPORTANT: Consider memory side-effects when using custom comparator functions that access memory in an unsafe way.
      */
-    function sort(
-        address[] memory array,
-        function(address, address) pure returns (bool) comp
-    ) internal pure returns (address[] memory) {
+    function sort(address[] memory array, function(address, address) pure returns (bool) comp)
+        internal
+        pure
+        returns (address[] memory)
+    {
         sort(_castToUint256Array(array), _castToUint256Comp(comp));
         return array;
     }
@@ -87,10 +89,11 @@ library Arrays {
      *
      * IMPORTANT: Consider memory side-effects when using custom comparator functions that access memory in an unsafe way.
      */
-    function sort(
-        bytes32[] memory array,
-        function(bytes32, bytes32) pure returns (bool) comp
-    ) internal pure returns (bytes32[] memory) {
+    function sort(bytes32[] memory array, function(bytes32, bytes32) pure returns (bool) comp)
+        internal
+        pure
+        returns (bytes32[] memory)
+    {
         sort(_castToUint256Array(array), _castToUint256Comp(comp));
         return array;
     }
@@ -191,18 +194,22 @@ library Arrays {
     }
 
     /// @dev Helper: low level cast address comp function to uint256 comp function
-    function _castToUint256Comp(
-        function(address, address) pure returns (bool) input
-    ) private pure returns (function(uint256, uint256) pure returns (bool) output) {
+    function _castToUint256Comp(function(address, address) pure returns (bool) input)
+        private
+        pure
+        returns (function(uint256, uint256) pure returns (bool) output)
+    {
         assembly {
             output := input
         }
     }
 
     /// @dev Helper: low level cast bytes32 comp function to uint256 comp function
-    function _castToUint256Comp(
-        function(bytes32, bytes32) pure returns (bool) input
-    ) private pure returns (function(uint256, uint256) pure returns (bool) output) {
+    function _castToUint256Comp(function(bytes32, bytes32) pure returns (bool) input)
+        private
+        pure
+        returns (function(uint256, uint256) pure returns (bool) output)
+    {
         assembly {
             output := input
         }
@@ -504,11 +511,11 @@ library Arrays {
      *
      * NOTE: This function modifies the provided array in place.
      */
-    function replace(
-        address[] memory array,
-        uint256 pos,
-        address[] memory replacement
-    ) internal pure returns (address[] memory) {
+    function replace(address[] memory array, uint256 pos, address[] memory replacement)
+        internal
+        pure
+        returns (address[] memory)
+    {
         return replace(array, pos, replacement, 0, replacement.length);
     }
 
@@ -523,13 +530,11 @@ library Arrays {
      *
      * NOTE: This function modifies the provided array in place.
      */
-    function replace(
-        address[] memory array,
-        uint256 pos,
-        address[] memory replacement,
-        uint256 offset,
-        uint256 length
-    ) internal pure returns (address[] memory) {
+    function replace(address[] memory array, uint256 pos, address[] memory replacement, uint256 offset, uint256 length)
+        internal
+        pure
+        returns (address[] memory)
+    {
         // sanitize
         pos = Math.min(pos, array.length);
         offset = Math.min(offset, replacement.length);
@@ -586,11 +591,11 @@ library Arrays {
      *
      * NOTE: This function modifies the provided array in place.
      */
-    function replace(
-        bytes32[] memory array,
-        uint256 pos,
-        bytes32[] memory replacement
-    ) internal pure returns (bytes32[] memory) {
+    function replace(bytes32[] memory array, uint256 pos, bytes32[] memory replacement)
+        internal
+        pure
+        returns (bytes32[] memory)
+    {
         return replace(array, pos, replacement, 0, replacement.length);
     }
 
@@ -605,13 +610,11 @@ library Arrays {
      *
      * NOTE: This function modifies the provided array in place.
      */
-    function replace(
-        bytes32[] memory array,
-        uint256 pos,
-        bytes32[] memory replacement,
-        uint256 offset,
-        uint256 length
-    ) internal pure returns (bytes32[] memory) {
+    function replace(bytes32[] memory array, uint256 pos, bytes32[] memory replacement, uint256 offset, uint256 length)
+        internal
+        pure
+        returns (bytes32[] memory)
+    {
         // sanitize
         pos = Math.min(pos, array.length);
         offset = Math.min(offset, replacement.length);
@@ -668,11 +671,11 @@ library Arrays {
      *
      * NOTE: This function modifies the provided array in place.
      */
-    function replace(
-        uint256[] memory array,
-        uint256 pos,
-        uint256[] memory replacement
-    ) internal pure returns (uint256[] memory) {
+    function replace(uint256[] memory array, uint256 pos, uint256[] memory replacement)
+        internal
+        pure
+        returns (uint256[] memory)
+    {
         return replace(array, pos, replacement, 0, replacement.length);
     }
 
@@ -687,13 +690,11 @@ library Arrays {
      *
      * NOTE: This function modifies the provided array in place.
      */
-    function replace(
-        uint256[] memory array,
-        uint256 pos,
-        uint256[] memory replacement,
-        uint256 offset,
-        uint256 length
-    ) internal pure returns (uint256[] memory) {
+    function replace(uint256[] memory array, uint256 pos, uint256[] memory replacement, uint256 offset, uint256 length)
+        internal
+        pure
+        returns (uint256[] memory)
+    {
         // sanitize
         pos = Math.min(pos, array.length);
         offset = Math.min(offset, replacement.length);

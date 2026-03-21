@@ -8,11 +8,10 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 abstract contract ERC20VotesTimestampMockUpgradeable is Initializable, ERC20VotesUpgradeable {
-    function __ERC20VotesTimestampMock_init() internal onlyInitializing {
-    }
+    function __ERC20VotesTimestampMock_init() internal onlyInitializing {}
 
-    function __ERC20VotesTimestampMock_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20VotesTimestampMock_init_unchained() internal onlyInitializing {}
+
     function clock() public view virtual override returns (uint48) {
         return SafeCast.toUint48(block.timestamp);
     }
@@ -24,11 +23,10 @@ abstract contract ERC20VotesTimestampMockUpgradeable is Initializable, ERC20Vote
 }
 
 abstract contract ERC721VotesTimestampMockUpgradeable is Initializable, ERC721VotesUpgradeable {
-    function __ERC721VotesTimestampMock_init() internal onlyInitializing {
-    }
+    function __ERC721VotesTimestampMock_init() internal onlyInitializing {}
 
-    function __ERC721VotesTimestampMock_init_unchained() internal onlyInitializing {
-    }
+    function __ERC721VotesTimestampMock_init_unchained() internal onlyInitializing {}
+
     function clock() public view virtual override returns (uint48) {
         return SafeCast.toUint48(block.timestamp);
     }

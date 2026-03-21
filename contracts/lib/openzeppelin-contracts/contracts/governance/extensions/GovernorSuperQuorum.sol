@@ -28,9 +28,11 @@ abstract contract GovernorSuperQuorum is Governor {
      * @dev Accessor to the internal vote counts. This must be implemented by the counting module. Counting modules
      * that don't implement this function are incompatible with this module
      */
-    function proposalVotes(
-        uint256 proposalId
-    ) public view virtual returns (uint256 againstVotes, uint256 forVotes, uint256 abstainVotes);
+    function proposalVotes(uint256 proposalId)
+        public
+        view
+        virtual
+        returns (uint256 againstVotes, uint256 forVotes, uint256 abstainVotes);
 
     /**
      * @dev Overridden version of the {Governor-state} function that checks if the proposal has reached the super
@@ -47,7 +49,7 @@ abstract contract GovernorSuperQuorum is Governor {
         ProposalState currentState = super.state(proposalId);
         if (currentState != ProposalState.Active) return currentState;
 
-        (, uint256 forVotes, ) = proposalVotes(proposalId);
+        (, uint256 forVotes,) = proposalVotes(proposalId);
         if (forVotes < superQuorum(proposalSnapshot(proposalId)) || !_voteSucceeded(proposalId)) {
             return ProposalState.Active;
         } else if (proposalEta(proposalId) == 0) {

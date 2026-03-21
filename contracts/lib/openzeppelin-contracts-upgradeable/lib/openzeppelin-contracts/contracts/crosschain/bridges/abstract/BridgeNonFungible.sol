@@ -23,10 +23,7 @@ abstract contract BridgeNonFungible is Context, CrosschainLinked {
 
     /// @dev Emitted when a crosschain ERC-721 transfer is received.
     event CrosschainNonFungibleTransferReceived(
-        bytes32 indexed receiveId,
-        bytes from,
-        address indexed to,
-        uint256 tokenId
+        bytes32 indexed receiveId, bytes from, address indexed to, uint256 tokenId
     );
 
     /**
@@ -41,9 +38,7 @@ abstract contract BridgeNonFungible is Context, CrosschainLinked {
         bytes memory chain = InteroperableAddress.formatV1(chainType, chainReference, hex"");
 
         bytes32 sendId = _sendMessageToCounterpart(
-            chain,
-            abi.encode(InteroperableAddress.formatEvmV1(block.chainid, from), addr, tokenId),
-            new bytes[](0)
+            chain, abi.encode(InteroperableAddress.formatEvmV1(block.chainid, from), addr, tokenId), new bytes[](0)
         );
 
         emit CrosschainNonFungibleTransferSent(sendId, from, to, tokenId);
@@ -53,11 +48,17 @@ abstract contract BridgeNonFungible is Context, CrosschainLinked {
 
     /// @inheritdoc ERC7786Recipient
     function _processMessage(
-        address /*gateway*/,
+        address,
+        /*gateway*/
         bytes32 receiveId,
-        bytes calldata /*sender*/,
+        bytes calldata,
+        /*sender*/
         bytes calldata payload
-    ) internal virtual override {
+    )
+        internal
+        virtual
+        override
+    {
         // split payload
         (bytes memory from, bytes memory toEvm, uint256 tokenId) = abi.decode(payload, (bytes, bytes, uint256));
         address to = address(bytes20(toEvm));

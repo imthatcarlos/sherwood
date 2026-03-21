@@ -6,26 +6,31 @@ import {GovernorUpgradeable} from "../../governance/GovernorUpgradeable.sol";
 import {GovernorSettingsUpgradeable} from "../../governance/extensions/GovernorSettingsUpgradeable.sol";
 import {GovernorSuperQuorumUpgradeable} from "../../governance/extensions/GovernorSuperQuorumUpgradeable.sol";
 import {GovernorCountingSimpleUpgradeable} from "../../governance/extensions/GovernorCountingSimpleUpgradeable.sol";
-import {GovernorVotesSuperQuorumFractionUpgradeable} from "../../governance/extensions/GovernorVotesSuperQuorumFractionUpgradeable.sol";
+import {
+    GovernorVotesSuperQuorumFractionUpgradeable
+} from "../../governance/extensions/GovernorVotesSuperQuorumFractionUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 abstract contract GovernorVotesSuperQuorumFractionMockUpgradeable is
-    Initializable, GovernorSettingsUpgradeable,
+    Initializable,
+    GovernorSettingsUpgradeable,
     GovernorVotesSuperQuorumFractionUpgradeable,
     GovernorCountingSimpleUpgradeable
 {
-    function __GovernorVotesSuperQuorumFractionMock_init() internal onlyInitializing {
-    }
+    function __GovernorVotesSuperQuorumFractionMock_init() internal onlyInitializing {}
 
-    function __GovernorVotesSuperQuorumFractionMock_init_unchained() internal onlyInitializing {
-    }
-    function proposalThreshold() public view override(GovernorUpgradeable, GovernorSettingsUpgradeable) returns (uint256) {
+    function __GovernorVotesSuperQuorumFractionMock_init_unchained() internal onlyInitializing {}
+
+    function proposalThreshold()
+        public
+        view
+        override(GovernorUpgradeable, GovernorSettingsUpgradeable)
+        returns (uint256)
+    {
         return super.proposalThreshold();
     }
 
-    function proposalVotes(
-        uint256 proposalId
-    )
+    function proposalVotes(uint256 proposalId)
         public
         view
         virtual
@@ -35,9 +40,12 @@ abstract contract GovernorVotesSuperQuorumFractionMockUpgradeable is
         return super.proposalVotes(proposalId);
     }
 
-    function state(
-        uint256 proposalId
-    ) public view override(GovernorUpgradeable, GovernorVotesSuperQuorumFractionUpgradeable) returns (ProposalState) {
+    function state(uint256 proposalId)
+        public
+        view
+        override(GovernorUpgradeable, GovernorVotesSuperQuorumFractionUpgradeable)
+        returns (ProposalState)
+    {
         return super.state(proposalId);
     }
 }

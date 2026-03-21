@@ -64,12 +64,12 @@ contract ERC6909 is Context, ERC165, IERC6909 {
     }
 
     /// @inheritdoc IERC6909
-    function transferFrom(
-        address sender,
-        address receiver,
-        uint256 id,
-        uint256 amount
-    ) public virtual override returns (bool) {
+    function transferFrom(address sender, address receiver, uint256 id, uint256 amount)
+        public
+        virtual
+        override
+        returns (bool)
+    {
         address caller = _msgSender();
         if (sender != caller && !isOperator(sender, caller)) {
             _spendAllowance(sender, caller, id, amount);

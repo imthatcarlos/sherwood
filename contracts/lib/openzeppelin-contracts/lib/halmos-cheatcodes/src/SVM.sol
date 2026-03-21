@@ -37,9 +37,19 @@ interface SVM {
     // An exception is thrown if the contract name exists in multiple files. An optional filename (with .sol extension) can be provided to avoid ambiguity.
     // By default, view and pure functions are excluded. An optional boolean flag can be set to include view and pure functions.
     function createCalldata(string memory contractOrInterfaceName) external pure returns (bytes memory data);
-    function createCalldata(string memory contractOrInterfaceName, bool includeViewAndPureFunctions) external pure returns (bytes memory data);
-    function createCalldata(string memory filename, string memory contractOrInterfaceName) external pure returns (bytes memory data);
-    function createCalldata(string memory filename, string memory contractOrInterfaceName, bool includeViewAndPureFunctions) external pure returns (bytes memory data);
+    function createCalldata(string memory contractOrInterfaceName, bool includeViewAndPureFunctions)
+        external
+        pure
+        returns (bytes memory data);
+    function createCalldata(string memory filename, string memory contractOrInterfaceName)
+        external
+        pure
+        returns (bytes memory data);
+    function createCalldata(
+        string memory filename,
+        string memory contractOrInterfaceName,
+        bool includeViewAndPureFunctions
+    ) external pure returns (bytes memory data);
 
     // Assign symbolic values to uninitialized storage slots
     function enableSymbolicStorage(address) external;

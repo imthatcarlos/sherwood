@@ -80,7 +80,8 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC4626")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC4626StorageLocation = 0x0773e532dfede91f04b12a73d3d2acd361424f41f76b4fb79f090161e36b4e00;
+    bytes32 private constant ERC4626StorageLocation =
+        0x0773e532dfede91f04b12a73d3d2acd361424f41f76b4fb79f090161e36b4e00;
 
     function _getERC4626Storage() private pure returns (ERC4626Storage storage $) {
         assembly {
@@ -127,16 +128,13 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
      */
     function _tryGetAssetDecimals(IERC20 asset_) private view returns (bool ok, uint8 assetDecimals) {
         Memory.Pointer ptr = Memory.getFreeMemoryPointer();
-        (bool success, bytes32 returnedDecimals, ) = LowLevelCall.staticcallReturn64Bytes(
-            address(asset_),
-            abi.encodeCall(IERC20Metadata.decimals, ())
-        );
+        (bool success, bytes32 returnedDecimals,) =
+            LowLevelCall.staticcallReturn64Bytes(address(asset_), abi.encodeCall(IERC20Metadata.decimals, ()));
         Memory.unsafeSetFreeMemoryPointer(ptr);
 
-        return
-            (success && LowLevelCall.returnDataSize() >= 32 && uint256(returnedDecimals) <= type(uint8).max)
-                ? (true, uint8(uint256(returnedDecimals)))
-                : (false, 0);
+        return (success && LowLevelCall.returnDataSize() >= 32 && uint256(returnedDecimals) <= type(uint8).max)
+            ? (true, uint8(uint256(returnedDecimals)))
+            : (false, 0);
     }
 
     /**
@@ -298,13 +296,10 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
     /**
      * @dev Withdraw/redeem common workflow.
      */
-    function _withdraw(
-        address caller,
-        address receiver,
-        address owner,
-        uint256 assets,
-        uint256 shares
-    ) internal virtual {
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        virtual
+    {
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }

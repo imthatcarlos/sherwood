@@ -133,11 +133,11 @@ library Address {
      *
      * NOTE: This function is DEPRECATED and may be removed in the next major release.
      */
-    function verifyCallResultFromTarget(
-        address target,
-        bool success,
-        bytes memory returndata
-    ) internal view returns (bytes memory) {
+    function verifyCallResultFromTarget(address target, bool success, bytes memory returndata)
+        internal
+        view
+        returns (bytes memory)
+    {
         // only check if target is a contract if the call was successful and the return data is empty
         // otherwise we already know that it was a contract
         if (success && (returndata.length > 0 || target.code.length > 0)) {

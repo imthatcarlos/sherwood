@@ -30,10 +30,9 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
 
     bytes32 public constant BALLOT_TYPEHASH =
         keccak256("Ballot(uint256 proposalId,uint8 support,address voter,uint256 nonce)");
-    bytes32 public constant EXTENDED_BALLOT_TYPEHASH =
-        keccak256(
-            "ExtendedBallot(uint256 proposalId,uint8 support,address voter,uint256 nonce,string reason,bytes params)"
-        );
+    bytes32 public constant EXTENDED_BALLOT_TYPEHASH = keccak256(
+        "ExtendedBallot(uint256 proposalId,uint8 support,address voter,uint256 nonce,string reason,bytes params)"
+    );
 
     struct ProposalCore {
         address proposer;
@@ -88,11 +87,9 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) public view virtual override(IERC165, ERC165) returns (bool) {
-        return
-            interfaceId == type(IGovernor).interfaceId ||
-            interfaceId == type(IGovernor).interfaceId ^ IGovernor.getProposalId.selector ||
-            interfaceId == type(IERC1155Receiver).interfaceId ||
-            super.supportsInterface(interfaceId);
+        return interfaceId == type(IGovernor).interfaceId
+            || interfaceId == type(IGovernor).interfaceId ^ IGovernor.getProposalId.selector
+            || interfaceId == type(IERC1155Receiver).interfaceId || super.supportsInterface(interfaceId);
     }
 
     /// @inheritdoc IGovernor
@@ -243,13 +240,10 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
      *
      * Note: Support is generic and can represent various things depending on the voting system used.
      */
-    function _countVote(
-        uint256 proposalId,
-        address account,
-        uint8 support,
-        uint256 totalWeight,
-        bytes memory params
-    ) internal virtual returns (uint256);
+    function _countVote(uint256 proposalId, address account, uint8 support, uint256 totalWeight, bytes memory params)
+        internal
+        virtual
+        returns (uint256);
 
     /**
      * @dev Hook that should be called every time the tally for a proposal is updated.
@@ -341,12 +335,11 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
     }
 
     /// @inheritdoc IGovernor
-    function queue(
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
-        bytes32 descriptionHash
-    ) public virtual returns (uint256) {
+    function queue(address[] memory targets, uint256[] memory values, bytes[] memory calldatas, bytes32 descriptionHash)
+        public
+        virtual
+        returns (uint256)
+    {
         uint256 proposalId = getProposalId(targets, values, calldatas, descriptionHash);
 
         _validateStateBitmap(proposalId, _encodeStateBitmap(ProposalState.Succeeded));
@@ -377,12 +370,20 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
      * `ProposalQueued` event. Queuing a proposal should be done using {queue}.
      */
     function _queueOperations(
-        uint256 /*proposalId*/,
-        address[] memory /*targets*/,
-        uint256[] memory /*values*/,
-        bytes[] memory /*calldatas*/,
+        uint256,
+        /*proposalId*/
+        address[] memory,
+        /*targets*/
+        uint256[] memory,
+        /*values*/
+        bytes[] memory,
+        /*calldatas*/
         bytes32 /*descriptionHash*/
-    ) internal virtual returns (uint48) {
+    )
+        internal
+        virtual
+        returns (uint48)
+    {
         return 0;
     }
 
@@ -397,8 +398,7 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
         bool needsQueueing = proposalNeedsQueuing(proposalId);
 
         _validateStateBitmap(
-            proposalId,
-            _encodeStateBitmap(needsQueueing ? ProposalState.Queued : ProposalState.Succeeded)
+            proposalId, _encodeStateBitmap(needsQueueing ? ProposalState.Queued : ProposalState.Succeeded)
         );
 
         // mark as executed before calls to avoid reentrancy
@@ -433,7 +433,8 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
      * true or emit the `ProposalExecuted` event. Executing a proposal should be done using {execute}.
      */
     function _executeOperations(
-        uint256 /* proposalId */,
+        uint256,
+        /* proposalId */
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
@@ -479,10 +480,8 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
 
         _validateStateBitmap(
             proposalId,
-            ALL_PROPOSAL_STATES_BITMAP ^
-                _encodeStateBitmap(ProposalState.Canceled) ^
-                _encodeStateBitmap(ProposalState.Expired) ^
-                _encodeStateBitmap(ProposalState.Executed)
+            ALL_PROPOSAL_STATES_BITMAP ^ _encodeStateBitmap(ProposalState.Canceled)
+                ^ _encodeStateBitmap(ProposalState.Expired) ^ _encodeStateBitmap(ProposalState.Executed)
         );
 
         _proposals[proposalId].canceled = true;
@@ -497,11 +496,12 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
     }
 
     /// @inheritdoc IGovernor
-    function getVotesWithParams(
-        address account,
-        uint256 timepoint,
-        bytes memory params
-    ) public view virtual returns (uint256) {
+    function getVotesWithParams(address account, uint256 timepoint, bytes memory params)
+        public
+        view
+        virtual
+        returns (uint256)
+    {
         return _getVotes(account, timepoint, params);
     }
 
@@ -512,33 +512,31 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
     }
 
     /// @inheritdoc IGovernor
-    function castVoteWithReason(
-        uint256 proposalId,
-        uint8 support,
-        string calldata reason
-    ) public virtual returns (uint256) {
+    function castVoteWithReason(uint256 proposalId, uint8 support, string calldata reason)
+        public
+        virtual
+        returns (uint256)
+    {
         address voter = _msgSender();
         return _castVote(proposalId, voter, support, reason);
     }
 
     /// @inheritdoc IGovernor
-    function castVoteWithReasonAndParams(
-        uint256 proposalId,
-        uint8 support,
-        string calldata reason,
-        bytes memory params
-    ) public virtual returns (uint256) {
+    function castVoteWithReasonAndParams(uint256 proposalId, uint8 support, string calldata reason, bytes memory params)
+        public
+        virtual
+        returns (uint256)
+    {
         address voter = _msgSender();
         return _castVote(proposalId, voter, support, reason, params);
     }
 
     /// @inheritdoc IGovernor
-    function castVoteBySig(
-        uint256 proposalId,
-        uint8 support,
-        address voter,
-        bytes memory signature
-    ) public virtual returns (uint256) {
+    function castVoteBySig(uint256 proposalId, uint8 support, address voter, bytes memory signature)
+        public
+        virtual
+        returns (uint256)
+    {
         if (!_validateVoteSig(proposalId, support, voter, signature)) {
             revert GovernorInvalidSignature(voter);
         }
@@ -561,18 +559,16 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
     }
 
     /// @dev Validate the `signature` used in {castVoteBySig} function.
-    function _validateVoteSig(
-        uint256 proposalId,
-        uint8 support,
-        address voter,
-        bytes memory signature
-    ) internal virtual returns (bool) {
-        return
-            SignatureChecker.isValidSignatureNow(
-                voter,
-                _hashTypedDataV4(keccak256(abi.encode(BALLOT_TYPEHASH, proposalId, support, voter, _useNonce(voter)))),
-                signature
-            );
+    function _validateVoteSig(uint256 proposalId, uint8 support, address voter, bytes memory signature)
+        internal
+        virtual
+        returns (bool)
+    {
+        return SignatureChecker.isValidSignatureNow(
+            voter,
+            _hashTypedDataV4(keccak256(abi.encode(BALLOT_TYPEHASH, proposalId, support, voter, _useNonce(voter)))),
+            signature
+        );
     }
 
     /// @dev Validate the `signature` used in {castVoteWithReasonAndParamsBySig} function.
@@ -584,24 +580,23 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
         bytes memory params,
         bytes memory signature
     ) internal virtual returns (bool) {
-        return
-            SignatureChecker.isValidSignatureNow(
-                voter,
-                _hashTypedDataV4(
-                    keccak256(
-                        abi.encode(
-                            EXTENDED_BALLOT_TYPEHASH,
-                            proposalId,
-                            support,
-                            voter,
-                            _useNonce(voter),
-                            keccak256(bytes(reason)),
-                            keccak256(params)
-                        )
+        return SignatureChecker.isValidSignatureNow(
+            voter,
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        EXTENDED_BALLOT_TYPEHASH,
+                        proposalId,
+                        support,
+                        voter,
+                        _useNonce(voter),
+                        keccak256(bytes(reason)),
+                        keccak256(params)
                     )
-                ),
-                signature
-            );
+                )
+            ),
+            signature
+        );
     }
 
     /**
@@ -610,12 +605,11 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
      *
      * Emits a {IGovernor-VoteCast} event.
      */
-    function _castVote(
-        uint256 proposalId,
-        address account,
-        uint8 support,
-        string memory reason
-    ) internal virtual returns (uint256) {
+    function _castVote(uint256 proposalId, address account, uint8 support, string memory reason)
+        internal
+        virtual
+        returns (uint256)
+    {
         return _castVote(proposalId, account, support, reason, _defaultParams());
     }
 
@@ -625,13 +619,11 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
      *
      * Emits a {IGovernor-VoteCast} event.
      */
-    function _castVote(
-        uint256 proposalId,
-        address account,
-        uint8 support,
-        string memory reason,
-        bytes memory params
-    ) internal virtual returns (uint256) {
+    function _castVote(uint256 proposalId, address account, uint8 support, string memory reason, bytes memory params)
+        internal
+        virtual
+        returns (uint256)
+    {
         _validateStateBitmap(proposalId, _encodeStateBitmap(ProposalState.Active));
 
         uint256 totalWeight = _getVotes(account, proposalSnapshot(proposalId), params);
@@ -693,13 +685,11 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
      * @dev See {IERC1155Receiver-onERC1155BatchReceived}.
      * Receiving tokens is disabled if the governance executor is other than the governor itself (eg. when using with a timelock).
      */
-    function onERC1155BatchReceived(
-        address,
-        address,
-        uint256[] memory,
-        uint256[] memory,
-        bytes memory
-    ) public virtual returns (bytes4) {
+    function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes memory)
+        public
+        virtual
+        returns (bytes4)
+    {
         if (_executor() != address(this)) {
             revert GovernorDisabledDeposit();
         }
@@ -754,10 +744,12 @@ abstract contract Governor is Context, ERC165, EIP712, Nonces, IGovernor, IERC72
      * - If it ends with some other similar suffix, e.g. `#other=abc`.
      * - If it does not end with any such suffix.
      */
-    function _isValidDescriptionForProposer(
-        address proposer,
-        string memory description
-    ) internal view virtual returns (bool) {
+    function _isValidDescriptionForProposer(address proposer, string memory description)
+        internal
+        view
+        virtual
+        returns (bool)
+    {
         unchecked {
             uint256 length = bytes(description).length;
 

@@ -19,7 +19,8 @@ contract ERC6909ContentURIUpgradeable is Initializable, ERC6909Upgradeable, IERC
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC6909ContentURI")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC6909ContentURIStorageLocation = 0x2ada2772a8c4d40c4be8741992e423a9f97d5f4ef76852e5c17a40aa7fb9e500;
+    bytes32 private constant ERC6909ContentURIStorageLocation =
+        0x2ada2772a8c4d40c4be8741992e423a9f97d5f4ef76852e5c17a40aa7fb9e500;
 
     function _getERC6909ContentURIStorage() private pure returns (ERC6909ContentURIStorage storage $) {
         assembly {
@@ -33,13 +34,18 @@ contract ERC6909ContentURIUpgradeable is Initializable, ERC6909Upgradeable, IERC
     /// @dev See {IERC1155-URI}
     event URI(string value, uint256 indexed id);
 
-    function __ERC6909ContentURI_init() internal onlyInitializing {
-    }
+    function __ERC6909ContentURI_init() internal onlyInitializing {}
 
-    function __ERC6909ContentURI_init_unchained() internal onlyInitializing {
-    }
+    function __ERC6909ContentURI_init_unchained() internal onlyInitializing {}
+
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC6909Upgradeable, IERC165) returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(ERC6909Upgradeable, IERC165)
+        returns (bool)
+    {
         return interfaceId == type(IERC6909ContentURI).interfaceId || super.supportsInterface(interfaceId);
     }
 

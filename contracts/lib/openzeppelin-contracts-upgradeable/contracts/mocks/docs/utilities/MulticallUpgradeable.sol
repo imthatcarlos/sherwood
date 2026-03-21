@@ -6,11 +6,9 @@ import {MulticallUpgradeable} from "../../../utils/MulticallUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract BoxUpgradeable is Initializable, MulticallUpgradeable {
-    function __Box_init() internal onlyInitializing {
-    }
+    function __Box_init() internal onlyInitializing {}
 
-    function __Box_init_unchained() internal onlyInitializing {
-    }
+    function __Box_init_unchained() internal onlyInitializing {}
     function foo() public {
         // ...
     }

@@ -70,7 +70,8 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorTimelockAccess")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GovernorTimelockAccessStorageLocation = 0xb26e23d38df572f5669f6310d407229c15b4fb320cb19bf5e8c38856d28d0800;
+    bytes32 private constant GovernorTimelockAccessStorageLocation =
+        0xb26e23d38df572f5669f6310d407229c15b4fb320cb19bf5e8c38856d28d0800;
 
     function _getGovernorTimelockAccessStorage() private pure returns (GovernorTimelockAccessStorage storage $) {
         assembly {
@@ -92,7 +93,10 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
         __GovernorTimelockAccess_init_unchained(manager, initialBaseDelay);
     }
 
-    function __GovernorTimelockAccess_init_unchained(address manager, uint32 initialBaseDelay) internal onlyInitializing {
+    function __GovernorTimelockAccess_init_unchained(address manager, uint32 initialBaseDelay)
+        internal
+        onlyInitializing
+    {
         GovernorTimelockAccessStorage storage $ = _getGovernorTimelockAccessStorage();
         $._manager = IAccessManager(manager);
         _setBaseDelaySeconds(initialBaseDelay);
@@ -150,11 +154,11 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
      * @dev Configure whether restrictions from the associated {AccessManager} are ignored for a target function.
      * See Security Considerations above.
      */
-    function setAccessManagerIgnored(
-        address target,
-        bytes4[] calldata selectors,
-        bool ignored
-    ) public virtual onlyGovernance {
+    function setAccessManagerIgnored(address target, bytes4[] calldata selectors, bool ignored)
+        public
+        virtual
+        onlyGovernance
+    {
         for (uint256 i = 0; i < selectors.length; ++i) {
             _setAccessManagerIgnored(target, selectors[i], ignored);
         }
@@ -179,9 +183,11 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
      * the associated {AccessManager}, and another indicating which will be scheduled in {queue}. Note that
      * those that must be scheduled are cancellable by `AccessManager` guardians.
      */
-    function proposalExecutionPlan(
-        uint256 proposalId
-    ) public view returns (uint32 delay, bool[] memory indirect, bool[] memory withDelay) {
+    function proposalExecutionPlan(uint256 proposalId)
+        public
+        view
+        returns (uint32 delay, bool[] memory indirect, bool[] memory withDelay)
+    {
         GovernorTimelockAccessStorage storage $ = _getGovernorTimelockAccessStorage();
         ExecutionPlan storage plan = $._executionPlan[proposalId];
 
@@ -190,7 +196,7 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
         indirect = new bool[](length);
         withDelay = new bool[](length);
         for (uint256 i = 0; i < length; ++i) {
-            (indirect[i], withDelay[i], ) = _getManagerData(plan, i);
+            (indirect[i], withDelay[i],) = _getManagerData(plan, i);
         }
 
         return (delay, indirect, withDelay);
@@ -223,12 +229,8 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
             }
             address target = targets[i];
             bytes4 selector = bytes4(calldatas[i]);
-            (bool immediate, uint32 delay) = AuthorityUtils.canCallWithDelay(
-                address($._manager),
-                address(this),
-                target,
-                selector
-            );
+            (bool immediate, uint32 delay) =
+                AuthorityUtils.canCallWithDelay(address($._manager), address(this), target, selector);
             if ((immediate || delay > 0) && !isAccessManagerIgnored(target, selector)) {
                 _setManagerData(plan, i, !immediate, 0);
                 // downcast is safe because both arguments are uint32
@@ -250,7 +252,8 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
     function _queueOperations(
         uint256 proposalId,
         address[] memory targets,
-        uint256[] memory /* values */,
+        uint256[] memory,
+        /* values */
         bytes[] memory calldatas,
         bytes32 /* descriptionHash */
     ) internal virtual override returns (uint48) {
@@ -259,7 +262,7 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
         uint48 etaSeconds = Time.timestamp() + plan.delay;
 
         for (uint256 i = 0; i < targets.length; ++i) {
-            (, bool withDelay, ) = _getManagerData(plan, i);
+            (, bool withDelay,) = _getManagerData(plan, i);
             if (withDelay) {
                 // This function can reenter when calling `_manager.schedule` before performing state updates in `_setManagerData`.
                 // However, the `manager` is a trusted contract in the current context's security model (e.g. an `AccessManager`).
@@ -346,10 +349,11 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
     /**
      * @dev Returns whether the operation at an index is delayed by the manager, and its scheduling nonce once queued.
      */
-    function _getManagerData(
-        ExecutionPlan storage plan,
-        uint256 index
-    ) private view returns (bool controlled, bool withDelay, uint32 nonce) {
+    function _getManagerData(ExecutionPlan storage plan, uint256 index)
+        private
+        view
+        returns (bool controlled, bool withDelay, uint32 nonce)
+    {
         (uint256 bucket, uint256 subindex) = _getManagerDataIndices(index);
         uint32 value = plan.managerData[bucket][subindex];
         unchecked {

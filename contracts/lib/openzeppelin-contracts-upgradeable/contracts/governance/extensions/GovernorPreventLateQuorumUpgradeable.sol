@@ -25,7 +25,8 @@ abstract contract GovernorPreventLateQuorumUpgradeable is Initializable, Governo
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorPreventLateQuorum")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GovernorPreventLateQuorumStorageLocation = 0x042f525fd47e44d02e065dd7bb464f47b4f926fbd05b5e087891ebd756adf100;
+    bytes32 private constant GovernorPreventLateQuorumStorageLocation =
+        0x042f525fd47e44d02e065dd7bb464f47b4f926fbd05b5e087891ebd756adf100;
 
     function _getGovernorPreventLateQuorumStorage() private pure returns (GovernorPreventLateQuorumStorage storage $) {
         assembly {

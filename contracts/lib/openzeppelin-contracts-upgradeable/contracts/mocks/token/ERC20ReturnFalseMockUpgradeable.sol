@@ -6,11 +6,10 @@ import {ERC20Upgradeable} from "../../token/ERC20/ERC20Upgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 abstract contract ERC20ReturnFalseMockUpgradeable is Initializable, ERC20Upgradeable {
-    function __ERC20ReturnFalseMock_init() internal onlyInitializing {
-    }
+    function __ERC20ReturnFalseMock_init() internal onlyInitializing {}
 
-    function __ERC20ReturnFalseMock_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20ReturnFalseMock_init_unchained() internal onlyInitializing {}
+
     function transfer(address, uint256) public pure override returns (bool) {
         return false;
     }

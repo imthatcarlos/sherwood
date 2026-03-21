@@ -18,7 +18,14 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * See https://eips.ethereum.org/EIPS/eip-1155
  * Originally based on code by Enjin: https://github.com/enjin/erc-1155
  */
-abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC165Upgradeable, IERC1155, IERC1155MetadataURI, IERC1155Errors {
+abstract contract ERC1155Upgradeable is
+    Initializable,
+    ContextUpgradeable,
+    ERC165Upgradeable,
+    IERC1155,
+    IERC1155MetadataURI,
+    IERC1155Errors
+{
     using Arrays for uint256[];
     using Arrays for address[];
 
@@ -33,7 +40,8 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC1155")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC1155StorageLocation = 0x88be536d5240c274a3b1d3a1be54482fd9caa294f08c62a7cde569f49a3c4500;
+    bytes32 private constant ERC1155StorageLocation =
+        0x88be536d5240c274a3b1d3a1be54482fd9caa294f08c62a7cde569f49a3c4500;
 
     function _getERC1155Storage() private pure returns (ERC1155Storage storage $) {
         assembly {
@@ -53,11 +61,15 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
     }
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165Upgradeable, IERC165) returns (bool) {
-        return
-            interfaceId == type(IERC1155).interfaceId ||
-            interfaceId == type(IERC1155MetadataURI).interfaceId ||
-            super.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(ERC165Upgradeable, IERC165)
+        returns (bool)
+    {
+        return interfaceId == type(IERC1155).interfaceId || interfaceId == type(IERC1155MetadataURI).interfaceId
+            || super.supportsInterface(interfaceId);
     }
 
     /**
@@ -70,7 +82,14 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
      * Clients calling this function must replace the `\{id\}` substring with the
      * actual token type ID.
      */
-    function uri(uint256 /* id */) public view virtual returns (string memory) {
+    function uri(
+        uint256 /* id */
+    )
+        public
+        view
+        virtual
+        returns (string memory)
+    {
         ERC1155Storage storage $ = _getERC1155Storage();
         return $._uri;
     }
@@ -88,10 +107,12 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
      *
      * - `accounts` and `ids` must have the same length.
      */
-    function balanceOfBatch(
-        address[] memory accounts,
-        uint256[] memory ids
-    ) public view virtual returns (uint256[] memory) {
+    function balanceOfBatch(address[] memory accounts, uint256[] memory ids)
+        public
+        view
+        virtual
+        returns (uint256[] memory)
+    {
         if (accounts.length != ids.length) {
             revert ERC1155InvalidArrayLength(ids.length, accounts.length);
         }
@@ -417,10 +438,11 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
     /**
      * @dev Creates an array in memory with only one value for each of the elements provided.
      */
-    function _asSingletonArrays(
-        uint256 element1,
-        uint256 element2
-    ) private pure returns (uint256[] memory array1, uint256[] memory array2) {
+    function _asSingletonArrays(uint256 element1, uint256 element2)
+        private
+        pure
+        returns (uint256[] memory array1, uint256[] memory array2)
+    {
         assembly ("memory-safe") {
             // Load the free memory pointer
             array1 := mload(0x40)

@@ -81,13 +81,11 @@ library P256 {
     /**
      * @dev Same as {verify}, but it will return false if the required precompile is not available.
      */
-    function _tryVerifyNative(
-        bytes32 h,
-        bytes32 r,
-        bytes32 s,
-        bytes32 qx,
-        bytes32 qy
-    ) private view returns (bool valid, bool supported) {
+    function _tryVerifyNative(bytes32 h, bytes32 r, bytes32 s, bytes32 qx, bytes32 qy)
+        private
+        view
+        returns (bool valid, bool supported)
+    {
         if (!_isProperSignature(r, s) || !isValidPublicKey(qx, qy)) {
             return (false, true); // signature is invalid, and its not because the precompile is missing
         } else if (_rip7212(h, r, s, qx, qy)) {
@@ -146,7 +144,7 @@ library P256 {
         uint256 w = Math.invModPrime(uint256(s), N);
         uint256 u1 = mulmod(uint256(h), w, N);
         uint256 u2 = mulmod(uint256(r), w, N);
-        (uint256 x, ) = _jMultShamir(points, u1, u2);
+        (uint256 x,) = _jMultShamir(points, u1, u2);
         return ((x % N) == uint256(r));
     }
 
@@ -232,12 +230,11 @@ library P256 {
      * `doubling-dbl-1998-cmo-2` if needed.
      * - if one of the points is at infinity (i.e. `z=0`), the result is undefined.
      */
-    function _jAdd(
-        JPoint memory p1,
-        uint256 x2,
-        uint256 y2,
-        uint256 z2
-    ) private pure returns (uint256 rx, uint256 ry, uint256 rz) {
+    function _jAdd(JPoint memory p1, uint256 x2, uint256 y2, uint256 z2)
+        private
+        pure
+        returns (uint256 rx, uint256 ry, uint256 rz)
+    {
         assembly ("memory-safe") {
             let p := P
             let z1 := mload(add(p1, 0x40))
@@ -324,11 +321,11 @@ library P256 {
      * precomputed. Overall this reduces the number of additions while keeping the same number of
      * doublings
      */
-    function _jMultShamir(
-        JPoint[16] memory points,
-        uint256 u1,
-        uint256 u2
-    ) private view returns (uint256 rx, uint256 ry) {
+    function _jMultShamir(JPoint[16] memory points, uint256 u1, uint256 u2)
+        private
+        view
+        returns (uint256 rx, uint256 ry)
+    {
         uint256 x = 0;
         uint256 y = 0;
         uint256 z = 0;

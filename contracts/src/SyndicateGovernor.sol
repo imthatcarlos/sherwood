@@ -270,15 +270,13 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
         uint256 balanceBefore = IERC20(asset).balanceOf(vault);
         _capitalSnapshots[proposalId] = balanceBefore;
 
-        // Execute the opening calls via the vault
-        BatchExecutorLib.Call[] memory callsToRun = _loadCalls(_executeCalls, proposalId);
-
-        // Update state
+        // Update state BEFORE external call (CEI pattern)
         _activeProposal[vault] = proposalId;
         proposal.state = ProposalState.Executed;
         proposal.executedAt = block.timestamp;
 
-        ISyndicateVault(vault).executeGovernorBatch(callsToRun);
+        // Execute the opening calls via the vault
+        ISyndicateVault(vault).executeGovernorBatch(_loadCalls(_executeCalls, proposalId));
 
         emit ProposalExecuted(proposalId, vault, balanceBefore);
     }

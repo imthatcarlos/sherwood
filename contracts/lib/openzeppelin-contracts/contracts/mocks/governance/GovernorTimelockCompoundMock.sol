@@ -18,9 +18,12 @@ abstract contract GovernorTimelockCompoundMock is
         return super.quorum(blockNumber);
     }
 
-    function state(
-        uint256 proposalId
-    ) public view override(Governor, GovernorTimelockCompound) returns (ProposalState) {
+    function state(uint256 proposalId)
+        public
+        view
+        override(Governor, GovernorTimelockCompound)
+        returns (ProposalState)
+    {
         return super.state(proposalId);
     }
 
@@ -28,9 +31,13 @@ abstract contract GovernorTimelockCompoundMock is
         return super.proposalThreshold();
     }
 
-    function proposalNeedsQueuing(
-        uint256 proposalId
-    ) public view virtual override(Governor, GovernorTimelockCompound) returns (bool) {
+    function proposalNeedsQueuing(uint256 proposalId)
+        public
+        view
+        virtual
+        override(Governor, GovernorTimelockCompound)
+        returns (bool)
+    {
         return super.proposalNeedsQueuing(proposalId);
     }
 

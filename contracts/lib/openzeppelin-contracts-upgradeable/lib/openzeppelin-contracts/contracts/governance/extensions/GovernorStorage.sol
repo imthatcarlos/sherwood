@@ -40,10 +40,7 @@ abstract contract GovernorStorage is Governor {
         // store
         _proposalIds.push(proposalId);
         _proposalDetails[proposalId] = ProposalDetails({
-            targets: targets,
-            values: values,
-            calldatas: calldatas,
-            descriptionHash: keccak256(bytes(description))
+            targets: targets, values: values, calldatas: calldatas, descriptionHash: keccak256(bytes(description))
         });
 
         return proposalId;
@@ -95,9 +92,7 @@ abstract contract GovernorStorage is Governor {
     /**
      * @dev Returns the details of a proposalId. Reverts if `proposalId` is not a known proposal.
      */
-    function proposalDetails(
-        uint256 proposalId
-    )
+    function proposalDetails(uint256 proposalId)
         public
         view
         virtual
@@ -114,9 +109,7 @@ abstract contract GovernorStorage is Governor {
     /**
      * @dev Returns the details (including the proposalId) of a proposal given its sequential index.
      */
-    function proposalDetailsAt(
-        uint256 index
-    )
+    function proposalDetailsAt(uint256 index)
         public
         view
         virtual

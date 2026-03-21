@@ -25,14 +25,13 @@ abstract contract GovernorNoncesKeyed is Governor, NoncesKeyed {
      * NOTE: This function won't call `super._validateVoteSig` if the keyed nonce is valid.
      * Side effects may be skipped depending on the linearization of the function.
      */
-    function _validateVoteSig(
-        uint256 proposalId,
-        uint8 support,
-        address voter,
-        bytes memory signature
-    ) internal virtual override returns (bool) {
-        if (
-            SignatureChecker.isValidSignatureNow(
+    function _validateVoteSig(uint256 proposalId, uint8 support, address voter, bytes memory signature)
+        internal
+        virtual
+        override
+        returns (bool)
+    {
+        if (SignatureChecker.isValidSignatureNow(
                 voter,
                 _hashTypedDataV4(
                     keccak256(
@@ -40,8 +39,7 @@ abstract contract GovernorNoncesKeyed is Governor, NoncesKeyed {
                     )
                 ),
                 signature
-            )
-        ) {
+            )) {
             _useNonce(voter, uint192(proposalId));
             return true;
         } else {
@@ -63,8 +61,7 @@ abstract contract GovernorNoncesKeyed is Governor, NoncesKeyed {
         bytes memory params,
         bytes memory signature
     ) internal virtual override returns (bool) {
-        if (
-            SignatureChecker.isValidSignatureNow(
+        if (SignatureChecker.isValidSignatureNow(
                 voter,
                 _hashTypedDataV4(
                     keccak256(
@@ -80,8 +77,7 @@ abstract contract GovernorNoncesKeyed is Governor, NoncesKeyed {
                     )
                 ),
                 signature
-            )
-        ) {
+            )) {
             _useNonce(voter, uint192(proposalId));
             return true;
         } else {

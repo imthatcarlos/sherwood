@@ -17,11 +17,10 @@ contract MerkleTreeMockUpgradeable is Initializable {
     event LeafInserted(bytes32 leaf, uint256 index, bytes32 root);
     event LeafUpdated(bytes32 oldLeaf, bytes32 newLeaf, uint256 index, bytes32 root);
 
-    function __MerkleTreeMock_init() internal onlyInitializing {
-    }
+    function __MerkleTreeMock_init() internal onlyInitializing {}
 
-    function __MerkleTreeMock_init_unchained() internal onlyInitializing {
-    }
+    function __MerkleTreeMock_init_unchained() internal onlyInitializing {}
+
     function setup(uint8 _depth, bytes32 _zero) public {
         root = _tree.setup(_depth, _zero);
     }

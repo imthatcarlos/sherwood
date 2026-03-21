@@ -9,11 +9,10 @@ import {Governor} from "@openzeppelin/contracts/governance/Governor.sol";
 contract GovernorInternalTest is Test, Governor {
     constructor() Governor("") {}
 
-    function testValidDescriptionForProposer(
-        string memory description,
-        address proposer,
-        bool includeProposer
-    ) public view {
+    function testValidDescriptionForProposer(string memory description, address proposer, bool includeProposer)
+        public
+        view
+    {
         if (includeProposer) {
             description = string.concat(description, "#proposer=", Strings.toHexString(proposer));
         }

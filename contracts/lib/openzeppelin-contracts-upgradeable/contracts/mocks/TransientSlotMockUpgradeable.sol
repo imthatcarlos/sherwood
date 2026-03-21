@@ -12,11 +12,10 @@ contract TransientSlotMockUpgradeable is Initializable, MulticallUpgradeable {
 
     event AddressValue(bytes32 slot, address value);
 
-    function __TransientSlotMock_init() internal onlyInitializing {
-    }
+    function __TransientSlotMock_init() internal onlyInitializing {}
 
-    function __TransientSlotMock_init_unchained() internal onlyInitializing {
-    }
+    function __TransientSlotMock_init_unchained() internal onlyInitializing {}
+
     function tloadAddress(bytes32 slot) public {
         emit AddressValue(slot, slot.asAddress().tload());
     }

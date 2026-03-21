@@ -39,15 +39,10 @@ abstract contract ERC20Permit is ERC20, IERC20Permit, EIP712, Nonces {
     constructor(string memory name) EIP712(name, "1") {}
 
     /// @inheritdoc IERC20Permit
-    function permit(
-        address owner,
-        address spender,
-        uint256 value,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) public virtual {
+    function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        public
+        virtual
+    {
         if (block.timestamp > deadline) {
             revert ERC2612ExpiredSignature(deadline);
         }

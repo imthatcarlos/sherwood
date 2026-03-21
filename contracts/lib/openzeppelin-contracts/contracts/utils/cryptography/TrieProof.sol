@@ -68,12 +68,11 @@ library TrieProof {
     uint256 internal constant LEAF_OR_EXTENSION_NODE_LENGTH = 2;
 
     /// @dev Verifies a `proof` against a given `key`, `value`, `and root` hash.
-    function verify(
-        bytes memory value,
-        bytes32 root,
-        bytes memory key,
-        bytes[] memory proof
-    ) internal pure returns (bool) {
+    function verify(bytes memory value, bytes32 root, bytes memory key, bytes[] memory proof)
+        internal
+        pure
+        returns (bool)
+    {
         (bytes memory processedValue, ProofError err) = tryTraverse(root, key, proof);
         return processedValue.equal(value) && err == ProofError.NO_ERROR;
     }
@@ -94,11 +93,11 @@ library TrieProof {
      * instead of reverting if the proof is invalid. This function may still revert if
      * malformed input leads to RLP decoding errors.
      */
-    function tryTraverse(
-        bytes32 root,
-        bytes memory key,
-        bytes[] memory proof
-    ) internal pure returns (bytes memory value, ProofError err) {
+    function tryTraverse(bytes32 root, bytes memory key, bytes[] memory proof)
+        internal
+        pure
+        returns (bytes memory value, ProofError err)
+    {
         if (key.length == 0) return (_emptyBytesMemory(), ProofError.EMPTY_KEY);
 
         // Expand the key
@@ -120,16 +119,18 @@ library TrieProof {
                 if (keccak256(encoded) != root) return (_emptyBytesMemory(), ProofError.INVALID_ROOT);
             } else if (encoded.length >= 32) {
                 // Large nodes are stored as hashes
-                if (currentNodeIdLength != 32 || keccak256(encoded) != currentNodeId)
+                if (currentNodeIdLength != 32 || keccak256(encoded) != currentNodeId) {
                     return (_emptyBytesMemory(), ProofError.INVALID_LARGE_NODE);
+                }
             } else {
                 // Short nodes must match directly
-                if (currentNodeIdLength != encoded.length || bytes32(encoded) != currentNodeId)
+                if (currentNodeIdLength != encoded.length || bytes32(encoded) != currentNodeId) {
                     return (_emptyBytesMemory(), ProofError.INVALID_SHORT_NODE);
+                }
             }
 
             // decode the current node as an RLP list, and process it
-            for (Memory.Slice[] memory decoded = encoded.decodeList(); ; ) {
+            for (Memory.Slice[] memory decoded = encoded.decodeList();;) {
                 if (decoded.length == BRANCH_NODE_LENGTH) {
                     // If we've consumed the entire key, the value must be in the last slot
                     // Otherwise, continue down the branch specified by the next nibble in the key
@@ -161,8 +162,8 @@ library TrieProof {
 
                     // pathRemainder must not be longer than keyRemainder and must match the start of keyRemainder
                     if (
-                        pathRemainderLength > keyRemainder.length() ||
-                        !pathRemainder.equal(keyRemainder.slice(0, pathRemainderLength))
+                        pathRemainderLength > keyRemainder.length()
+                            || !pathRemainder.equal(keyRemainder.slice(0, pathRemainderLength))
                     ) {
                         return (_emptyBytesMemory(), ProofError.INVALID_PATH_REMAINDER);
                     }
@@ -186,10 +187,9 @@ library TrieProof {
                         //
                         // Leaf node (terminal) - return its value if key matches completely
                         // we already know that pathRemainder is a prefix of keyRemainder, so checking the length sufficient
-                        return
-                            pathRemainderLength == keyRemainder.length()
-                                ? _validateLastItem(decoded[1], proof_.length, i)
-                                : (_emptyBytesMemory(), ProofError.MISMATCH_LEAF_PATH_KEY_REMAINDER);
+                        return pathRemainderLength == keyRemainder.length()
+                            ? _validateLastItem(decoded[1], proof_.length, i)
+                            : (_emptyBytesMemory(), ProofError.MISMATCH_LEAF_PATH_KEY_REMAINDER);
                     } else {
                         return (_emptyBytesMemory(), ProofError.UNKNOWN_NODE_PREFIX);
                     }
@@ -209,11 +209,11 @@ library TrieProof {
      * @dev Validates that we've reached a valid leaf value and this is the last proof element.
      * Ensures the value is not empty and no extra proof elements exist.
      */
-    function _validateLastItem(
-        Memory.Slice item,
-        uint256 trieProofLength,
-        uint256 i
-    ) private pure returns (bytes memory, ProofError) {
+    function _validateLastItem(Memory.Slice item, uint256 trieProofLength, uint256 i)
+        private
+        pure
+        returns (bytes memory, ProofError)
+    {
         if (i != trieProofLength - 1) {
             return (_emptyBytesMemory(), ProofError.INVALID_EXTRA_PROOF_ELEMENT);
         }
