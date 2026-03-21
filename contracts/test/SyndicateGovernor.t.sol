@@ -62,7 +62,6 @@ contract SyndicateGovernorTest is Test {
                     executorImpl: address(executorLib),
                     openDeposits: true,
                     agentRegistry: address(agentRegistry),
-                    governor: address(0),
                     managementFeeBps: 50
                 }))
         );
@@ -90,11 +89,13 @@ contract SyndicateGovernorTest is Test {
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 
-        // Wire up: set governor on vault, register vault on governor
-        vm.startPrank(owner);
-        vault.setGovernor(address(governor));
+        // Wire up: mock factory.governor() on the vault's factory (msg.sender during deploy)
+        // The vault stores msg.sender as _factory, so we mock governor() on the test contract
+        vm.mockCall(address(this), abi.encodeWithSignature("governor()"), abi.encode(address(governor)));
+
+        // Register vault on governor
+        vm.prank(owner);
         governor.addVault(address(vault));
-        vm.stopPrank();
 
         // Fund LPs
         usdc.mint(lp1, 100_000e6);
@@ -927,14 +928,14 @@ contract SyndicateGovernorTest is Test {
 
     // ==================== GOVERNOR ON VAULT ====================
 
-    function test_setGovernor_onVault() public view {
+    function test_governor_readFromFactory() public view {
         assertEq(vault.governor(), address(governor));
     }
 
-    function test_lockRedemptions_notGovernor_reverts() public {
-        vm.prank(random);
-        vm.expectRevert(ISyndicateVault.NotGovernor.selector);
-        vault.lockRedemptions();
+    function test_redemptionsLocked_duringActiveProposal() public {
+        assertFalse(vault.redemptionsLocked());
+        _createAndExecuteProposal(1500, 7 days);
+        assertTrue(vault.redemptionsLocked());
     }
 
     function test_executeGovernorBatch_notGovernor_reverts() public {
@@ -1077,7 +1078,6 @@ contract SyndicateGovernorTest is Test {
                     executorImpl: address(executorLib),
                     openDeposits: true,
                     agentRegistry: address(agentRegistry),
-                    governor: address(governor),
                     managementFeeBps: 50
                 }))
         );

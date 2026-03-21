@@ -73,7 +73,6 @@ contract SyndicateGovernorIntegrationTest is Test {
                     executorImpl: address(executorLib),
                     openDeposits: true,
                     agentRegistry: address(agentRegistry),
-                    governor: address(0),
                     managementFeeBps: 0
                 }))
         );
@@ -102,10 +101,10 @@ contract SyndicateGovernorIntegrationTest is Test {
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 
         // Wire up
-        vm.startPrank(owner);
-        vault.setGovernor(address(governor));
+        // Mock factory.governor() — vault reads governor from its factory (msg.sender at init)
+        vm.mockCall(address(this), abi.encodeWithSignature("governor()"), abi.encode(address(governor)));
+        vm.prank(owner);
         governor.addVault(address(vault));
-        vm.stopPrank();
 
         // Fund LPs and deposit
         usdc.mint(lp1, 100_000e6);

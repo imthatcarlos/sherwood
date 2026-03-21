@@ -211,9 +211,6 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
             revert CooldownNotElapsed();
         }
 
-        // Lock redemptions
-        ISyndicateVault(vault).lockRedemptions();
-
         // Snapshot vault balance before execution
         address asset = IERC4626(vault).asset();
         uint256 balanceBefore = IERC20(asset).balanceOf(vault);
@@ -566,9 +563,6 @@ contract SyndicateGovernor is ISyndicateGovernor, Initializable, OwnableUpgradea
         _activeProposal[vault] = 0;
         _lastSettledAt[vault] = block.timestamp;
         proposal.state = ProposalState.Settled;
-
-        // Unlock redemptions
-        ISyndicateVault(vault).unlockRedemptions();
 
         // Distribute fees on profit: protocol → agent → management (from remainder)
         agentFee = 0;

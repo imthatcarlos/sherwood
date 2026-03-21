@@ -65,7 +65,6 @@ contract SyndicateVaultTest is Test {
                     executorImpl: address(executorLib),
                     openDeposits: true,
                     agentRegistry: address(agentRegistry),
-                    governor: address(0),
                     managementFeeBps: 0
                 }))
         );
@@ -292,7 +291,6 @@ contract SyndicateVaultTest is Test {
                     executorImpl: address(executorLib),
                     openDeposits: false,
                     agentRegistry: address(agentRegistry),
-                    governor: address(0),
                     managementFeeBps: 0
                 }))
         );

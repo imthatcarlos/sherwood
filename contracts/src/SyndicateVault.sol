@@ -2,6 +2,8 @@
 pragma solidity 0.8.28;
 
 import {ISyndicateVault} from "./interfaces/ISyndicateVault.sol";
+import {ISyndicateGovernor} from "./interfaces/ISyndicateGovernor.sol";
+import {ISyndicateFactory} from "./interfaces/ISyndicateFactory.sol";
 import {BatchExecutorLib} from "./BatchExecutorLib.sol";
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {
@@ -70,18 +72,12 @@ contract SyndicateVault is
     /// @notice ERC-8004 agent identity registry (ERC-721)
     IERC721 private _agentRegistry;
 
-    // ── Governor storage ──
-
-    /// @notice Trusted governor contract
-    address private _governor;
-
-    /// @notice True when a strategy is live (redemptions blocked)
-    bool private _redemptionsLocked;
+    // ── Governor / Factory storage ──
 
     /// @notice Vault owner's management fee on strategy profits (basis points, set at init)
     uint256 private _managementFeeBps;
 
-    /// @notice Factory that deployed this vault (controls upgrades)
+    /// @notice Factory that deployed this vault (controls upgrades, provides governor address)
     address private _factory;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -103,7 +99,6 @@ contract SyndicateVault is
         _executorImpl = p.executorImpl;
         _openDeposits = p.openDeposits;
         _agentRegistry = IERC721(p.agentRegistry);
-        _governor = p.governor;
         _managementFeeBps = p.managementFeeBps;
         _factory = msg.sender;
     }
@@ -238,31 +233,13 @@ contract SyndicateVault is
     // ==================== GOVERNOR ====================
 
     modifier onlyGovernor() {
-        _onlyGovernor();
+        if (msg.sender != _getGovernor()) revert NotGovernor();
         _;
     }
 
-    function _onlyGovernor() internal view {
-        if (msg.sender != _governor) revert NotGovernor();
-    }
-
-    /// @inheritdoc ISyndicateVault
-    function setGovernor(address governor_) external onlyOwner {
-        address old = _governor;
-        _governor = governor_;
-        emit GovernorUpdated(old, governor_);
-    }
-
-    /// @inheritdoc ISyndicateVault
-    function lockRedemptions() external onlyGovernor {
-        _redemptionsLocked = true;
-        emit RedemptionsLockedEvent();
-    }
-
-    /// @inheritdoc ISyndicateVault
-    function unlockRedemptions() external onlyGovernor {
-        _redemptionsLocked = false;
-        emit RedemptionsUnlockedEvent();
+    /// @dev Read governor address from factory
+    function _getGovernor() internal view returns (address) {
+        return ISyndicateFactory(_factory).governor();
     }
 
     /// @inheritdoc ISyndicateVault
@@ -283,12 +260,14 @@ contract SyndicateVault is
 
     /// @inheritdoc ISyndicateVault
     function governor() external view returns (address) {
-        return _governor;
+        return _getGovernor();
     }
 
     /// @inheritdoc ISyndicateVault
-    function redemptionsLocked() external view returns (bool) {
-        return _redemptionsLocked;
+    function redemptionsLocked() public view returns (bool) {
+        address gov = _getGovernor();
+        if (gov == address(0)) return false;
+        return ISyndicateGovernor(gov).getActiveProposal(address(this)) != 0;
     }
 
     /// @inheritdoc ISyndicateVault
@@ -343,7 +322,7 @@ contract SyndicateVault is
         override
         whenNotPaused
     {
-        if (_redemptionsLocked) revert RedemptionsLocked();
+        if (redemptionsLocked()) revert RedemptionsLocked();
         super._withdraw(caller, receiver, _owner, assets, shares);
     }
 

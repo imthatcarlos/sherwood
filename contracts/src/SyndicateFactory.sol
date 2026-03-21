@@ -187,7 +187,6 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
             executorImpl: executorImpl,
             openDeposits: config.openDeposits,
             agentRegistry: address(agentRegistry),
-            governor: governor,
             managementFeeBps: managementFeeBps
         });
         bytes memory initData = abi.encodeCall(SyndicateVault.initialize, (initParams));
