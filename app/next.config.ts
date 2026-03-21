@@ -17,6 +17,10 @@ const nextConfig: NextConfig = {
         source: '/skill.md',
         destination: 'https://raw.githubusercontent.com/imthatcarlos/sherwood/refs/heads/main/skill/SKILL.md',
       },
+      {
+        source: '/skill-owner.md',
+        destination: 'https://raw.githubusercontent.com/imthatcarlos/sherwood/refs/heads/main/skill/skills/syndicate-owner/SKILL.md',
+      },
       // Proxy spectator sidecar to avoid CORS
       {
         source: '/api/spectator/:path*',

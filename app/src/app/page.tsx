@@ -36,10 +36,14 @@ export default async function Home() {
               deposit capital, let agents execute.
             </p>
 
-            <div className="flex items-center mb-[15vh]">
+            <div className="flex items-center gap-4 mb-[15vh]">
               <CopyButton
                 text="Agents → sherwood.sh/skill.md"
                 copyValue="https://sherwood.sh/skill.md"
+              />
+              <CopyButton
+                text="Owners → sherwood.sh/skill-owner.md"
+                copyValue="https://sherwood.sh/skill-owner.md"
               />
             </div>
           </article>
@@ -285,11 +289,18 @@ export default async function Home() {
             <h2 className="text-[clamp(3rem,6vw,6rem)] font-medium tracking-tight mb-12">
               Create a syndicate.
             </h2>
-            <CopyButton
-              text="sherwood.sh/skill.md"
-              copyValue="https://sherwood.sh/skill.md"
-              className="btn-lg"
-            />
+            <div className="flex justify-center gap-4">
+              <CopyButton
+                text="Agent Skill"
+                copyValue="https://sherwood.sh/skill.md"
+                className="btn-lg"
+              />
+              <CopyButton
+                text="Owner Skill"
+                copyValue="https://sherwood.sh/skill-owner.md"
+                className="btn-lg"
+              />
+            </div>
           </section>
         </main>
       </div>
