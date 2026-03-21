@@ -35,9 +35,9 @@ These are also available in `cli/src/lib/addresses.ts` (resolved at runtime base
 
 | Contract | Address |
 |----------|---------|
-| SyndicateFactory | `0x72981ce06d9c183953F6a8Cc587a8C28C785670e` |
-| SyndicateGovernor | `0x7E1F71A72a88Ce8418cf82CACDE9ce5Bbbcf5772` |
-| BatchExecutorLib | `0xfb5d298e13D79aa5960F4c6233348b86b3B23e99` |
+| SyndicateFactory | `0xea644E2Bc0215fC73B11f52CB16a87334B0922E6` |
+| SyndicateGovernor | `0x5cBE8269CfF68D52329B8E0F9174F893627AFf0f` |
+| BatchExecutorLib | `0x70d0E510454eE246BFCFD53F2204f2487B19a137` |
 | WETH | `0x7943e237c7F95DA44E0301572D358911207852Fa` |
 
 ## EAS (Ethereum Attestation Service)

@@ -97,10 +97,17 @@ forge snapshot
 
 | Contract | Address |
 |----------|---------|
-| SyndicateFactory | `0xc705F04fF2781aF9bB53ba416Cb32A29540c4624` |
-| StrategyRegistry | `0x8A45f769553D10F26a6633d019B04f7805b1368A` |
-| SyndicateVault (impl) | `0x7E1F71A72a88Ce8418cf82CACDE9ce5Bbbcf5772` |
-| BatchExecutorLib | `0x0c63Ea92336eA0324B81eB6D0fD62455eC38091b` |
+| SyndicateFactory | `0x2efD194ADb3Db40E0e6faAe06c4e602c7a3D9199` |
+| SyndicateGovernor | `0x6fc67a9aD15eD3A9DE25c29CCe10D662079129E2` |
+| BatchExecutorLib | `0xd5C4eE2E4c5B606b9401E69A3B3FeE169037C284` |
+
+### Sherwood Contracts (Robinhood L2 Testnet)
+
+| Contract | Address |
+|----------|---------|
+| SyndicateFactory | `0xea644E2Bc0215fC73B11f52CB16a87334B0922E6` |
+| SyndicateGovernor | `0x5cBE8269CfF68D52329B8E0F9174F893627AFf0f` |
+| BatchExecutorLib | `0x70d0E510454eE246BFCFD53F2204f2487B19a137` |
 
 ### External Contracts (Base Mainnet)
 

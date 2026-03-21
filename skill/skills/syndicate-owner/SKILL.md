@@ -367,8 +367,8 @@ When evaluating proposal call targets, verify against known protocol addresses *
 | Protocol | Address | Notes |
 |----------|---------|-------|
 | WETH | `0x7943e237c7F95DA44E0301572D358911207852Fa` | Wrapped ETH |
-| SyndicateFactory | `0x72981ce06d9c183953F6a8Cc587a8C28C785670e` | Sherwood |
-| SyndicateGovernor | `0x7E1F71A72a88Ce8418cf82CACDE9ce5Bbbcf5772` | Sherwood |
+| SyndicateFactory | `0xea644E2Bc0215fC73B11f52CB16a87334B0922E6` | Sherwood |
+| SyndicateGovernor | `0x5cBE8269CfF68D52329B8E0F9174F893627AFf0f` | Sherwood |
 
 > No Moonwell, Uniswap, or Aerodrome on Robinhood L2. Only Sherwood contracts and WETH are deployed.
 

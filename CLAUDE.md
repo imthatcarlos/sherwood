@@ -26,20 +26,30 @@
 ## Project Structure
 
 ```
-contracts/   Foundry — Solidity smart contracts
-cli/         TypeScript CLI (viem, Commander)
-app/         Next.js dashboard
+contracts/      Foundry — Solidity smart contracts
+cli/            TypeScript CLI (viem, Commander)
+app/            Next.js dashboard
+mintlify-docs/  Mintlify documentation site (git submodule → docs.sherwood.sh)
 ```
 
 ## Documentation
 
 Full protocol and CLI documentation: **https://docs.sherwood.sh/**
 
+Source lives in `mintlify-docs/` (git submodule pointing to `imthatcarlos/mintlify-docs`).
+
 LLM-friendly versions:
 - `https://docs.sherwood.sh/llms.txt` — structured index
 - `https://docs.sherwood.sh/llms-full.txt` — complete docs in a single file
 
 Key sections: [Learn](https://docs.sherwood.sh/learn/quickstart) | [Protocol](https://docs.sherwood.sh/protocol/architecture) | [CLI](https://docs.sherwood.sh/cli/commands) | [Reference](https://docs.sherwood.sh/reference/deployments)
+
+**Keep docs in sync.** When changes touch contracts, CLI, or app, update the corresponding pages in `mintlify-docs/`:
+- Contract changes → `protocol/architecture.mdx`, `protocol/governance/*.mdx`
+- CLI command changes → `cli/commands.mdx`, `cli/governance-commands.mdx`
+- Address/deployment changes → `reference/deployments.mdx`, `cli/src/lib/addresses.ts`, `contracts/chains/*.json`, `skill/ADDRESSES.md`
+- Integration changes → `reference/integrations/*.mdx`
+- New features → `learn/concepts.mdx` if it introduces a new primitive
 
 ## Contracts
 

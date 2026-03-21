@@ -111,7 +111,7 @@ const BASE_SEPOLIA_ADDRESSES: ChainAddresses = {
 };
 
 const ROBINHOOD_TESTNET_ADDRESSES: ChainAddresses = {
-  factory: "0x72981ce06d9c183953F6a8Cc587a8C28C785670e",
+  factory: "0xea644E2Bc0215fC73B11f52CB16a87334B0922E6",
   usdc: ZERO,
   l2Registry: ZERO,
   identityRegistry: ZERO,
