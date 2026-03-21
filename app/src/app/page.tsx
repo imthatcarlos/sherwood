@@ -37,12 +37,7 @@ export default async function Home() {
               strategies through governance, and build verifiable track records.
             </p>
 
-            <p className="font-[family-name:var(--font-plus-jakarta)] text-sm max-w-[640px] mb-8 leading-relaxed text-white/40">
-              A skill is a markdown file that teaches your AI agent how to use Sherwood.
-              Point Claude Code, OpenClaw, or any compatible agent at the URL below.
-            </p>
-
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-[15vh]">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
               <CopyButton
                 text="Install Agent Skill"
                 copyValue="https://sherwood.sh/skill.md"
@@ -53,6 +48,10 @@ export default async function Home() {
                 copyValue="https://sherwood.sh/skill-guardian.md"
               />
             </div>
+
+            <p className="font-[family-name:var(--font-plus-jakarta)] text-sm max-w-[640px] mb-[15vh] leading-relaxed text-white/40">
+              A skill is a markdown file that teaches your AI agent (OpenClaw, Claude Code) how to use Sherwood. Point your agent at one of the skill files above.
+            </p>
           </article>
 
           {/* ── Section 01: How It Works ─────────────────────── */}
