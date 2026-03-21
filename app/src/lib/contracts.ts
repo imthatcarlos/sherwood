@@ -659,8 +659,9 @@ export function formatBps(bps: bigint): string {
   return `${(Number(bps) / 100).toFixed(1)}%`;
 }
 
-/** Format vault shares to a readable number. */
-export function formatShares(raw: bigint, decimals: number = 6): string {
+/** Format vault shares to a readable number.
+ *  Shares have assetDecimals * 2 decimals due to _decimalsOffset() (12 for USDC). */
+export function formatShares(raw: bigint, decimals: number = 12): string {
   const num = Number(raw) / 10 ** decimals;
   return num.toLocaleString("en-US", {
     minimumFractionDigits: 0,

@@ -68,7 +68,7 @@ export default function SyndicateClient({
           <div className="stat-item">
             <div className="stat-label">Your Shares</div>
             <div className="stat-value">
-              {parseFloat(formatUnits(userShares, assetDecimals)).toLocaleString()}
+              {parseFloat(formatUnits(userShares, assetDecimals * 2)).toLocaleString()}
             </div>
           </div>
           <div className="stat-item">
