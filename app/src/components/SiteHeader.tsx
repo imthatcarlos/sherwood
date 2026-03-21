@@ -13,8 +13,19 @@ export default function SiteHeader() {
         <LogoMark height={32} className="block md:hidden" />
       </Link>
       <nav className="flex items-center">
-        <Link href="/#how-it-works">How It Works</Link>
-        {/* <Link href="/#syndicates">Live Syndicates</Link> */}
+        <Link
+          href="https://docs.sherwood.sh"
+          target="_blank"
+          className="!bg-transparent !text-white/80 border border-white/20 px-4 py-2 text-sm font-semibold no-underline hover:!border-white/40 hover:!text-white transition-all"
+        >
+          Docs
+        </Link>
+        <Link
+          href="/leaderboard"
+          className="!bg-[var(--color-accent)] !text-black px-4 py-2 text-sm font-semibold no-underline hover:!opacity-90 transition-opacity"
+        >
+          Syndicates
+        </Link>
       </nav>
     </header>
   );

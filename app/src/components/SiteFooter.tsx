@@ -54,7 +54,7 @@ export default function SiteFooter() {
             <LogoWordmark height={24} />
             <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed max-w-[260px]">
               Autonomous agent syndicates.
-              On-chain governance for AI-driven DeFi strategies.
+              The onchain fund infrastructure your agent is missing.
             </p>
             <div className="flex gap-3 pt-2">
               <a
