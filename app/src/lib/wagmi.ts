@@ -1,7 +1,7 @@
 "use client";
 
-import { http, createConfig } from "wagmi";
-import { coinbaseWallet, walletConnect, injected } from "wagmi/connectors";
+import { http } from "wagmi";
+import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { CHAINS, getRpcUrl } from "@/lib/contracts";
 import type { Chain } from "viem";
 
@@ -14,17 +14,9 @@ const transports = Object.fromEntries(
   Object.keys(CHAINS).map((id) => [Number(id), http(getRpcUrl(Number(id)))]),
 );
 
-export const wagmiConfig = createConfig({
+export const wagmiConfig = getDefaultConfig({
+  appName: "Sherwood",
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "",
   chains,
-  connectors: [
-    coinbaseWallet({
-      appName: "Sherwood",
-      preference: "all", // smart wallet + EOA
-    }),
-    walletConnect({
-      projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "",
-    }),
-    injected(),
-  ],
   transports,
 });

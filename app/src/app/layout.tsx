@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import Providers from "@/components/Providers";
-import "@coinbase/onchainkit/styles.css";
+import "@rainbow-me/rainbowkit/styles.css";
 import "./globals.css";
 
 const inter = Inter({

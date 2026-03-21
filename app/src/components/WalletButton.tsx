@@ -1,26 +1,32 @@
 "use client";
 
-import {
-  ConnectWallet,
-  Wallet,
-  WalletDropdown,
-  WalletDropdownDisconnect,
-} from "@coinbase/onchainkit/wallet";
-import { Address, Identity, Name } from "@coinbase/onchainkit/identity";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 export default function WalletButton() {
   return (
-    <Wallet>
-      <ConnectWallet className="btn-follow">
-        <Name />
-      </ConnectWallet>
-      <WalletDropdown>
-        <Identity hasCopyAddressOnClick>
-          <Name />
-          <Address />
-        </Identity>
-        <WalletDropdownDisconnect />
-      </WalletDropdown>
-    </Wallet>
+    <ConnectButton.Custom>
+      {({ account, chain, openAccountModal, openConnectModal, mounted }) => {
+        const connected = mounted && account && chain;
+
+        return (
+          <div
+            {...(!mounted && {
+              "aria-hidden": true,
+              style: { opacity: 0, pointerEvents: "none", userSelect: "none" },
+            })}
+          >
+            {connected ? (
+              <button onClick={openAccountModal} type="button" className="btn-follow">
+                {account.displayName}
+              </button>
+            ) : (
+              <button onClick={openConnectModal} type="button" className="btn-follow">
+                Connect
+              </button>
+            )}
+          </div>
+        );
+      }}
+    </ConnectButton.Custom>
   );
 }
