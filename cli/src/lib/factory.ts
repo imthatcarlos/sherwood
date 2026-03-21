@@ -148,7 +148,7 @@ export async function getActiveSyndicates(): Promise<SyndicateInfo[]> {
   const result = (await client.readContract({
     address: getFactoryAddress(),
     abi: SYNDICATE_FACTORY_ABI,
-    functionName: "getActiveSyndicates",
+    functionName: "getAllActiveSyndicates",
   })) as readonly {
     id: bigint;
     vault: Address;

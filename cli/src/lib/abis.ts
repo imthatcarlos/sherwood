@@ -421,7 +421,7 @@ export const SYNDICATE_FACTORY_ABI = [
     ],
   },
   {
-    name: "getActiveSyndicates",
+    name: "getAllActiveSyndicates",
     type: "function",
     stateMutability: "view",
     inputs: [],
