@@ -763,42 +763,23 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_finalizeProtocolFeeBps_toctou_reverts() public {
-        // TOCTOU: queue fee bps with valid recipient, then clear recipient before finalize
-        // The main governor already has protocolFeeBps=200 and protocolFeeRecipient=owner
-
-        // Deploy a fresh governor to control recipient lifecycle
-        SyndicateGovernor govImpl2 = new SyndicateGovernor();
-        bytes memory govInit2 = abi.encodeCall(
-            SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
-                    owner: owner,
-                    votingPeriod: VOTING_PERIOD,
-                    executionWindow: EXECUTION_WINDOW,
-                    vetoThresholdBps: VETO_THRESHOLD_BPS,
-                    maxPerformanceFeeBps: MAX_PERF_FEE_BPS,
-                    cooldownPeriod: COOLDOWN_PERIOD,
-                    collaborationWindow: 48 hours,
-                    maxCoProposers: 5,
-                    minStrategyDuration: 1 hours,
-                    maxStrategyDuration: MAX_STRATEGY_DURATION,
-                    parameterChangeDelay: PARAM_CHANGE_DELAY,
-                    protocolFeeBps: 0,
-                    protocolFeeRecipient: owner
-                }))
-        );
-        SyndicateGovernor gov2 = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl2), govInit2)));
-
-        // Step 1: Queue fee bps change (recipient is set, so queue succeeds)
+        // Verify _validateForFinalize re-checks recipient at finalize time (defense in depth).
+        // Queue a valid fee bps change (recipient is set), then use vm.store to clear
+        // the recipient — simulating a state change between queue and finalize.
         vm.startPrank(owner);
-        gov2.setProtocolFeeBps(500);
-
-        // Wait for timelock delay
+        governor.setProtocolFeeBps(500);
         vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
 
-        // Finalize should succeed since recipient is still set
-        gov2.finalizeParameterChange(gov2.PARAM_PROTOCOL_FEE_BPS());
+        // Clear _protocolFeeRecipient via vm.store to simulate state change between queue and finalize
+        assertNotEq(governor.protocolFeeRecipient(), address(0));
+        vm.store(address(governor), bytes32(uint256(0x1b)), bytes32(0));
+        assertEq(governor.protocolFeeRecipient(), address(0));
+
+        // Finalize should revert — _validateForFinalize catches recipient is now address(0)
+        bytes32 paramKey = governor.PARAM_PROTOCOL_FEE_BPS();
+        vm.expectRevert(ISyndicateGovernor.InvalidProtocolFeeRecipient.selector);
+        governor.finalizeParameterChange(paramKey);
         vm.stopPrank();
-        assertEq(gov2.protocolFeeBps(), 500);
     }
 
     // ==================== RESCUE ERC721 LOCK ====================
