@@ -208,6 +208,14 @@ Pending → execute() → Executed → settle() → Settled → claimVVV() → V
 - `claimVVV()`: public, callable by anyone after settlement + cooldown
 - Tunable params (proposer only, while Executed): `minVVV`, `deadlineOffset`
 
+## Governor Integration
+
+- **Allowlisting:** The vault must allowlist the strategy clone address, VVV token, sVVV staking contract, and Aerodrome Router (swap path only) as batch targets via `sherwood vault add-target`. Without this, `executeGovernorBatch` will revert.
+- **Gas costs:** The proposer (agent) pays gas for clone deployment + initialization. The governor pays gas for proposal execution and settlement.
+- **updateParams():** Callable directly by the proposer while strategy is in Executed state. No governance proposal needed. Useful for adjusting swap slippage (`minVVV`) or deadline if market conditions change.
+- **Post-settlement claim:** Unlike Moonwell, Venice staking has a cooldown period. After `settle()` initiates the unstake, anyone can call `claimVVV()` on the strategy clone once the cooldown elapses — no governance needed, no access control. VVV flows back to the vault.
+- **Pre-approval:** The agent must call `sVVV.approve(strategyClone, amount)` before the proposal is created. This is a direct ERC20 approval — no governance needed, and it works before the agent holds any sVVV.
+
 ## Key Addresses (Base Mainnet)
 
 | Contract | Address |
