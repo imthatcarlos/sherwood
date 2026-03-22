@@ -25,6 +25,7 @@ import {ScriptBase} from "./ScriptBase.sol";
  *     forge script script/Deploy.s.sol:Deploy \
  *       --rpc-url base \
  *       --account sherwood-agent \
+ *       --sender <DEPLOYER_ADDRESS> \
  *       --broadcast \
  *       --verify
  */
