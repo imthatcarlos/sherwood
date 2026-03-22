@@ -29,6 +29,15 @@ function StateBadge({ state, pnl }: { state: ProposalState; pnl?: bigint }) {
         color = "rgba(255,255,255,0.5)";
       }
       break;
+    case ProposalState.Pending:
+    case ProposalState.Approved:
+      bg = "rgba(59, 130, 246, 0.2)";
+      color = "#3b82f6";
+      break;
+    case ProposalState.Executed:
+      bg = "rgba(251, 191, 36, 0.2)";
+      color = "#fbbf24";
+      break;
     case ProposalState.Rejected:
       bg = "rgba(255, 77, 77, 0.2)";
       color = "#ff4d4d";
@@ -89,24 +98,16 @@ export default function ProposalHistory({
   assetDecimals,
   assetSymbol,
 }: ProposalHistoryProps) {
-  const historical = proposals.filter(
-    (p) =>
-      p.computedState === ProposalState.Settled ||
-      p.computedState === ProposalState.Rejected ||
-      p.computedState === ProposalState.Expired ||
-      p.computedState === ProposalState.Cancelled,
-  );
-
   return (
     <div className="panel">
       <div className="panel-title">
         <span>Proposal History</span>
         <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "9px" }}>
-          {historical.length} TOTAL
+          {proposals.length} TOTAL
         </span>
       </div>
 
-      {historical.length === 0 ? (
+      {proposals.length === 0 ? (
         <div
           style={{
             textAlign: "center",
@@ -116,7 +117,7 @@ export default function ProposalHistory({
             fontSize: "12px",
           }}
         >
-          No proposal history yet
+          No proposals yet
         </div>
       ) : (
         <table className="log-table">
@@ -132,7 +133,7 @@ export default function ProposalHistory({
             </tr>
           </thead>
           <tbody>
-            {historical.map((p) => {
+            {proposals.map((p) => {
               const pnlDisplay = p.pnl !== undefined
                 ? formatPnL(p.pnl, assetDecimals, assetSymbol)
                 : null;

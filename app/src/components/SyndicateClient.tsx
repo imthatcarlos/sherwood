@@ -63,7 +63,7 @@ export default function SyndicateClient({
       />
 
       {/* User position — only shown when connected and has shares */}
-      {isConnected && userShares && userShares > 0n && (
+      {isConnected && !!userShares && userShares > 0n && (
         <div className="stats-bar" style={{ marginTop: "1rem" }}>
           <div className="stat-item">
             <div className="stat-label">Your Shares</div>

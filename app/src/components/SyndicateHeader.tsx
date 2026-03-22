@@ -46,14 +46,25 @@ function InlineCopy({ value }: { value: string }) {
       style={{
         background: "none",
         border: "none",
-        color: copied ? "var(--color-accent, #4ade80)" : "rgba(255,255,255,0.3)",
+        color: copied ? "var(--color-accent, #4ade80)" : "rgba(255,255,255,0.4)",
         cursor: "pointer",
-        padding: 0,
-        fontSize: "10px",
+        padding: "2px",
+        fontSize: "13px",
+        lineHeight: 1,
+        transition: "color 0.15s",
       }}
-      title="Copy"
+      title={copied ? "Copied!" : "Copy to clipboard"}
     >
-      {copied ? "\u2713" : "[c]"}
+      {copied ? (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
     </button>
   );
 }
@@ -94,7 +105,7 @@ export default function SyndicateHeader({
       </div>
 
       <div
-        className="font-[family-name:var(--font-plus-jakarta)] text-xs flex items-center gap-6"
+        className="font-[family-name:var(--font-plus-jakarta)] text-sm flex items-center gap-6"
         style={{ color: "rgba(255,255,255,0.4)" }}
       >
         <span style={{ color: "var(--color-accent)" }}>
