@@ -77,9 +77,9 @@ export default function EquityCurveChart({ data, hwm }: EquityCurveChartProps) {
                 enabled: true,
                 callbacks: {
                   label: (ctx) => {
-                    const v = ctx.parsed.y;
+                    const v = ctx.parsed?.y ?? 0;
                     if (v === 0) return "0";
-                    if (Math.abs(v) < 0.01) return v.toPrecision(3);
+                    if (Math.abs(v) < 0.01) return v.toPrecision(4);
                     return v.toFixed(4);
                   },
                 },
@@ -93,7 +93,7 @@ export default function EquityCurveChart({ data, hwm }: EquityCurveChartProps) {
                   callback: (value) => {
                     const v = Number(value);
                     if (v === 0) return "0";
-                    if (Math.abs(v) < 0.01) return v.toPrecision(3);
+                    if (Math.abs(v) < 0.01) return v.toPrecision(4);
                     return v.toFixed(4);
                   },
                   color: "rgba(255,255,255,0.3)",
