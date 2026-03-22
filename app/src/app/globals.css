@@ -729,14 +729,14 @@ body {
 
 .log-table th {
   text-align: left;
-  padding-bottom: 1rem;
+  padding: 0 0.75rem 1rem 0;
   color: rgba(255, 255, 255, 0.3);
   text-transform: uppercase;
   font-weight: 400;
 }
 
 .log-table td {
-  padding: 0.5rem 0;
+  padding: 0.5rem 0.75rem 0.5rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
