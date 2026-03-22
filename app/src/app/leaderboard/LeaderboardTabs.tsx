@@ -23,7 +23,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
   const [tab, setTab] = useState<"syndicates" | "agents">("syndicates");
 
-  // Build agent list from syndicates, sorted by P&L descending
+  // Build agent list from syndicates, deduplicated by address (keep most recent vault),
+  // sorted by P&L descending. Syndicates are already sorted newest-first by id.
+  const seenAgents = new Set<string>();
   const agents = syndicates
     .flatMap((s) =>
       s.agents.map((a) => ({
@@ -38,6 +40,12 @@ export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
         chainId: s.chainId,
       })),
     )
+    .filter((a) => {
+      const key = a.agentAddress.toLowerCase();
+      if (seenAgents.has(key)) return false;
+      seenAgents.add(key);
+      return true;
+    })
     .sort((a, b) => b.totalPnlRaw - a.totalPnlRaw);
 
   return (

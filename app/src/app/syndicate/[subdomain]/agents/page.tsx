@@ -4,6 +4,7 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import SyndicateClient from "@/components/SyndicateClient";
 import { resolveSyndicateBySubdomain } from "@/lib/syndicate-data";
+import AttestationTimeline from "@/components/AttestationTimeline";
 import { truncateAddress } from "@/lib/contracts";
 
 export async function generateMetadata({
@@ -33,11 +34,13 @@ export default async function AgentsPage({
   const activeAgents = data.agents.filter((a) => a.active);
   const inactiveAgents = data.agents.filter((a) => !a.active);
 
-  // Build address → display name map for creator resolution
+  // Build address/name maps for identity resolution
   const addressNames: Record<string, string> = {};
+  const agentNames: Record<string, string> = {};
   for (const agent of data.agents) {
     const displayName = agent.identity?.name || `Agent #${agent.agentId.toString()}`;
     addressNames[agent.agentAddress.toLowerCase()] = displayName;
+    agentNames[agent.agentId.toString()] = displayName;
   }
   const creatorKey = data.creator.toLowerCase();
   if (!addressNames[creatorKey]) {
@@ -112,16 +115,13 @@ export default async function AgentsPage({
               No agents registered yet
             </div>
           ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
-                gap: "1rem",
-              }}
-            >
+            <div className="flex flex-col gap-4">
               {data.agents.map((agent) => {
                 const displayName =
                   agent.identity?.name || `Agent #${agent.agentId.toString()}`;
+                const agentAttestations = data.attestations.filter(
+                  (att) => att.agentId === agent.agentId,
+                );
 
                 return (
                   <div key={agent.agentAddress} className="agent-card" style={{ padding: "1.25rem" }}>
@@ -191,6 +191,17 @@ export default async function AgentsPage({
                     >
                       <span>{truncateAddress(agent.agentAddress)}</span>
                     </div>
+
+                    {/* Agent attestation history */}
+                    {agentAttestations.length > 0 && (
+                      <div style={{ marginTop: "1rem", borderTop: "1px solid var(--color-border)", paddingTop: "1rem" }}>
+                        <AttestationTimeline
+                          attestations={agentAttestations}
+                          agentNames={agentNames}
+                          addressNames={addressNames}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}

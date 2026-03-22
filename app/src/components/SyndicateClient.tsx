@@ -65,8 +65,8 @@ export default function SyndicateClient({
         activeTab={activeTab}
       />
 
-      {/* User position — only shown when connected and has shares */}
-      {isConnected && !!userShares && userShares > 0n && (
+      {/* User position — only shown on vault tab when connected and has shares */}
+      {activeTab === "vault" && isConnected && !!userShares && userShares > 0n && (
         <div className="stats-bar" style={{ marginTop: "1rem" }}>
           <div className="stat-item">
             <div className="stat-label">Your Shares</div>
