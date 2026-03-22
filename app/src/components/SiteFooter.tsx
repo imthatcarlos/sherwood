@@ -18,6 +18,7 @@ const FOOTER_LINKS: Record<string, FooterLink[]> = {
   ],
   Community: [
     { label: "Twitter / X", href: "https://x.com/sherwoodagent", external: true },
+    { label: "Contact", href: "mailto:contact@sherwood.sh", external: true },
   ],
 };
 
