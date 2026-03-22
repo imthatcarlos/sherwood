@@ -1,0 +1,157 @@
+/**
+ * Phase 04 — Approve Members
+ *
+ * For each creator:
+ *   1. Run: sherwood syndicate requests --subdomain <name>
+ *   2. For each pending: sherwood syndicate approve --agent-id <id> --wallet <addr> --subdomain <name>
+ *
+ * This auto-registers the agent on vault + adds to XMTP group.
+ * Idempotent: skips joiners that are already approved.
+ */
+
+import type { SimConfig, SimState } from "../types.js";
+import { agentHomeDir } from "../agent-home.js";
+import { execSherwood } from "../exec.js";
+import { updateAgent } from "../state.js";
+
+interface JoinRequest {
+  agentId: number;
+  walletAddress: string;
+  attestationUid?: string;
+}
+
+/**
+ * Parse join requests from `syndicate requests` output.
+ * Output format varies — try to parse JSON or text patterns.
+ */
+function parseJoinRequests(output: string): JoinRequest[] {
+  const requests: JoinRequest[] = [];
+
+  // Try JSON array format
+  try {
+    const parsed = JSON.parse(output);
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        if (item.agentId && item.walletAddress) {
+          requests.push({
+            agentId: Number(item.agentId),
+            walletAddress: item.walletAddress,
+            attestationUid: item.uid || item.attestationUid,
+          });
+        }
+      }
+      return requests;
+    }
+  } catch {
+    // Not JSON — try text parsing
+  }
+
+  // Text pattern: "Agent #123 from 0x..." or "agentId: 123, wallet: 0x..."
+  const agentIdPattern = /agent.*?#(\d+)/gi;
+  const walletPattern = /0x[0-9a-fA-F]{40}/g;
+
+  const agentIds = [...output.matchAll(agentIdPattern)].map((m) => parseInt(m[1], 10));
+  const wallets = [...output.matchAll(walletPattern)].map((m) => m[0]);
+
+  for (let i = 0; i < Math.min(agentIds.length, wallets.length); i++) {
+    requests.push({ agentId: agentIds[i], walletAddress: wallets[i] });
+  }
+
+  return requests;
+}
+
+export async function runPhase04(config: SimConfig, state: SimState): Promise<void> {
+  console.log("\n=== Phase 04: Approve Members ===\n");
+
+  const creators = state.agents.filter((a) => a.role === "creator" && a.syndicateCreated);
+
+  if (creators.length === 0) {
+    console.log("No creators with syndicates — run Phase 02 first.");
+    return;
+  }
+
+  for (const creator of creators) {
+    const subdomain = creator.syndicateSubdomain;
+    if (!subdomain) continue;
+
+    const syndicate = state.syndicates.find((s) => s.subdomain === subdomain);
+    if (!syndicate) continue;
+
+    // Find joiners for this syndicate that need approval
+    const pendingJoiners = state.agents.filter(
+      (a) =>
+        a.role === "joiner" &&
+        a.syndicateSubdomain === subdomain &&
+        a.joinRequested &&
+        !a.approved,
+    );
+
+    if (pendingJoiners.length === 0) {
+      console.log(`  [agent-${creator.index}] No pending joiners for "${subdomain}" — skipping`);
+      continue;
+    }
+
+    const creatorHome = agentHomeDir(config.baseDir, creator.index);
+
+    // List pending requests
+    console.log(`  [agent-${creator.index}] Checking requests for "${subdomain}"...`);
+    let requests: JoinRequest[] = [];
+
+    if (!config.dryRun) {
+      try {
+        const requestsOutput = execSherwood(
+          creatorHome,
+          ["syndicate", "requests", "--subdomain", subdomain],
+          config,
+        );
+        requests = parseJoinRequests(requestsOutput);
+        console.log(`  [agent-${creator.index}] Found ${requests.length} pending requests`);
+      } catch (err) {
+        console.error(
+          `  [agent-${creator.index}] Failed to fetch requests: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        // Fall back to approving known joiners directly
+      }
+    }
+
+    // Approve each pending joiner
+    for (const joiner of pendingJoiners) {
+      if (!joiner.agentId) {
+        console.error(
+          `  [agent-${creator.index}] Joiner agent-${joiner.index} has no agentId — skipping approve`,
+        );
+        continue;
+      }
+
+      try {
+        console.log(
+          `  [agent-${creator.index}] Approving agent-${joiner.index} (id:${joiner.agentId}, ${joiner.address}) for "${subdomain}"...`,
+        );
+
+        execSherwood(
+          creatorHome,
+          [
+            "syndicate",
+            "approve",
+            "--agent-id",
+            String(joiner.agentId),
+            "--wallet",
+            joiner.address,
+            "--subdomain",
+            subdomain,
+          ],
+          config,
+        );
+
+        updateAgent(config.stateFile, state, joiner.index - 1, { approved: true });
+        console.log(`  [agent-${creator.index}] Approved agent-${joiner.index}`);
+      } catch (err) {
+        console.error(
+          `  [agent-${creator.index}] Approve failed for agent-${joiner.index}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  console.log("\nPhase 04 complete.");
+}

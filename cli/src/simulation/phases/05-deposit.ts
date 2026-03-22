@@ -1,0 +1,87 @@
+/**
+ * Phase 05 — Deposit
+ *
+ * For ALL agents (creators + approved joiners) in their respective syndicate:
+ *   Run: sherwood vault deposit --amount <amount> --vault <addr>
+ *
+ * The CLI handles USDC approval internally.
+ * Idempotent: skips agents that have already deposited.
+ */
+
+import type { SimConfig, SimState } from "../types.js";
+import { agentHomeDir } from "../agent-home.js";
+import { execSherwood } from "../exec.js";
+import { updateAgent } from "../state.js";
+import { PERSONAS } from "../personas.js";
+
+export async function runPhase05(config: SimConfig, state: SimState): Promise<void> {
+  console.log("\n=== Phase 05: Deposit ===\n");
+
+  // All agents that are eligible to deposit:
+  // - Creators: already have their vault
+  // - Joiners: must be approved
+  const eligibleAgents = state.agents.filter((agent) => {
+    if (agent.deposited) return false;
+    if (agent.role === "creator") {
+      return agent.syndicateCreated && agent.syndicateVault;
+    }
+    return agent.approved && agent.syndicateSubdomain;
+  });
+
+  if (eligibleAgents.length === 0) {
+    console.log("No eligible agents to deposit — all already deposited or not yet approved.");
+    return;
+  }
+
+  console.log(`Depositing for ${eligibleAgents.length} agents...\n`);
+
+  for (const agent of eligibleAgents) {
+    // Resolve vault address
+    let vault: string | undefined;
+
+    if (agent.role === "creator") {
+      vault = agent.syndicateVault;
+    } else {
+      // Joiner: get vault from their assigned syndicate
+      const syn = state.syndicates.find((s) => s.subdomain === agent.syndicateSubdomain);
+      vault = syn?.vault;
+    }
+
+    if (!vault) {
+      console.error(`  [agent-${agent.index}] No vault address found — skipping deposit`);
+      continue;
+    }
+
+    // Get deposit amount from persona
+    const persona = PERSONAS.find((p) => p.index === agent.index);
+    const amount = persona?.depositAmount || "10";
+
+    const agentHome = agentHomeDir(config.baseDir, agent.index);
+
+    try {
+      console.log(`  [agent-${agent.index}] Depositing ${amount} USDC into ${vault}...`);
+
+      execSherwood(
+        agentHome,
+        [
+          "vault",
+          "deposit",
+          "--amount",
+          amount,
+          "--vault",
+          vault,
+        ],
+        config,
+      );
+
+      updateAgent(config.stateFile, state, agent.index - 1, { deposited: true });
+      console.log(`  [agent-${agent.index}] Deposited ${amount} USDC`);
+    } catch (err) {
+      console.error(
+        `  [agent-${agent.index}] Deposit failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  console.log("\nPhase 05 complete.");
+}
