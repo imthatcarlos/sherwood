@@ -284,8 +284,10 @@ export default async function Home() {
                           <td className="tabular-nums">{s.tvl}</td>
                           <td className="tabular-nums">{s.agentCount}</td>
                           <td>
-                            {s.status === "EXECUTING" ? (
-                              <span className="status-live">EXECUTING</span>
+                            {s.status === "ACTIVE_STRATEGY" ? (
+                              <span className="status-live">ACTIVE STRATEGY</span>
+                            ) : s.status === "VOTING" ? (
+                              <span className="status-voting">VOTING</span>
                             ) : s.status === "IDLE" ? (
                               <span className="text-white/40">IDLE</span>
                             ) : (

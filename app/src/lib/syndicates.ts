@@ -12,6 +12,7 @@ import {
   getPublicClient,
   SYNDICATE_FACTORY_ABI,
   SYNDICATE_VAULT_ABI,
+  SYNDICATE_GOVERNOR_ABI,
   ERC20_ABI,
   formatAsset,
 } from "./contracts";
@@ -50,7 +51,7 @@ export interface SyndicateDisplay {
   tvl: string;
   agentCount: number;
   agents: AgentDisplay[];
-  status: "EXECUTING" | "IDLE" | "NO_AGENTS";
+  status: "ACTIVE_STRATEGY" | "VOTING" | "IDLE" | "NO_AGENTS";
   chainId: number;
 }
 
@@ -80,6 +81,94 @@ async function querySubgraph<T>(
   } catch {
     return null;
   }
+}
+
+// ── Proposal-aware status ─────────────────────────────────
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+/**
+ * Resolve proposal-aware status for a list of vaults.
+ * Multicalls: vault.governor() → governor.getActiveProposal(vault) → governor.getProposalState(id)
+ * Returns a map from lowercase vault address → "VOTING" | "ACTIVE_STRATEGY".
+ * Vaults with no active proposal (or no governor) are absent from the map.
+ */
+async function resolveProposalStatuses(
+  chainId: number,
+  vaults: Address[],
+): Promise<Map<string, "VOTING" | "ACTIVE_STRATEGY">> {
+  const statusMap = new Map<string, "VOTING" | "ACTIVE_STRATEGY">();
+  if (vaults.length === 0) return statusMap;
+
+  const client = getPublicClient(chainId);
+
+  // 1. Get governor address from each vault
+  const govResults = await client.multicall({
+    contracts: vaults.map((v) => ({
+      address: v,
+      abi: SYNDICATE_VAULT_ABI,
+      functionName: "governor" as const,
+    })),
+  });
+
+  const govVaults: { vault: Address; governor: Address }[] = [];
+  for (let i = 0; i < vaults.length; i++) {
+    const r = govResults[i];
+    if (r.status === "success" && r.result && r.result !== ZERO_ADDR) {
+      govVaults.push({ vault: vaults[i], governor: r.result as Address });
+    }
+  }
+  if (govVaults.length === 0) return statusMap;
+
+  // 2. Get active proposal ID for each vault
+  const activeResults = await client.multicall({
+    contracts: govVaults.map((gv) => ({
+      address: gv.governor,
+      abi: SYNDICATE_GOVERNOR_ABI,
+      functionName: "getActiveProposal" as const,
+      args: [gv.vault] as const,
+    })),
+  });
+
+  const stateQueries: { vault: Address; governor: Address; proposalId: bigint }[] = [];
+  for (let i = 0; i < govVaults.length; i++) {
+    const r = activeResults[i];
+    if (r.status === "success") {
+      const pid = r.result as bigint;
+      if (pid > 0n) {
+        stateQueries.push({ ...govVaults[i], proposalId: pid });
+      }
+    }
+  }
+  if (stateQueries.length === 0) return statusMap;
+
+  // 3. Get proposal state for each active proposal
+  const stateResults = await client.multicall({
+    contracts: stateQueries.map((sq) => ({
+      address: sq.governor,
+      abi: SYNDICATE_GOVERNOR_ABI,
+      functionName: "getProposalState" as const,
+      args: [sq.proposalId] as const,
+    })),
+  });
+
+  for (let i = 0; i < stateQueries.length; i++) {
+    const r = stateResults[i];
+    if (r.status === "success") {
+      const state = Number(r.result);
+      const key = stateQueries[i].vault.toLowerCase();
+      // Pending (1) or Approved (2) → VOTING
+      if (state === 1 || state === 2) {
+        statusMap.set(key, "VOTING");
+      }
+      // Executed (5) → ACTIVE_STRATEGY
+      else if (state === 5) {
+        statusMap.set(key, "ACTIVE_STRATEGY");
+      }
+    }
+  }
+
+  return statusMap;
 }
 
 // ── Per-chain fetchers ────────────────────────────────────
@@ -171,6 +260,10 @@ async function fetchViaSubgraph(
     };
   }
 
+  // Resolve proposal-aware statuses for all vaults
+  const vaultAddresses = data.syndicates.map((s) => s.vault as Address);
+  const proposalStatuses = await resolveProposalStatuses(chainId, vaultAddresses);
+
   return Promise.all(
     data.syndicates.map(async (s, i) => {
       const metadata = await fetchMetadata(s.metadataURI);
@@ -190,7 +283,7 @@ async function fetchViaSubgraph(
 
       let status: SyndicateDisplay["status"] = "NO_AGENTS";
       if (agentCount > 0) {
-        status = totalAssets > 0n ? "EXECUTING" : "IDLE";
+        status = proposalStatuses.get(s.vault.toLowerCase()) ?? "IDLE";
       }
 
       const tvlFormatted = formatAsset(
@@ -371,6 +464,10 @@ async function fetchViaOnChain(
     }
   }
 
+  // Resolve proposal-aware statuses for all vaults
+  const vaultAddresses = rawSyndicates.map((s) => s.vault);
+  const proposalStatuses = await resolveProposalStatuses(chainId, vaultAddresses);
+
   // Build display objects
   return Promise.all(
     rawSyndicates.map(async (s, i) => {
@@ -393,7 +490,7 @@ async function fetchViaOnChain(
 
       let status: SyndicateDisplay["status"] = "NO_AGENTS";
       if (agentCount > 0) {
-        status = totalAssets > 0n ? "EXECUTING" : "IDLE";
+        status = proposalStatuses.get(s.vault.toLowerCase()) ?? "IDLE";
       }
 
       const tvlFormatted = formatAsset(

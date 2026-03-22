@@ -337,6 +337,21 @@ body {
   border-radius: 50%;
 }
 
+.status-voting {
+  color: #eab308;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-voting::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  background: #eab308;
+  border-radius: 50%;
+}
+
 /* ── Footer ─────────────────────────────────────────────── */
 
 .site-footer {
@@ -738,6 +753,21 @@ body {
 
 .feed-item-enter {
   animation: feedSlideIn 0.4s ease-out both;
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes feedSlideIn {
