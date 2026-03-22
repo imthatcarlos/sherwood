@@ -22,6 +22,7 @@
   "license": "MIT",
   "skills": [
     ".",
-    "./skills/levered-swap"
+    "./skills/levered-swap",
+    "./skills/strategies/venice-inference"
   ]
 }

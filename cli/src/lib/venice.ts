@@ -1,10 +1,13 @@
 /**
- * Venice AI API integration — web3 key generation and validation.
+ * Venice AI API integration — web3 key generation, validation, and inference.
  *
- * Flow:
+ * Key provisioning flow:
  *   1. GET /api_keys/generate_web3_key → validation token
  *   2. Sign token with agent wallet (EIP-191)
  *   3. POST /api_keys/generate_web3_key → API key
+ *
+ * Inference:
+ *   POST /chat/completions with Bearer auth → chat completion response
  *
  * The API key is stored in ~/.sherwood/config.json.
  * Venice requires the signing wallet to hold staked VVV (sVVV).
@@ -75,4 +78,105 @@ export async function checkApiKeyValid(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ── Inference ──
+
+export interface ChatCompletionMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface ChatCompletionOptions {
+  model: string;
+  messages: ChatCompletionMessage[];
+  temperature?: number;
+  maxTokens?: number;
+  enableWebSearch?: boolean;
+  disableThinking?: boolean;
+}
+
+export interface ChatCompletionResult {
+  content: string;
+  model: string;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+}
+
+/**
+ * Call Venice chat completions API for private inference.
+ * Requires a provisioned API key (run `sherwood venice provision` first).
+ */
+export async function chatCompletion(opts: ChatCompletionOptions): Promise<ChatCompletionResult> {
+  const apiKey = getVeniceApiKey();
+  if (!apiKey) {
+    throw new Error("No Venice API key configured. Run 'sherwood venice provision' first.");
+  }
+
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    messages: opts.messages,
+  };
+  if (opts.temperature !== undefined) body.temperature = opts.temperature;
+  if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
+
+  const veniceParams: Record<string, unknown> = {};
+  if (opts.enableWebSearch) veniceParams.enable_web_search = "on";
+  if (opts.disableThinking) veniceParams.disable_thinking = true;
+  if (Object.keys(veniceParams).length > 0) body.venice_parameters = veniceParams;
+
+  const res = await fetch(`${VENICE_API_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Venice inference failed: ${res.status} ${errBody}`);
+  }
+
+  const data = await res.json();
+  const choice = data.choices?.[0];
+  if (!choice) {
+    throw new Error("Venice returned no choices");
+  }
+
+  return {
+    content: choice.message?.content ?? "",
+    model: data.model ?? opts.model,
+    usage: {
+      promptTokens: data.usage?.prompt_tokens ?? 0,
+      completionTokens: data.usage?.completion_tokens ?? 0,
+      totalTokens: data.usage?.total_tokens ?? 0,
+    },
+  };
+}
+
+/**
+ * List available Venice models.
+ * Requires a provisioned API key.
+ */
+export async function listModels(): Promise<string[]> {
+  const apiKey = getVeniceApiKey();
+  if (!apiKey) {
+    throw new Error("No Venice API key configured. Run 'sherwood venice provision' first.");
+  }
+
+  const res = await fetch(`${VENICE_API_BASE}/models`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to list Venice models: ${res.status} ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  return (data.data ?? []).map((m: { id: string }) => m.id);
 }

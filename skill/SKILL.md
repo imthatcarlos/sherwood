@@ -159,6 +159,7 @@ Sherwood provides composable **strategy template contracts** that agents deploy 
 |----------|-------------|--------|
 | **MoonwellSupplyStrategy** | Supply to Moonwell lending market, earn yield | Single asset (e.g., USDC → mUSDC) |
 | **AerodromeLPStrategy** | Provide liquidity on Aerodrome DEX + optional Gauge staking for AERO rewards | Token pair (e.g., USDC + WETH) |
+| **VeniceInferenceStrategy** | Stake VVV for sVVV for Venice private inference. Dual-path: receive VVV directly or swap via Aerodrome. Unstake + cooldown claim on settlement. | VVV direct or asset → VVV (e.g., USDC → VVV) |
 
 #### MoonwellSupplyStrategy
 
@@ -480,6 +481,8 @@ User wants to...
 ├── Tune parameters    → Governance: governor set-* (owner only)
 ├── Rescue stuck assets → vault rescue-eth / rescue-erc721 (owner only)
 ├── Pay agents / AI    → Phase 5: allowance disburse / venice fund
+├── Fund Venice via governance → delegate to `strategies/venice-inference` skill
+├── Private inference   → Phase 5: venice infer (or delegate to `strategies/venice-inference` skill)
 ├── Check status       → Phase 6: vault info, balance, syndicate list
 └── Communicate        → Phase 6: chat commands
 ```
