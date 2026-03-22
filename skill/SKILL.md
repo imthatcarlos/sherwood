@@ -191,7 +191,7 @@ sherwood strategy propose venice-inference \
 #### Strategy + Governor Integration
 
 - **Cloning:** The CLI clones the template (ERC-1167 minimal proxy) and initializes it. The proposer pays gas for both txs.
-- **No allowlist:** The vault trusts the governor — clone addresses are batch call targets within the proposal. No separate allowlisting step.
+- **Allowlisting:** The vault must allowlist the strategy clone address and any external protocol addresses as batch targets via `sherwood vault add-target`. See each strategy's skill and `ADDRESSES.md` for required targets.
 - **updateParams:** The proposer can call `strategy.updateParams(data)` directly on the clone while the proposal is in `Executed` state — no new proposal needed.
 - **Lifecycle:** `Pending → execute() → Executed → settle() → Settled`
 

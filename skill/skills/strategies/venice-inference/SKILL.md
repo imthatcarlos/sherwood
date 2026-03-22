@@ -168,7 +168,7 @@ sherwood proposal settle --id <proposal-id>
 ```
 
 Settlement calls `strategy.settle()` which:
-1. Pulls sVVV from agent via `transferFrom` (pre-approved in step 2)
+1. Pulls sVVV from agent via `transferFrom` (pre-approved in step 3)
 2. Calls `initiateUnstake(stakedAmount)` on Venice staking — cooldown begins
 3. After cooldown elapses, anyone calls `strategy.claimVVV()` to finalize unstake and push VVV back to vault
 

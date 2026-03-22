@@ -26,12 +26,17 @@ export async function provisionApiKey(): Promise<string> {
   const account = getAccount();
 
   // 1. Get validation token
-  const tokenRes = await fetch(`${VENICE_API_BASE}/api_keys/generate_web3_key`);
+  const tokenRes = await fetch(`${VENICE_API_BASE}/api_keys/generate_web3_key`, {
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!tokenRes.ok) {
     throw new Error(`Failed to get validation token: ${tokenRes.status} ${tokenRes.statusText}`);
   }
   const tokenData = await tokenRes.json();
-  const token = tokenData.data.token as string;
+  const token = tokenData?.data?.token;
+  if (!token) {
+    throw new Error("Venice API returned no validation token");
+  }
 
   // 2. Sign token with wallet (EIP-191)
   const signature = await account.signMessage({ message: token });
@@ -40,6 +45,7 @@ export async function provisionApiKey(): Promise<string> {
   const keyRes = await fetch(`${VENICE_API_BASE}/api_keys/generate_web3_key`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
       address: account.address,
       signature,
@@ -55,7 +61,10 @@ export async function provisionApiKey(): Promise<string> {
   }
 
   const keyData = await keyRes.json();
-  const apiKey = keyData.data.apiKey as string;
+  const apiKey = keyData?.data?.apiKey;
+  if (!apiKey) {
+    throw new Error("Venice API returned no API key");
+  }
 
   // Store in config
   setVeniceApiKey(apiKey);
@@ -73,6 +82,7 @@ export async function checkApiKeyValid(): Promise<boolean> {
   try {
     const res = await fetch(`${VENICE_API_BASE}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15_000),
     });
     return res.ok;
   } catch {
@@ -134,6 +144,7 @@ export async function chatCompletion(opts: ChatCompletionOptions): Promise<ChatC
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
+    signal: AbortSignal.timeout(120_000), // inference can be slow
     body: JSON.stringify(body),
   });
 
@@ -171,6 +182,7 @@ export async function listModels(): Promise<string[]> {
 
   const res = await fetch(`${VENICE_API_BASE}/models`, {
     headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!res.ok) {

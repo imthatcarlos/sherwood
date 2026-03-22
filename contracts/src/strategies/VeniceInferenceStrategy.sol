@@ -179,6 +179,8 @@ contract VeniceInferenceStrategy is BaseStrategy {
     }
 
     /// @notice Claw back sVVV from agent → initiate unstake (cooldown begins)
+    /// @dev Assumes 1:1 sVVV:VVV ratio (Venice staking is non-rebasing).
+    ///      Pulls exactly `stakedAmount` of sVVV — will revert if agent transferred any.
     function _settle() internal override {
         // 1. Pull sVVV from agent (agent pre-approved this strategy)
         IERC20(sVVV).safeTransferFrom(agent, address(this), stakedAmount);

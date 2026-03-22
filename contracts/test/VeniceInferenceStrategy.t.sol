@@ -45,7 +45,7 @@ contract MockVeniceStaking is ERC20Mock {
     }
 }
 
-/// @notice Mock Aerodrome swap router — burns input, mints output at a fixed rate
+/// @notice Mock Aerodrome swap router — pulls input via transferFrom, mints output at a fixed rate
 contract MockSwapRouter {
     ERC20Mock public outputToken;
     uint256 public rate; // output per input token (scaled 1e18)
@@ -58,24 +58,16 @@ contract MockSwapRouter {
     function swapExactTokensForTokens(
         uint256 amountIn,
         uint256 amountOutMin,
-        IAeroRouter.Route[] calldata, /* routes */
+        IAeroRouter.Route[] calldata routes,
         address to,
         uint256 /* deadline */
     ) external returns (uint256[] memory amounts) {
-        // Burn input from caller (strategy approved us)
-        // In practice the router would pull the input token — we just track amounts
-        IERC20 inputToken = IERC20(msg.sender); // not used, just take from msg.sender's approval
-        // Actually pull from msg.sender
-        // We need to know the input token — get it from routes[0].from
-        // For simplicity, just compute output
+        // Pull input token from caller (strategy approved router)
+        IERC20(routes[0].from).transferFrom(msg.sender, address(this), amountIn);
+
         uint256 amountOut = (amountIn * rate) / 1e18;
         require(amountOut >= amountOutMin, "Slippage");
 
-        // Pull input token from msg.sender (strategy)
-        // The strategy approved us, so we can pull. But we need the token address.
-        // Routes are calldata, so let's just accept the amountIn was already transferred.
-        // Actually in Aerodrome, the router pulls tokens via transferFrom.
-        // We'll handle this by having the test directly mint output.
         outputToken.mint(to, amountOut);
 
         amounts = new uint256[](2);
@@ -583,6 +575,44 @@ contract VeniceInferenceStrategy_SwapTest is Test {
         vm.prank(vault);
         vm.expectRevert(BaseStrategy.NotProposer.selector);
         strategy.updateParams(abi.encode(uint256(500e18), uint256(600)));
+    }
+
+    // ── Multi-hop (M3) ──
+
+    function test_execute_multiHop() public {
+        // Deploy a multi-hop strategy: USDC → WETH → VVV
+        ERC20Mock wethToken = new ERC20Mock("WETH", "WETH", 18);
+        address clone2 = Clones.clone(address(template));
+        VeniceInferenceStrategy multiHop = VeniceInferenceStrategy(clone2);
+
+        VeniceInferenceStrategy.InitParams memory p = VeniceInferenceStrategy.InitParams({
+            asset: address(usdc),
+            weth: address(wethToken),
+            vvv: address(vvvToken),
+            sVVV: address(sVVVToken),
+            aeroRouter: address(swapRouter),
+            aeroFactory: aeroFactory,
+            agent: agentWallet,
+            assetAmount: USDC_AMOUNT,
+            minVVV: MIN_VVV,
+            deadlineOffset: 300,
+            singleHop: false // multi-hop
+        });
+        multiHop.initialize(vault, proposer, abi.encode(p));
+
+        assertFalse(multiHop.singleHop());
+        assertTrue(multiHop.needsSwap());
+
+        // Execute
+        vm.prank(vault);
+        usdc.approve(address(multiHop), USDC_AMOUNT);
+        vm.prank(vault);
+        multiHop.execute();
+
+        // Mock router still produces same output (rate-based)
+        uint256 expectedVVV = (USDC_AMOUNT * SWAP_RATE) / 1e18;
+        assertEq(sVVVToken.balanceOf(agentWallet), expectedVVV);
+        assertEq(multiHop.stakedAmount(), expectedVVV);
     }
 
     function _executeStrategy() internal {

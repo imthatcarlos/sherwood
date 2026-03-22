@@ -9,7 +9,7 @@
 
 import type { Command } from "commander";
 import type { Address, Hex } from "viem";
-import { parseUnits, isAddress, encodeFunctionData } from "viem";
+import { parseUnits, isAddress, erc20Abi } from "viem";
 import chalk from "chalk";
 import ora from "ora";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -18,7 +18,7 @@ import { resolve } from "node:path";
 import { getPublicClient, getWalletClient, getAccount } from "../lib/client.js";
 import { getChain, getExplorerUrl } from "../lib/network.js";
 import { TOKENS, MOONWELL, VENICE, AERODROME, STRATEGY_TEMPLATES } from "../lib/addresses.js";
-import { BASE_STRATEGY_ABI, ERC20_ABI } from "../lib/abis.js";
+import { BASE_STRATEGY_ABI } from "../lib/abis.js";
 import { cloneTemplate } from "../lib/clone.js";
 import type { BatchCall } from "../lib/batch.js";
 import { formatBatch } from "../lib/batch.js";
@@ -76,12 +76,16 @@ function resolveTemplate(key: string): { def: TemplateDef; address: Address } {
 
 // ── Helpers for building init data per template ──
 
-function buildInitDataForTemplate(
+async function buildInitDataForTemplate(
   templateKey: string,
   opts: Record<string, string | boolean | undefined>,
   vault: Address,
-): { initData: Hex; asset: Address; assetAmount: bigint; extraApprovals?: { token: Address; amount: bigint }[] } {
+): Promise<{ initData: Hex; asset: Address; assetAmount: bigint; extraApprovals?: { token: Address; amount: bigint }[] }> {
   if (templateKey === "moonwell-supply") {
+    if (!opts.amount) {
+      console.error(chalk.red("--amount is required for moonwell-supply template"));
+      process.exit(1);
+    }
     const token = (opts.token as string) || "USDC";
     const underlying = resolveToken(token);
     const mToken = resolveMToken(token);
@@ -97,6 +101,10 @@ function buildInitDataForTemplate(
   }
 
   if (templateKey === "venice-inference") {
+    if (!opts.amount) {
+      console.error(chalk.red("--amount is required for venice-inference template"));
+      process.exit(1);
+    }
     const assetSymbol = (opts.asset as string) || "USDC";
     const asset = resolveToken(assetSymbol);
     const vvv = VENICE().VVV;
@@ -127,10 +135,19 @@ function buildInitDataForTemplate(
   }
 
   if (templateKey === "aerodrome-lp") {
+    for (const flag of ["tokenA", "tokenB", "amountA", "amountB", "lpToken"]) {
+      if (!opts[flag]) {
+        console.error(chalk.red(`--${flag.replace(/([A-Z])/g, "-$1").toLowerCase()} is required for aerodrome-lp template`));
+        process.exit(1);
+      }
+    }
     const tokenA = opts.tokenA as Address;
     const tokenB = opts.tokenB as Address;
-    const decimalsA = 18; // TODO: read from chain
-    const decimalsB = 18;
+    const publicClient = getPublicClient();
+    const [decimalsA, decimalsB] = await Promise.all([
+      publicClient.readContract({ address: tokenA, abi: erc20Abi, functionName: "decimals" }),
+      publicClient.readContract({ address: tokenB, abi: erc20Abi, functionName: "decimals" }),
+    ]);
     const amountA = parseUnits(opts.amountA as string, decimalsA);
     const amountB = parseUnits(opts.amountB as string, decimalsB);
     const minAOut = parseUnits((opts.minAOut as string) || "0", decimalsA);
@@ -328,7 +345,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
       // 2. Initialize
       const initSpinner = ora("Initializing strategy...").start();
       try {
-        const { initData } = buildInitDataForTemplate(templateKey, opts, vault);
+        const { initData } = await buildInitDataForTemplate(templateKey, opts, vault);
         const account = getAccount();
         const wallet = getWalletClient();
 
@@ -414,7 +431,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
       let assetAmount: bigint;
       let extraApprovals: { token: Address; amount: bigint }[] | undefined;
       try {
-        const built = buildInitDataForTemplate(templateKey, opts, vault);
+        const built = await buildInitDataForTemplate(templateKey, opts, vault);
         asset = built.asset;
         assetAmount = built.assetAmount;
         extraApprovals = built.extraApprovals;
@@ -495,6 +512,10 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
       const { parseDuration } = await import("../lib/governor.js");
 
       const performanceFeeBps = BigInt(opts.performanceFee as string);
+      if (performanceFeeBps < 0n || performanceFeeBps > 10000n) {
+        console.error(chalk.red("--performance-fee must be 0-10000 (basis points)"));
+        process.exit(1);
+      }
       const strategyDuration = parseDuration(opts.duration as string);
       const account = getAccount();
 
