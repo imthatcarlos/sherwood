@@ -26,6 +26,7 @@ import { formatBatch } from "../lib/batch.js";
 import * as moonwellBuilder from "../strategies/moonwell-supply-template.js";
 import * as veniceBuilder from "../strategies/venice-inference-template.js";
 import * as aerodromeBuilder from "../strategies/aerodrome-lp-template.js";
+import * as wstethBuilder from "../strategies/wsteth-moonwell-template.js";
 
 const ZERO: Address = "0x0000000000000000000000000000000000000000";
 
@@ -183,6 +184,35 @@ async function buildInitDataForTemplate(
     };
   }
 
+  if (templateKey === "wsteth-moonwell") {
+    if (!opts.amount) {
+      console.error(chalk.red("--amount is required for wsteth-moonwell template"));
+      process.exit(1);
+    }
+    const supplyAmount = parseUnits(opts.amount as string, 18); // WETH = 18 decimals
+    const slippageBps = BigInt((opts.slippage as string) || "500"); // default 5% slippage
+    const minWstethOut = supplyAmount - (supplyAmount * slippageBps) / 10000n;
+    const minWethOut = supplyAmount - (supplyAmount * slippageBps) / 10000n;
+
+    const params: wstethBuilder.WstETHMoonwellInitParams = {
+      weth: TOKENS().WETH,
+      wsteth: TOKENS().wstETH,
+      mwsteth: MOONWELL().mWstETH,
+      aeroRouter: AERODROME().ROUTER,
+      aeroFactory: AERODROME().FACTORY,
+      supplyAmount,
+      minWstethOut,
+      minWethOut,
+      deadlineOffset: 300n,
+    };
+
+    return {
+      initData: wstethBuilder.buildInitData(params),
+      asset: TOKENS().WETH,
+      assetAmount: supplyAmount,
+    };
+  }
+
   throw new Error(`No init builder for template: ${templateKey}`);
 }
 
@@ -213,6 +243,13 @@ function buildCallsForTemplate(
     return {
       executeCalls: aerodromeBuilder.buildExecuteCalls(clone, asset, assetAmount, tokenB, amountB),
       settleCalls: aerodromeBuilder.buildSettleCalls(clone),
+    };
+  }
+
+  if (templateKey === "wsteth-moonwell") {
+    return {
+      executeCalls: wstethBuilder.buildExecuteCalls(clone, asset, assetAmount),
+      settleCalls: wstethBuilder.buildSettleCalls(clone),
     };
   }
 
@@ -302,9 +339,9 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
   strategy
     .command("clone")
     .description("Clone a strategy template and initialize it")
-    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference")
+    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference, wsteth-moonwell")
     .requiredOption("--vault <address>", "Vault address")
-    // moonwell-supply
+    // moonwell-supply / wsteth-moonwell
     .option("--amount <n>", "Asset amount to deploy")
     .option("--min-redeem <n>", "Min asset on settlement (Moonwell)")
     .option("--token <symbol>", "Asset token symbol (default: USDC)")
@@ -323,6 +360,8 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
     .option("--lp-token <address>", "LP token address (Aerodrome)")
     .option("--min-a-out <n>", "Min token A on settle (Aerodrome)")
     .option("--min-b-out <n>", "Min token B on settle (Aerodrome)")
+    // wsteth-moonwell
+    .option("--slippage <bps>", "Slippage tolerance in bps (wstETH, default: 500 = 5%)")
     .action(async (templateKey: string, opts) => {
       const vault = opts.vault as Address;
       if (!isAddress(vault)) {
@@ -383,7 +422,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
   strategy
     .command("propose")
     .description("Clone + init + build calls + submit governance proposal (all-in-one)")
-    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference")
+    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference, wsteth-moonwell")
     .requiredOption("--vault <address>", "Vault address")
     .option("--write-calls <dir>", "Write execute/settle JSON to directory (skip proposal submission)")
     // proposal metadata (required unless --write-calls)
@@ -408,6 +447,8 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
     .option("--lp-token <address>", "LP token address (Aerodrome)")
     .option("--min-a-out <n>", "Min token A on settle (Aerodrome)")
     .option("--min-b-out <n>", "Min token B on settle (Aerodrome)")
+    // wsteth-moonwell
+    .option("--slippage <bps>", "Slippage tolerance in bps (wstETH, default: 500 = 5%)")
     .action(async (templateKey: string, opts) => {
       const vault = opts.vault as Address;
       if (!isAddress(vault)) {
