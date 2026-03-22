@@ -15,7 +15,7 @@ import ora from "ora";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { getPublicClient, getWalletClient, getAccount } from "../lib/client.js";
+import { getPublicClient, getAccount, writeContractWithRetry } from "../lib/client.js";
 import { getChain, getExplorerUrl } from "../lib/network.js";
 import { TOKENS, MOONWELL, VENICE, AERODROME, STRATEGY_TEMPLATES } from "../lib/addresses.js";
 import { BASE_STRATEGY_ABI } from "../lib/abis.js";
@@ -392,9 +392,8 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
       try {
         const { initData } = await buildInitDataForTemplate(templateKey, opts, vault);
         const account = getAccount();
-        const wallet = getWalletClient();
 
-        const initHash = await wallet.writeContract({
+        const initHash = await writeContractWithRetry({
           account,
           chain: getChain(),
           address: clone,
@@ -484,9 +483,8 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
         extraApprovals = built.extraApprovals;
 
         const account = getAccount();
-        const wallet = getWalletClient();
 
-        const initHash = await wallet.writeContract({
+        const initHash = await writeContractWithRetry({
           account,
           chain: getChain(),
           address: clone,

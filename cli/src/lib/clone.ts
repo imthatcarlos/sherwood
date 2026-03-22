@@ -7,7 +7,7 @@
 
 import type { Address, Hex } from "viem";
 import { concat } from "viem";
-import { getWalletClient, getPublicClient, getAccount } from "./client.js";
+import { getPublicClient, getAccount, sendTxWithRetry } from "./client.js";
 import { getChain } from "./network.js";
 
 /**
@@ -28,11 +28,10 @@ export async function cloneTemplate(
     "0x5af43d82803e903d91602b57fd5bf3",
   ]);
 
-  const wallet = getWalletClient();
   const account = getAccount();
   const chain = getChain();
 
-  const hash = await wallet.sendTransaction({
+  const hash = await sendTxWithRetry({
     account,
     chain,
     data: creationCode as Hex,
