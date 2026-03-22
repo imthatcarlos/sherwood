@@ -147,9 +147,11 @@ async function withRetry(send: TxSender, txParams: Record<string, unknown>): Pro
       console.warn(`  Retry ${attempt + 1}/${MAX_RETRIES}: ${isNonceStaleError(msg) ? "refreshing nonce" : "bumping gas"}...`);
 
       if (isNonceStaleError(msg)) {
+        // Fresh nonce = fresh tx, no replacement needed — only bump fees for underpriced errors
         nonce = await client.getTransactionCount({ address: account.address, blockTag: "pending" });
+      } else {
+        fees = bumpFees(fees);
       }
-      fees = bumpFees(fees);
     }
   }
   throw new Error("withRetry: exhausted retries");
