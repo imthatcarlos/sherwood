@@ -40,6 +40,12 @@ contract DeployTemplates is ScriptBase {
         address veniceAddr = _tryReadAddress(json, VENICE_KEY);
         address wstethAddr = _tryReadAddress(json, WSTETH_KEY);
 
+        // Verify addresses actually have code on-chain (catches stale dry-run addresses)
+        bool needMoonwell = moonwellAddr == address(0) || moonwellAddr.code.length == 0;
+        bool needAerodrome = aerodromeAddr == address(0) || aerodromeAddr.code.length == 0;
+        bool needVenice = veniceAddr == address(0) || veniceAddr.code.length == 0;
+        bool needWsteth = wstethAddr == address(0) || wstethAddr.code.length == 0;
+
         bool anyDeployed = false;
 
         console.log("\n=== Strategy Template Deployment ===\n");
@@ -48,7 +54,10 @@ contract DeployTemplates is ScriptBase {
 
         vm.startBroadcast();
 
-        if (moonwellAddr == address(0)) {
+        if (needMoonwell) {
+            if (moonwellAddr != address(0)) {
+                console.log("  Stale    MoonwellSupplyStrategy:   %s (no code, redeploying)", moonwellAddr);
+            }
             MoonwellSupplyStrategy moonwell = new MoonwellSupplyStrategy();
             moonwellAddr = address(moonwell);
             console.log("  Deployed MoonwellSupplyStrategy:   %s", moonwellAddr);
@@ -57,7 +66,10 @@ contract DeployTemplates is ScriptBase {
             console.log("  Skipped  MoonwellSupplyStrategy:   %s (already deployed)", moonwellAddr);
         }
 
-        if (aerodromeAddr == address(0)) {
+        if (needAerodrome) {
+            if (aerodromeAddr != address(0)) {
+                console.log("  Stale    AerodromeLPStrategy:      %s (no code, redeploying)", aerodromeAddr);
+            }
             AerodromeLPStrategy aerodrome = new AerodromeLPStrategy();
             aerodromeAddr = address(aerodrome);
             console.log("  Deployed AerodromeLPStrategy:      %s", aerodromeAddr);
@@ -66,7 +78,10 @@ contract DeployTemplates is ScriptBase {
             console.log("  Skipped  AerodromeLPStrategy:      %s (already deployed)", aerodromeAddr);
         }
 
-        if (veniceAddr == address(0)) {
+        if (needVenice) {
+            if (veniceAddr != address(0)) {
+                console.log("  Stale    VeniceInferenceStrategy:  %s (no code, redeploying)", veniceAddr);
+            }
             VeniceInferenceStrategy venice = new VeniceInferenceStrategy();
             veniceAddr = address(venice);
             console.log("  Deployed VeniceInferenceStrategy:  %s", veniceAddr);
@@ -75,7 +90,10 @@ contract DeployTemplates is ScriptBase {
             console.log("  Skipped  VeniceInferenceStrategy:  %s (already deployed)", veniceAddr);
         }
 
-        if (wstethAddr == address(0)) {
+        if (needWsteth) {
+            if (wstethAddr != address(0)) {
+                console.log("  Stale    WstETHMoonwellStrategy:   %s (no code, redeploying)", wstethAddr);
+            }
             WstETHMoonwellStrategy wsteth = new WstETHMoonwellStrategy();
             wstethAddr = address(wsteth);
             console.log("  Deployed WstETHMoonwellStrategy:   %s", wstethAddr);
