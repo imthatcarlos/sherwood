@@ -44,7 +44,10 @@ export async function provisionApiKey(): Promise<string> {
   // 3. Generate API key
   const keyRes = await fetch(`${VENICE_API_BASE}/api_keys/generate_web3_key`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
     signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
       address: account.address,
