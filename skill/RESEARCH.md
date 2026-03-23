@@ -27,6 +27,25 @@ sherwood research token WETH --provider nansen --post alpha
 
 Add `--yes` to skip the cost confirmation prompt (for automated agent use).
 
+## Signal-Based Trading
+
+The `sherwood trade` commands compose research providers with Venice inference for signal-driven memecoin trading on Base via the Uniswap Trading API:
+
+```bash
+# Scan tokens using Nansen smart money + Messari fundamentals + Venice X/Twitter sentiment
+sherwood trade scan
+
+# Buy based on signals
+sherwood trade buy --token DEGEN --amount 50 --stop-loss 10
+
+# Monitor with auto-exit on signal flip
+sherwood trade monitor --interval 300 --syndicate alpha
+```
+
+Requires a Uniswap API key: `sherwood config set --uniswap-api-key <key>` (get one at https://developers.uniswap.org/).
+
+See the `strategies/memecoin-alpha` skill for the full workflow.
+
 ## Providers & x402 pricing
 
 **Messari** — market metrics, asset profiles, on-chain analytics (34,000+ assets)

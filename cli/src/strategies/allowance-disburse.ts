@@ -12,6 +12,11 @@ import type { Address, Hex } from "viem";
 import { encodeFunctionData, parseUnits } from "viem";
 import type { BatchCall } from "../lib/batch.js";
 import { TOKENS, UNISWAP } from "../lib/addresses.js";
+import {
+  ERC20_ABI,
+  SWAP_ROUTER_EXACT_INPUT_SINGLE_ABI,
+  SWAP_ROUTER_ABI as SWAP_ROUTER_EXACT_INPUT_ABI,
+} from "../lib/abis.js";
 
 // ── Strategy Config ──
 
@@ -23,72 +28,6 @@ export interface AllowanceDisbursConfig {
   /** Max slippage in basis points (e.g. 100 = 1%) */
   slippageBps: number;
 }
-
-// ── ABIs (minimal, for encoding batch calls) ──
-
-const ERC20_ABI = [
-  {
-    name: "approve",
-    type: "function",
-    inputs: [
-      { name: "spender", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    name: "transfer",
-    type: "function",
-    inputs: [
-      { name: "to", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-] as const;
-
-const SWAP_ROUTER_EXACT_INPUT_SINGLE_ABI = [
-  {
-    name: "exactInputSingle",
-    type: "function",
-    inputs: [
-      {
-        name: "params",
-        type: "tuple",
-        components: [
-          { name: "tokenIn", type: "address" },
-          { name: "tokenOut", type: "address" },
-          { name: "fee", type: "uint24" },
-          { name: "recipient", type: "address" },
-          { name: "amountIn", type: "uint256" },
-          { name: "amountOutMinimum", type: "uint256" },
-          { name: "sqrtPriceLimitX96", type: "uint160" },
-        ],
-      },
-    ],
-    outputs: [{ name: "amountOut", type: "uint256" }],
-  },
-] as const;
-
-const SWAP_ROUTER_EXACT_INPUT_ABI = [
-  {
-    name: "exactInput",
-    type: "function",
-    inputs: [
-      {
-        name: "params",
-        type: "tuple",
-        components: [
-          { name: "path", type: "bytes" },
-          { name: "recipient", type: "address" },
-          { name: "amountIn", type: "uint256" },
-          { name: "amountOutMinimum", type: "uint256" },
-        ],
-      },
-    ],
-    outputs: [{ name: "amountOut", type: "uint256" }],
-  },
-] as const;
 
 // ── Batch Builder ──
 

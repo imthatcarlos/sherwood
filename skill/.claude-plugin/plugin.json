@@ -24,6 +24,7 @@
     ".",
     "./skills/levered-swap",
     "./skills/strategies/venice-inference",
-    "./skills/strategies/moonwell-supply"
+    "./skills/strategies/moonwell-supply",
+    "./skills/strategies/memecoin-alpha"
   ]
 }

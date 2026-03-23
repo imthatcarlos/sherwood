@@ -26,6 +26,9 @@ export interface SherwoodConfig {
   contracts?: Record<string, ChainContracts>; // chainId → user addresses
   rpc?: Record<string, string>; // network name → custom RPC URL
   notifyTo?: string; // destination for cron summaries (Telegram chat ID, phone, etc.)
+  uniswapApiKey?: string; // Uniswap Trading API key (from developers.uniswap.org)
+  positions?: unknown[];        // open trade positions (typed in positions.ts)
+  closedPositions?: unknown[];  // historical closed positions
 }
 
 export function loadConfig(): SherwoodConfig {
@@ -80,6 +83,18 @@ export function setPrivateKey(key: string): void {
 
 export function getPrivateKey(): string | undefined {
   return loadConfig().privateKey;
+}
+
+// ── Uniswap Trading API Key ──
+
+export function setUniswapApiKey(apiKey: string): void {
+  const config = loadConfig();
+  config.uniswapApiKey = apiKey;
+  saveConfig(config);
+}
+
+export function getUniswapApiKey(): string | undefined {
+  return loadConfig().uniswapApiKey ?? process.env.UNISWAP_API_KEY;
 }
 
 // ── Per-network RPC URLs ──

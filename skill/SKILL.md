@@ -300,6 +300,21 @@ sherwood venice provision  # self-provision API key (requires sVVV)
 sherwood venice status     # check sVVV balances + API key
 ```
 
+### Trade memecoins (Uniswap Trading API)
+
+Signal-driven memecoin trading on Base. Uses Nansen smart money, Messari fundamentals, and Venice sentiment (X/Twitter via web search) for entries/exits. Requires a Uniswap API key from [developers.uniswap.org](https://developers.uniswap.org/).
+
+```bash
+sherwood config set --uniswap-api-key <key>   # one-time setup
+sherwood trade scan                             # signal analysis on known memecoins
+sherwood trade buy --token DEGEN --amount 50    # buy via Uniswap Trading API
+sherwood trade positions                        # view P&L
+sherwood trade monitor --interval 300           # auto-exit on stop loss / signal flip
+sherwood trade sell --token DEGEN               # manual sell
+```
+
+See the `strategies/memecoin-alpha` skill for the full workflow, exit strategy configuration, and cost breakdown.
+
 ### LP operations
 
 ```bash
@@ -495,6 +510,7 @@ Each validates against hardcoded bounds before submitting.
 | [llms-full.txt](https://docs.sherwood.sh/llms-full.txt) | Complete docs in a single LLM-friendly file |
 | [ADDRESSES.md](ADDRESSES.md) | Contract addresses (mainnet + testnet) and per-strategy allowlist targets |
 | [ERRORS.md](ERRORS.md) | Common errors, causes, and fixes |
+| [RESEARCH.md](RESEARCH.md) | Research providers, x402 pricing, signal-based trading |
 | `cli/src/lib/addresses.ts` | Canonical address source (resolved at runtime by network) |
 | `cli/src/commands/` | Command implementations for each subcommand group |
 
@@ -508,7 +524,7 @@ Each validates against hardcoded bounds before submitting.
 
 ### Config
 
-State stored in `~/.sherwood/config.json`: `privateKey`, `agentId`, `contracts.{chainId}.vault`, `veniceApiKey`, `groupCache`.
+State stored in `~/.sherwood/config.json`: `privateKey`, `agentId`, `contracts.{chainId}.vault`, `veniceApiKey`, `uniswapApiKey`, `positions`, `groupCache`.
 
 ---
 
@@ -521,7 +537,8 @@ User wants to...
 ├── Join a fund        → Phase 2: syndicate join → creator approves (auto-adds to chat)
 ├── Review requests    → Phase 3: syndicate requests → syndicate approve/reject
 ├── Configure vault    → Phase 3: register agents → approve depositors
-├── Trade              → Phase 4: delegate to `levered-swap` skill
+├── Trade (levered)    → Phase 4: delegate to `levered-swap` skill
+├── Trade (memecoins)  → Phase 5: delegate to `strategies/memecoin-alpha` skill
 ├── Use strategy template → Phase 4: clone template, initialize, include in proposal batch
 ├── Supply to lending  → Phase 4: MoonwellSupplyStrategy template
 ├── Provide LP         → Phase 4: AerodromeLPStrategy template (+ optional gauge staking)

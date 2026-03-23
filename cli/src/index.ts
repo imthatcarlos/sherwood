@@ -44,7 +44,7 @@ async function loadXmtp() {
 async function loadCron() {
   return import("./lib/cron.js");
 }
-import { cacheGroupId, getCachedGroupId, setChainContract, getChainContracts, loadConfig, setPrivateKey, getAgentId, setConfigRpcUrl, getNotifyTo, setNotifyTo } from "./lib/config.js";
+import { cacheGroupId, getCachedGroupId, setChainContract, getChainContracts, loadConfig, setPrivateKey, getAgentId, setConfigRpcUrl, getNotifyTo, setNotifyTo, setUniswapApiKey, getUniswapApiKey } from "./lib/config.js";
 import { isTestnet } from "./lib/network.js";
 
 // ── Theme ──
@@ -1057,6 +1057,10 @@ registerGovernorCommands(program);
 const { registerResearchCommands } = await import("./commands/research.js");
 registerResearchCommands(program);
 
+// ── Trade commands ──
+const { registerTradeCommands } = await import("./commands/trade.js");
+registerTradeCommands(program);
+
 // ── Config commands ──
 const configCmd = program.command("config");
 
@@ -1067,6 +1071,7 @@ configCmd
   .option("--vault <address>", "Default SyndicateVault address")
   .option("--rpc <url>", "Custom RPC URL for the active --chain network")
   .option("--notify-to <id>", "Destination for cron summaries (Telegram chat ID, phone, etc.)")
+  .option("--uniswap-api-key <key>", "Uniswap Trading API key (from developers.uniswap.org)")
   .action((opts) => {
     let saved = false;
 
@@ -1101,8 +1106,14 @@ configCmd
       saved = true;
     }
 
+    if (opts.uniswapApiKey) {
+      setUniswapApiKey(opts.uniswapApiKey);
+      console.log(chalk.green("Uniswap API key saved to ~/.sherwood/config.json"));
+      saved = true;
+    }
+
     if (!saved) {
-      console.log(chalk.red("Provide at least one of: --private-key, --vault, --rpc, --notify-to"));
+      console.log(chalk.red("Provide at least one of: --private-key, --vault, --rpc, --notify-to, --uniswap-api-key"));
       process.exit(1);
     }
   });
@@ -1125,6 +1136,7 @@ configCmd
     console.log(`  Wallet:     ${config.privateKey ? chalk.green("configured") : chalk.dim("not set")}`);
     console.log(`  Agent ID:   ${config.agentId ?? chalk.dim("not set")}`);
     console.log(`  Vault:      ${contracts.vault ?? chalk.dim("not set")}`);
+    console.log(`  Uniswap:   ${getUniswapApiKey() ? chalk.green("API key configured") : chalk.dim("not set")}`);
     console.log();
     console.log(chalk.dim("  Config file: ~/.sherwood/config.json"));
     console.log();
