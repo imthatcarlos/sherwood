@@ -100,7 +100,7 @@ export default async function SyndicateDetailPage({
                 <div className="stat-label">Mgmt Fee</div>
                 <div className="stat-value">{data.display.managementFee}</div>
               </div>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", paddingLeft: "1rem" }}>
                 <DepositButton
                   vault={data.vault}
                   vaultName={name}
