@@ -15,12 +15,14 @@ export default async function LeaderboardPage() {
     fetchTokenPrices(),
   ]);
 
-  // Sort by TVL descending (parse currency string to number)
+  // Sort by USD-converted TVL descending
   const ranked = [...syndicates]
-    .map((s) => ({
-      ...s,
-      tvlNum: parseTVL(s.tvl),
-    }))
+    .map((s) => {
+      const amount = parseTVL(s.tvl);
+      const symbol = parseAssetSymbol(s.tvl);
+      const tvlUSD = amount * getUSDPrice(symbol, tokenPrices);
+      return { ...s, tvlNum: tvlUSD, tvlUSDDisplay: formatUSD(tvlUSD) };
+    })
     .sort((a, b) => b.tvlNum - a.tvlNum);
 
   // Aggregate stats — convert all TVL to USD
@@ -106,7 +108,10 @@ async function fetchTokenPrices(): Promise<TokenPrices> {
       `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
       { next: { revalidate: 300 } },
     );
-    if (!res.ok) return {};
+    if (!res.ok) {
+      console.warn(`[leaderboard] CoinGecko returned ${res.status} — non-stablecoin TVL will show as $0`);
+      return {};
+    }
     const data = await res.json();
     // Flatten to { "ethereum": 3500.12, ... }
     const prices: TokenPrices = {};
@@ -114,7 +119,8 @@ async function fetchTokenPrices(): Promise<TokenPrices> {
       prices[id] = (val as { usd: number }).usd;
     }
     return prices;
-  } catch {
+  } catch (err) {
+    console.warn("[leaderboard] CoinGecko fetch failed — non-stablecoin TVL will show as $0", err);
     return {};
   }
 }
@@ -122,7 +128,7 @@ async function fetchTokenPrices(): Promise<TokenPrices> {
 function getUSDPrice(symbol: string, tokenPrices: TokenPrices): number {
   if (USD_STABLES.has(symbol)) return 1;
   const geckoId = SYMBOL_TO_COINGECKO[symbol];
-  if (geckoId && tokenPrices[geckoId]) return tokenPrices[geckoId];
+  if (geckoId && tokenPrices[geckoId] !== undefined) return tokenPrices[geckoId];
   return 0;
 }
 
@@ -133,7 +139,7 @@ function parseTVL(tvl: string): number {
 
 function parseAssetSymbol(tvl: string): string {
   const parts = tvl.trim().split(/\s+/);
-  return parts.length >= 2 ? parts[parts.length - 1] : "USD";
+  return parts.length >= 2 ? parts[parts.length - 1] : "USDC";
 }
 
 function formatUSD(num: number): string {

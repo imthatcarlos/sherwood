@@ -7,6 +7,7 @@ import type { SyndicateDisplay } from "@/lib/syndicates";
 
 interface RankedSyndicate extends SyndicateDisplay {
   tvlNum: number;
+  tvlUSDDisplay: string;
 }
 
 interface LeaderboardTabsProps {
@@ -127,7 +128,14 @@ export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
                       >
                         {s.strategy || "—"}
                       </td>
-                      <td className="apy-highlight">{s.tvl}</td>
+                      <td className="apy-highlight">
+                        {s.tvl}
+                        {s.tvlUSDDisplay && !s.tvl.startsWith("$") && (
+                          <span className="block mt-0.5" style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px" }}>
+                            ~{s.tvlUSDDisplay}
+                          </span>
+                        )}
+                      </td>
                       <td>{s.agentCount}</td>
                       <td>
                         <span
