@@ -608,8 +608,8 @@ export function registerTradeCommands(program: Command): void {
         const vaultRecipient = getChainContracts(getActiveChain().id).vault as `0x${string}` | undefined;
         const { uid } = await createTradeAttestation(
           tokenAddr, outputAddr, sellAmount,
-          outputReceived,
-          txHash, "SELL",
+          formatUnits(expectedOut, outputDecimals),
+          txHash, "SELL", vaultRecipient,
         );
         if (uid !== "0x0000000000000000000000000000000000000000000000000000000000000000") {
           console.log(`  Attested: ${chalk.dim(getEasScanUrl(uid))}`);
