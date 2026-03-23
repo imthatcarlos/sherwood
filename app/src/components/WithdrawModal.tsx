@@ -7,7 +7,7 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
-import { formatUnits, type Address } from "viem";
+import { formatUnits, parseUnits, type Address } from "viem";
 import {
   SYNDICATE_VAULT_ABI,
   getAddresses,
@@ -25,7 +25,7 @@ interface WithdrawModalProps {
   onClose: () => void;
 }
 
-type Step = "input" | "redeeming" | "success" | "error";
+type Step = "input" | "withdrawing" | "success" | "error";
 
 export default function WithdrawModal({
   vault,
@@ -40,69 +40,72 @@ export default function WithdrawModal({
   const { address } = useAccount();
   const addresses = getAddresses();
 
-  const [shares, setShares] = useState("");
+  const [amount, setAmount] = useState("");
   const [step, setStep] = useState<Step>("input");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Share decimals = assetDecimals * 2 (due to _decimalsOffset)
-  const shareDecimals = assetDecimals * 2;
-
-  // Parse shares input to raw units
-  const parsedShares = (() => {
+  // Parse asset amount to raw units
+  const parsedAmount = (() => {
     try {
-      if (!shares || parseFloat(shares) <= 0) return 0n;
-      // Parse as a decimal number with shareDecimals precision
-      const parts = shares.split(".");
-      const whole = parts[0] || "0";
-      const frac = (parts[1] || "").padEnd(shareDecimals, "0").slice(0, shareDecimals);
-      return BigInt(whole) * 10n ** BigInt(shareDecimals) + BigInt(frac);
+      if (!amount || parseFloat(amount) <= 0) return 0n;
+      return parseUnits(amount, assetDecimals);
     } catch {
       return 0n;
     }
   })();
 
-  // Preview: convert shares to assets
-  const { data: previewAssets } = useReadContract({
+  // Convert share balance to asset value for MAX button
+  const { data: maxAssets } = useReadContract({
     address: vault,
     abi: SYNDICATE_VAULT_ABI,
     functionName: "convertToAssets",
-    args: parsedShares > 0n ? [parsedShares] : undefined,
-    query: { enabled: parsedShares > 0n },
+    args: shareBalance > 0n ? [shareBalance] : undefined,
+    query: { enabled: shareBalance > 0n },
   });
 
-  // Redeem tx
+  // Preview: convert desired assets to shares needed
+  const { data: previewShares } = useReadContract({
+    address: vault,
+    abi: SYNDICATE_VAULT_ABI,
+    functionName: "convertToShares",
+    args: parsedAmount > 0n ? [parsedAmount] : undefined,
+    query: { enabled: parsedAmount > 0n },
+  });
+
+  // Withdraw tx
   const {
-    writeContract: redeem,
-    data: redeemHash,
-    isPending: isRedeemPending,
+    writeContract: withdraw,
+    data: withdrawHash,
+    isPending: isWithdrawPending,
   } = useWriteContract();
 
-  const { isSuccess: isRedeemConfirmed } = useWaitForTransactionReceipt({
-    hash: redeemHash,
+  const { isSuccess: isWithdrawConfirmed } = useWaitForTransactionReceipt({
+    hash: withdrawHash,
   });
 
-  const canRedeem =
+  const maxAssetsValue = maxAssets ?? 0n;
+  const canWithdraw =
     !paused &&
     !redemptionsLocked &&
-    parsedShares > 0n &&
-    parsedShares <= shareBalance;
+    parsedAmount > 0n &&
+    parsedAmount <= maxAssetsValue;
 
-  // Handle redeem confirmation
+  // Handle withdraw confirmation
   useEffect(() => {
-    if (isRedeemConfirmed && step === "redeeming") {
+    if (isWithdrawConfirmed && step === "withdrawing") {
       setStep("success");
     }
-  }, [isRedeemConfirmed, step]);
+  }, [isWithdrawConfirmed, step]);
 
-  function handleRedeem() {
+  function handleWithdraw() {
     if (!address) return;
-    setStep("redeeming");
-    redeem(
+    setStep("withdrawing");
+    withdraw(
       {
         address: vault,
         abi: SYNDICATE_VAULT_ABI,
-        functionName: "redeem",
-        args: [parsedShares, address, address],
+        functionName: "withdraw",
+        args: [parsedAmount, address, address],
       },
       {
         onError: (err) => {
@@ -114,9 +117,8 @@ export default function WithdrawModal({
     );
   }
 
-  const sharesFormatted = parseFloat(formatUnits(shareBalance, shareDecimals)).toLocaleString();
-  const previewFormatted = previewAssets
-    ? parseFloat(formatUnits(previewAssets, assetDecimals)).toLocaleString()
+  const maxFormatted = maxAssets
+    ? parseFloat(formatUnits(maxAssets, assetDecimals)).toLocaleString()
     : "0";
 
   // Close modal on Escape key
@@ -181,11 +183,11 @@ export default function WithdrawModal({
               className="font-[family-name:var(--font-plus-jakarta)] text-lg"
               style={{ color: "var(--color-accent)", marginBottom: "1rem" }}
             >
-              Redeemed {shares} shares
+              Withdrew {amount} {assetSymbol}
             </div>
-            {redeemHash && (
+            {withdrawHash && (
               <a
-                href={`${addresses.blockExplorer}/tx/${redeemHash}`}
+                href={`${addresses.blockExplorer}/tx/${withdrawHash}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="attestation-link"
@@ -236,7 +238,7 @@ export default function WithdrawModal({
           </div>
         ) : (
           <>
-            {/* Share balance */}
+            {/* Available balance */}
             <div
               className="flex justify-between font-[family-name:var(--font-plus-jakarta)]"
               style={{
@@ -245,62 +247,58 @@ export default function WithdrawModal({
                 marginBottom: "0.5rem",
               }}
             >
-              <span>Your Shares</span>
-              <span>{sharesFormatted}</span>
+              <span>Available</span>
+              <span>{maxFormatted} {assetSymbol}</span>
             </div>
 
-            {/* Shares input */}
+            {/* Asset amount input */}
             <div className="deposit-input-row">
               <input
                 type="text"
                 inputMode="decimal"
                 placeholder="0"
-                value={shares}
+                value={amount}
                 onChange={(e) => {
                   let val = e.target.value.replace(/[^0-9.]/g, "");
                   const parts = val.split(".");
                   if (parts.length > 2) val = parts[0] + "." + parts.slice(1).join("");
-                  setShares(val);
+                  setAmount(val);
                 }}
                 className="deposit-input"
                 disabled={step !== "input"}
               />
+              <span
+                className="font-[family-name:var(--font-plus-jakarta)]"
+                style={{
+                  fontSize: "12px",
+                  color: "rgba(255,255,255,0.5)",
+                  marginRight: "0.5rem",
+                }}
+              >
+                {assetSymbol}
+              </span>
               <button
                 className="btn-follow"
                 style={{ fontSize: "9px", padding: "0.3rem 0.6rem" }}
-                onClick={() =>
-                  setShares(formatUnits(shareBalance, shareDecimals))
-                }
+                onClick={() => {
+                  if (maxAssets) setAmount(formatUnits(maxAssets, assetDecimals));
+                }}
               >
                 MAX
               </button>
             </div>
-
-            {/* Preview output */}
-            {parsedShares > 0n && (
-              <div
-                className="font-[family-name:var(--font-plus-jakarta)]"
-                style={{
-                  fontSize: "11px",
-                  color: "rgba(255,255,255,0.5)",
-                  marginTop: "0.75rem",
-                }}
-              >
-                You will receive ~{previewFormatted} {assetSymbol}
-              </div>
-            )}
 
             {/* Action button */}
             <div style={{ marginTop: "1.5rem" }}>
               <button
                 className="btn-action"
                 style={{ width: "100%" }}
-                onClick={handleRedeem}
-                disabled={!canRedeem || isRedeemPending || step === "redeeming"}
+                onClick={handleWithdraw}
+                disabled={!canWithdraw || isWithdrawPending || step === "withdrawing"}
               >
-                {step === "redeeming"
-                  ? "Redeeming..."
-                  : `Redeem ${shares || "0"} Shares`}
+                {step === "withdrawing"
+                  ? "Withdrawing..."
+                  : `Withdraw ${amount || "0"} ${assetSymbol}`}
               </button>
             </div>
           </>
