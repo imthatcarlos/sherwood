@@ -41,6 +41,7 @@ export default function WithdrawModal({
   const addresses = getAddresses();
 
   const [amount, setAmount] = useState("");
+  const [isMax, setIsMax] = useState(false);
   const [step, setStep] = useState<Step>("input");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -54,7 +55,7 @@ export default function WithdrawModal({
     }
   })();
 
-  // Convert share balance to asset value for MAX button
+  // Convert share balance to asset value for display/validation
   const { data: maxAssets } = useReadContract({
     address: vault,
     abi: SYNDICATE_VAULT_ABI,
@@ -63,18 +64,9 @@ export default function WithdrawModal({
     query: { enabled: shareBalance > 0n },
   });
 
-  // Preview: convert desired assets to shares needed
-  const { data: previewShares } = useReadContract({
-    address: vault,
-    abi: SYNDICATE_VAULT_ABI,
-    functionName: "convertToShares",
-    args: parsedAmount > 0n ? [parsedAmount] : undefined,
-    query: { enabled: parsedAmount > 0n },
-  });
-
   // Withdraw tx
   const {
-    writeContract: withdraw,
+    writeContract: doWithdraw,
     data: withdrawHash,
     isPending: isWithdrawPending,
   } = useWriteContract();
@@ -87,8 +79,7 @@ export default function WithdrawModal({
   const canWithdraw =
     !paused &&
     !redemptionsLocked &&
-    parsedAmount > 0n &&
-    parsedAmount <= maxAssetsValue;
+    (isMax ? shareBalance > 0n : parsedAmount > 0n && parsedAmount <= maxAssetsValue);
 
   // Handle withdraw confirmation
   useEffect(() => {
@@ -100,26 +91,56 @@ export default function WithdrawModal({
   function handleWithdraw() {
     if (!address) return;
     setStep("withdrawing");
-    withdraw(
-      {
-        address: vault,
-        abi: SYNDICATE_VAULT_ABI,
-        functionName: "withdraw",
-        args: [parsedAmount, address, address],
-      },
-      {
-        onError: (err) => {
-          const msg = (err as any).shortMessage || "Transaction was rejected or reverted.";
-          setErrorMsg(msg);
-          setStep("error");
+
+    if (isMax) {
+      // Use redeem(shares) for MAX to avoid rounding revert
+      doWithdraw(
+        {
+          address: vault,
+          abi: SYNDICATE_VAULT_ABI,
+          functionName: "redeem",
+          args: [shareBalance, address, address],
         },
-      },
-    );
+        {
+          onError: (err) => {
+            const msg = (err as any).shortMessage || "Transaction was rejected or reverted.";
+            setErrorMsg(msg);
+            setStep("error");
+          },
+        },
+      );
+    } else {
+      // Use withdraw(assets) for specific amounts
+      doWithdraw(
+        {
+          address: vault,
+          abi: SYNDICATE_VAULT_ABI,
+          functionName: "withdraw",
+          args: [parsedAmount, address, address],
+        },
+        {
+          onError: (err) => {
+            const msg = (err as any).shortMessage || "Transaction was rejected or reverted.";
+            setErrorMsg(msg);
+            setStep("error");
+          },
+        },
+      );
+    }
   }
 
+  const displayDecimals = Math.min(assetDecimals, 6);
   const maxFormatted = maxAssets
-    ? parseFloat(formatUnits(maxAssets, assetDecimals)).toLocaleString()
+    ? parseFloat(formatUnits(maxAssets, assetDecimals)).toFixed(displayDecimals)
     : "0";
+
+  // Truncate display amount to 6 decimals
+  function truncateDisplay(val: string): string {
+    if (!val) return "0";
+    const dot = val.indexOf(".");
+    if (dot < 0) return val;
+    return val.slice(0, dot + displayDecimals + 1);
+  }
 
   // Close modal on Escape key
   useEffect(() => {
@@ -183,7 +204,7 @@ export default function WithdrawModal({
               className="font-[family-name:var(--font-plus-jakarta)] text-lg"
               style={{ color: "var(--color-accent)", marginBottom: "1rem" }}
             >
-              Withdrew {amount} {assetSymbol}
+              Withdrew {isMax ? maxFormatted : truncateDisplay(amount)} {assetSymbol}
             </div>
             {withdrawHash && (
               <a
@@ -262,7 +283,12 @@ export default function WithdrawModal({
                   let val = e.target.value.replace(/[^0-9.]/g, "");
                   const parts = val.split(".");
                   if (parts.length > 2) val = parts[0] + "." + parts.slice(1).join("");
+                  // Cap decimals to asset precision
+                  if (parts.length === 2 && parts[1].length > assetDecimals) {
+                    val = parts[0] + "." + parts[1].slice(0, assetDecimals);
+                  }
                   setAmount(val);
+                  setIsMax(false);
                 }}
                 className="deposit-input"
                 disabled={step !== "input"}
@@ -282,9 +308,8 @@ export default function WithdrawModal({
                 style={{ fontSize: "9px", padding: "0.3rem 0.6rem" }}
                 onClick={() => {
                   if (maxAssets) {
-                    const full = formatUnits(maxAssets, assetDecimals);
-                    const dot = full.indexOf(".");
-                    setAmount(dot >= 0 ? full.slice(0, dot + 7) : full); // max 6 decimals
+                    setAmount(maxFormatted);
+                    setIsMax(true);
                   }
                 }}
               >
@@ -302,7 +327,7 @@ export default function WithdrawModal({
               >
                 {step === "withdrawing"
                   ? "Withdrawing..."
-                  : `Withdraw ${amount ? (amount.includes(".") ? amount.slice(0, amount.indexOf(".") + 7) : amount) : "0"} ${assetSymbol}`}
+                  : `Withdraw ${isMax ? "All" : truncateDisplay(amount) || "0"} ${assetSymbol}`}
               </button>
             </div>
           </>
