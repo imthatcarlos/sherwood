@@ -281,7 +281,11 @@ export default function WithdrawModal({
                 className="btn-follow"
                 style={{ fontSize: "9px", padding: "0.3rem 0.6rem" }}
                 onClick={() => {
-                  if (maxAssets) setAmount(formatUnits(maxAssets, assetDecimals));
+                  if (maxAssets) {
+                    const full = formatUnits(maxAssets, assetDecimals);
+                    const dot = full.indexOf(".");
+                    setAmount(dot >= 0 ? full.slice(0, dot + 7) : full); // max 6 decimals
+                  }
                 }}
               >
                 MAX
@@ -298,7 +302,7 @@ export default function WithdrawModal({
               >
                 {step === "withdrawing"
                   ? "Withdrawing..."
-                  : `Withdraw ${amount || "0"} ${assetSymbol}`}
+                  : `Withdraw ${amount ? (amount.includes(".") ? amount.slice(0, amount.indexOf(".") + 7) : amount) : "0"} ${assetSymbol}`}
               </button>
             </div>
           </>
