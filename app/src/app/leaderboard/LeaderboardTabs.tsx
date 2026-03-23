@@ -7,6 +7,7 @@ import type { SyndicateDisplay } from "@/lib/syndicates";
 
 interface RankedSyndicate extends SyndicateDisplay {
   tvlNum: number;
+  tvlUSDDisplay: string;
 }
 
 interface LeaderboardTabsProps {
@@ -23,9 +24,8 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
   const [tab, setTab] = useState<"syndicates" | "agents">("syndicates");
 
-  // Build agent list from syndicates, deduplicated by address (keep most recent vault),
-  // sorted by P&L descending. Syndicates are already sorted newest-first by id.
-  const seenAgents = new Set<string>();
+  // Build agent list from syndicates — one row per agent per syndicate,
+  // sorted by P&L descending.
   const agents = syndicates
     .flatMap((s) =>
       s.agents.map((a) => ({
@@ -40,12 +40,6 @@ export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
         chainId: s.chainId,
       })),
     )
-    .filter((a) => {
-      const key = a.agentAddress.toLowerCase();
-      if (seenAgents.has(key)) return false;
-      seenAgents.add(key);
-      return true;
-    })
     .sort((a, b) => b.totalPnlRaw - a.totalPnlRaw);
 
   return (
@@ -134,7 +128,14 @@ export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
                       >
                         {s.strategy || "—"}
                       </td>
-                      <td className="apy-highlight">{s.tvl}</td>
+                      <td className="apy-highlight">
+                        {s.tvl}
+                        {s.tvlUSDDisplay && !s.tvl.startsWith("$") && (
+                          <span className="block mt-0.5" style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px" }}>
+                            ~{s.tvlUSDDisplay}
+                          </span>
+                        )}
+                      </td>
                       <td>{s.agentCount}</td>
                       <td>
                         <span
