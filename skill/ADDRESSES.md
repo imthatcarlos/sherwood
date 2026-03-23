@@ -65,6 +65,21 @@ ERC-1167 clonable singletons. Use `sherwood strategy list` to see current addres
 | VeniceInferenceStrategy | `0xd882056ba6b0aEd8908c541884B327121E2f2C9C` |
 | WstETHMoonwellStrategy | `0x6d026e2f5Ff0C34A01690EC46Cb601B8fF391985` |
 
+## Uniswap Trading API
+
+The `sherwood trade` commands use the hosted Uniswap Trading API (not direct contract calls):
+
+| Resource | Value |
+|----------|-------|
+| API Base URL | `https://trade-api.gateway.uniswap.org/v1` |
+| Developer Portal | https://developers.uniswap.org/ |
+| Auth Header | `x-api-key: <your-key>` |
+| Router Version Header | `x-universal-router-version: 2.0` |
+
+Configure via: `sherwood config set --uniswap-api-key <key>` or `UNISWAP_API_KEY` env var.
+
+The API routes through Uniswap V2/V3/V4 pools and UniswapX (PRIORITY on Base for MEV protection). No manual pool/fee selection needed.
+
 ## Allowlist Targets by Strategy
 
 ### Levered Swap (Moonwell + Uniswap)
