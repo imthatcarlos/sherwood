@@ -232,7 +232,7 @@ async function fetchViaSubgraph(
           agentId
           active
         }
-        proposals(where: { state: "Settled" }) {
+        proposals {
           proposer
           finalPnl
           state
@@ -341,14 +341,14 @@ async function fetchViaSubgraph(
         undefined,
       );
 
-      // Aggregate P&L per agent from settled proposals
+      // Aggregate proposals per agent: count all, sum P&L only for settled
       const isUSD = info.symbol === "USDC" || info.symbol === "USDT";
       const agentPnl: Record<string, { count: number; pnl: bigint }> = {};
       for (const p of s.proposals || []) {
         const key = p.proposer.toLowerCase();
         if (!agentPnl[key]) agentPnl[key] = { count: 0, pnl: 0n };
         agentPnl[key].count++;
-        if (p.finalPnl != null) {
+        if (p.state === "Settled" && p.finalPnl != null) {
           agentPnl[key].pnl += BigInt(p.finalPnl);
         }
       }
