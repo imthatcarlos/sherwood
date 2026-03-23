@@ -10,7 +10,10 @@ export const metadata = {
 };
 
 export default async function LeaderboardPage() {
-  const syndicates = await getActiveSyndicates();
+  const [syndicates, tokenPrices] = await Promise.all([
+    getActiveSyndicates(),
+    fetchTokenPrices(),
+  ]);
 
   // Sort by TVL descending (parse currency string to number)
   const ranked = [...syndicates]
@@ -20,8 +23,8 @@ export default async function LeaderboardPage() {
     }))
     .sort((a, b) => b.tvlNum - a.tvlNum);
 
-  // Aggregate stats — group TVL by asset to avoid mixing currencies
-  const totalTVLDisplay = formatTotalTVL(ranked.map((s) => s.tvl));
+  // Aggregate stats — convert all TVL to USD
+  const totalTVLDisplay = formatTotalTVL(ranked.map((s) => s.tvl), tokenPrices);
   const totalAgents = ranked.reduce((sum, s) => sum + s.agentCount, 0);
   const activeSyndicates = ranked.length;
 
@@ -85,12 +88,49 @@ export default async function LeaderboardPage() {
 
 const USD_STABLES = new Set(["USDC", "USDT", "DAI", "USDbC"]);
 
+const SYMBOL_TO_COINGECKO: Record<string, string> = {
+  WETH: "ethereum",
+  ETH: "ethereum",
+  wstETH: "wrapped-steth",
+  cbETH: "coinbase-wrapped-staked-eth",
+  WBTC: "wrapped-bitcoin",
+  rETH: "rocket-pool-eth",
+};
+
+type TokenPrices = Record<string, number>;
+
+async function fetchTokenPrices(): Promise<TokenPrices> {
+  const ids = [...new Set(Object.values(SYMBOL_TO_COINGECKO))].join(",");
+  try {
+    const res = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
+      { next: { revalidate: 300 } },
+    );
+    if (!res.ok) return {};
+    const data = await res.json();
+    // Flatten to { "ethereum": 3500.12, ... }
+    const prices: TokenPrices = {};
+    for (const [id, val] of Object.entries(data)) {
+      prices[id] = (val as { usd: number }).usd;
+    }
+    return prices;
+  } catch {
+    return {};
+  }
+}
+
+function getUSDPrice(symbol: string, tokenPrices: TokenPrices): number {
+  if (USD_STABLES.has(symbol)) return 1;
+  const geckoId = SYMBOL_TO_COINGECKO[symbol];
+  if (geckoId && tokenPrices[geckoId]) return tokenPrices[geckoId];
+  return 0;
+}
+
 function parseTVL(tvl: string): number {
   const cleaned = tvl.replace(/[^0-9.]/g, "");
   return parseFloat(cleaned) || 0;
 }
 
-/** Parse the asset symbol from a tvl string like "0.0191 WETH" or "$20.02 USDC" */
 function parseAssetSymbol(tvl: string): string {
   const parts = tvl.trim().split(/\s+/);
   return parts.length >= 2 ? parts[parts.length - 1] : "USD";
@@ -102,30 +142,12 @@ function formatUSD(num: number): string {
   return `$${num.toFixed(2)}`;
 }
 
-function formatTotalTVL(tvlStrings: string[]): string {
-  // Group amounts by asset symbol
-  const groups = new Map<string, number>();
+function formatTotalTVL(tvlStrings: string[], tokenPrices: TokenPrices): string {
+  let totalUSD = 0;
   for (const tvl of tvlStrings) {
     const symbol = parseAssetSymbol(tvl);
     const amount = parseTVL(tvl);
-    groups.set(symbol, (groups.get(symbol) || 0) + amount);
+    totalUSD += amount * getUSDPrice(symbol, tokenPrices);
   }
-
-  // If all assets are USD stablecoins, show single dollar amount
-  const symbols = [...groups.keys()];
-  if (symbols.every((s) => USD_STABLES.has(s))) {
-    const total = [...groups.values()].reduce((a, b) => a + b, 0);
-    return formatUSD(total);
-  }
-
-  // Mixed assets — show each separately
-  const parts: string[] = [];
-  for (const [symbol, amount] of groups) {
-    if (USD_STABLES.has(symbol)) {
-      parts.push(formatUSD(amount));
-    } else {
-      parts.push(`${amount.toFixed(4)} ${symbol}`);
-    }
-  }
-  return parts.join(" + ");
+  return formatUSD(totalUSD);
 }
