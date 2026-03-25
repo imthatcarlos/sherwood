@@ -11,16 +11,14 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
  * @title MamoYieldStrategy
  * @notice Deposit vault funds into Mamo for optimized yield across Moonwell core + Morpho vaults.
  *
- *   Execute: pull underlying from vault → create Mamo strategy → approve + deposit
+ *   Execute: pull entire vault underlying balance → create Mamo strategy → approve + deposit
  *   Settle:  withdrawAll from Mamo strategy → validate minRedeemAmount → push back to vault
  *
  *   Batch calls from governor:
- *     Execute: [underlying.approve(strategy, supplyAmount), strategy.execute()]
+ *     Execute: [underlying.approve(strategy, vaultBalance), strategy.execute()]
  *     Settle:  [strategy.settle()]
  *
- *   Tunable params (updatable by proposer between execution and settlement):
- *     - supplyAmount: how much underlying to supply (used on execute)
- *     - minRedeemAmount: minimum underlying to accept on redeem (slippage)
+ *   No tunable params — minRedeemAmount is set at initialization and immutable.
  */
 contract MamoYieldStrategy is BaseStrategy {
     using SafeERC20 for IERC20;
@@ -35,7 +33,7 @@ contract MamoYieldStrategy is BaseStrategy {
     address public mamoFactory; // Mamo StrategyFactory
     address public mamoStrategy; // Created Mamo strategy instance (set on execute)
 
-    uint256 public supplyAmount; // underlying tokens to supply
+    uint256 public supplyAmount; // actual amount supplied (set on execute from vault balance)
     uint256 public minRedeemAmount; // minimum underlying to accept on redeem
 
     /// @inheritdoc IStrategy
@@ -43,23 +41,24 @@ contract MamoYieldStrategy is BaseStrategy {
         return "Mamo Yield";
     }
 
-    /// @notice Decode: (address underlying, address mamoFactory, uint256 supplyAmount, uint256 minRedeemAmount)
+    /// @notice Decode: (address underlying, address mamoFactory, uint256 minRedeemAmount)
     function _initialize(bytes calldata data) internal override {
-        (address underlying_, address mamoFactory_, uint256 supplyAmount_, uint256 minRedeemAmount_) =
-            abi.decode(data, (address, address, uint256, uint256));
+        (address underlying_, address mamoFactory_, uint256 minRedeemAmount_) =
+            abi.decode(data, (address, address, uint256));
         if (underlying_ == address(0) || mamoFactory_ == address(0)) revert ZeroAddress();
-        if (supplyAmount_ == 0) revert InvalidAmount();
 
         underlying = underlying_;
         mamoFactory = mamoFactory_;
-        supplyAmount = supplyAmount_;
         minRedeemAmount = minRedeemAmount_;
     }
 
-    /// @notice Pull underlying from vault, create Mamo strategy, deposit
+    /// @notice Pull entire vault underlying balance, create Mamo strategy, deposit
     function _execute() internal override {
-        // Pull tokens from vault (vault must have approved us first via batch call)
-        _pullFromVault(underlying, supplyAmount);
+        // Get the vault's full underlying balance and pull it all
+        uint256 amount = IERC20(underlying).balanceOf(vault());
+        if (amount == 0) revert InvalidAmount();
+        _pullFromVault(underlying, amount);
+        supplyAmount = amount; // record for reference
 
         // Create a Mamo strategy owned by this contract
         address mamoStrategy_ = IMamoStrategyFactory(mamoFactory).createStrategyForUser(address(this));
@@ -67,10 +66,10 @@ contract MamoYieldStrategy is BaseStrategy {
         mamoStrategy = mamoStrategy_;
 
         // Approve the Mamo strategy to pull our underlying (deposit does safeTransferFrom)
-        IERC20(underlying).forceApprove(mamoStrategy_, supplyAmount);
+        IERC20(underlying).forceApprove(mamoStrategy_, amount);
 
         // Deposit into Mamo strategy
-        IMamoERC20Strategy(mamoStrategy_).deposit(supplyAmount);
+        IMamoERC20Strategy(mamoStrategy_).deposit(amount);
     }
 
     /// @notice Withdraw all from Mamo strategy, push underlying back to vault
@@ -86,11 +85,8 @@ contract MamoYieldStrategy is BaseStrategy {
         _pushAllToVault(underlying);
     }
 
-    /// @notice Update params: (uint256 newSupplyAmount, uint256 newMinRedeemAmount)
-    /// @dev Pass 0 to keep current value. Only proposer, only while Executed.
-    function _updateParams(bytes calldata data) internal override {
-        (uint256 newSupplyAmount, uint256 newMinRedeemAmount) = abi.decode(data, (uint256, uint256));
-        if (newSupplyAmount > 0) supplyAmount = newSupplyAmount;
-        if (newMinRedeemAmount > 0) minRedeemAmount = newMinRedeemAmount;
+    /// @notice No param updates for this strategy.
+    function _updateParams(bytes calldata) internal pure override {
+        revert InvalidAmount(); // no tunable params
     }
 }
