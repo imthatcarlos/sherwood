@@ -267,27 +267,8 @@ export class UniswapProvider implements TradingProvider {
     const data = (await res.json()) as ApprovalResponse;
 
     if (data.approval) {
-<<<<<<< HEAD
-      // The Trading API returns a ready-to-send approval transaction
-      const { getWalletClient } = await import("../lib/client.js");
-      const wallet = getWalletClient();
-      const approvalHash = await wallet.sendTransaction({
-=======
-      // Submit the approval transaction
-      const hash = await writeContractWithRetry({
-        address: data.approval.to,
-        abi: ERC20_ABI,
-        functionName: "approve",
-        // Decode the approval data — the API returns the full calldata
-        // but we need to send the raw transaction
-        args: [], // unused — we send raw data
-        account,
-        chain: getChain(),
-      });
-
       // API returns a ready-to-send transaction — use sendTxWithRetry for nonce safety
       const approvalHash = await sendTxWithRetry({
->>>>>>> 856c631 (fix: address PR #140 review — multi-nonce loop, full migration, backoff, false-positive guard)
         to: data.approval.to,
         data: data.approval.data,
         value: BigInt(data.approval.value || "0"),
