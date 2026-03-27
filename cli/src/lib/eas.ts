@@ -7,7 +7,7 @@
 
 import type { Address, Hex } from "viem";
 import { encodeAbiParameters, parseAbiParameters, decodeAbiParameters } from "viem";
-import { getPublicClient, getWalletClient, getAccount } from "./client.js";
+import { getPublicClient, getAccount, writeContractWithRetry, waitForReceipt } from "./client.js";
 import { getChain, getNetwork, getChainConfig } from "./network.js";
 import { EAS_CONTRACTS, EAS_SCHEMAS } from "./addresses.js";
 import { EAS_ABI } from "./abis.js";
@@ -86,14 +86,13 @@ export async function createJoinRequest(
   message: string,
 ): Promise<{ uid: Hex; hash: Hex }> {
   assertSchemasRegistered();
-  const wallet = getWalletClient();
   const client = getPublicClient();
 
   const data = encodeAbiParameters(JOIN_REQUEST_PARAMS, [
     syndicateId, agentId, vault, message,
   ]);
 
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: EAS_CONTRACTS().EAS,
@@ -113,7 +112,7 @@ export async function createJoinRequest(
     value: 0n,
   });
 
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   const uid = extractAttestationUid(receipt);
 
   return { uid, hash };
@@ -130,14 +129,13 @@ export async function createApproval(
   agentAddress: Address,
 ): Promise<{ uid: Hex; hash: Hex }> {
   assertSchemasRegistered();
-  const wallet = getWalletClient();
   const client = getPublicClient();
 
   const data = encodeAbiParameters(AGENT_APPROVED_PARAMS, [
     syndicateId, agentId, vault,
   ]);
 
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: EAS_CONTRACTS().EAS,
@@ -157,7 +155,7 @@ export async function createApproval(
     value: 0n,
   });
 
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   const uid = extractAttestationUid(receipt);
 
   return { uid, hash };
@@ -170,9 +168,7 @@ export async function revokeAttestation(
   schemaUid: Hex,
   attestationUid: Hex,
 ): Promise<Hex> {
-  const wallet = getWalletClient();
-
-  return wallet.writeContract({
+  return writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: EAS_CONTRACTS().EAS,
@@ -209,7 +205,6 @@ export async function createResearchAttestation(
     );
   }
 
-  const wallet = getWalletClient();
   const client = getPublicClient();
   const account = getAccount();
 
@@ -217,7 +212,7 @@ export async function createResearchAttestation(
     provider, queryType, prompt, costUsdc, resultUri,
   ]);
 
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account,
     chain: getChain(),
     address: EAS_CONTRACTS().EAS,
@@ -237,7 +232,7 @@ export async function createResearchAttestation(
     value: 0n,
   });
 
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   const uid = extractAttestationUid(receipt);
 
   return { uid, hash };
@@ -253,13 +248,12 @@ export async function createVeniceProvisionAttestation(
   const schemas = EAS_SCHEMAS();
   if (schemas.VENICE_PROVISION === ZERO_BYTES32) return skipAttestation("VENICE_PROVISION");
 
-  const wallet = getWalletClient();
   const client = getPublicClient();
   const account = getAccount();
 
   const data = encodeAbiParameters(VENICE_PROVISION_PARAMS, [agent, "provisioned"]);
 
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account,
     chain: getChain(),
     address: EAS_CONTRACTS().EAS,
@@ -279,7 +273,7 @@ export async function createVeniceProvisionAttestation(
     value: 0n,
   });
 
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   const uid = extractAttestationUid(receipt);
   return { uid, hash };
 }
@@ -299,7 +293,6 @@ export async function createVeniceInferenceAttestation(
   const schemas = EAS_SCHEMAS();
   if (schemas.VENICE_INFERENCE === ZERO_BYTES32) return skipAttestation("VENICE_INFERENCE");
 
-  const wallet = getWalletClient();
   const client = getPublicClient();
   const account = getAccount();
 
@@ -310,7 +303,7 @@ export async function createVeniceInferenceAttestation(
     promptHash,
   ]);
 
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account,
     chain: getChain(),
     address: EAS_CONTRACTS().EAS,
@@ -330,7 +323,7 @@ export async function createVeniceInferenceAttestation(
     value: 0n,
   });
 
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   const uid = extractAttestationUid(receipt);
   return { uid, hash };
 }
@@ -352,7 +345,6 @@ export async function createTradeAttestation(
   const schemas = EAS_SCHEMAS();
   if (schemas.TRADE_EXECUTED === ZERO_BYTES32) return skipAttestation("TRADE_EXECUTED");
 
-  const wallet = getWalletClient();
   const client = getPublicClient();
   const account = getAccount();
 
@@ -360,7 +352,7 @@ export async function createTradeAttestation(
     tokenIn, tokenOut, amountIn, amountOut, txHash, routing,
   ]);
 
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account,
     chain: getChain(),
     address: EAS_CONTRACTS().EAS,
@@ -380,7 +372,7 @@ export async function createTradeAttestation(
     value: 0n,
   });
 
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   const uid = extractAttestationUid(receipt);
   return { uid, hash };
 }

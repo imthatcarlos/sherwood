@@ -7,7 +7,7 @@
 
 import type { Address, Hex, Log } from "viem";
 import { parseEventLogs } from "viem";
-import { getPublicClient, getWalletClient, getAccount } from "./client.js";
+import { getPublicClient, getAccount, writeContractWithRetry, waitForReceipt } from "./client.js";
 import { getChain } from "./network.js";
 import { SHERWOOD } from "./addresses.js";
 import { SYNDICATE_GOVERNOR_ABI } from "./abis.js";
@@ -306,10 +306,9 @@ export async function propose(
   settlementCalls: BatchCall[],
   coProposers: CoProposer[] = [],
 ): Promise<{ hash: Hex; proposalId: bigint }> {
-  const wallet = getWalletClient();
   const client = getPublicClient();
 
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -318,7 +317,7 @@ export async function propose(
     args: [vault, metadataURI, performanceFeeBps, strategyDuration, executeCalls, settlementCalls, coProposers],
   });
 
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
 
   // Parse proposalId from the ProposalCreated event in the receipt logs.
   // Falls back to proposalCount() if event parsing fails.
@@ -335,10 +334,7 @@ export async function propose(
 }
 
 export async function vote(proposalId: bigint, support: number): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -346,16 +342,12 @@ export async function vote(proposalId: bigint, support: number): Promise<Hex> {
     functionName: "vote",
     args: [proposalId, support],
   });
-
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function executeProposal(proposalId: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -363,16 +355,12 @@ export async function executeProposal(proposalId: bigint): Promise<Hex> {
     functionName: "executeProposal",
     args: [proposalId],
   });
-
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function settleProposal(proposalId: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -380,16 +368,12 @@ export async function settleProposal(proposalId: bigint): Promise<Hex> {
     functionName: "settleProposal",
     args: [proposalId],
   });
-
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function emergencySettle(proposalId: bigint, calls: BatchCall[]): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -397,16 +381,12 @@ export async function emergencySettle(proposalId: bigint, calls: BatchCall[]): P
     functionName: "emergencySettle",
     args: [proposalId, calls],
   });
-
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function cancelProposal(proposalId: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -414,16 +394,12 @@ export async function cancelProposal(proposalId: bigint): Promise<Hex> {
     functionName: "cancelProposal",
     args: [proposalId],
   });
-
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function emergencyCancel(proposalId: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -431,17 +407,14 @@ export async function emergencyCancel(proposalId: bigint): Promise<Hex> {
     functionName: "emergencyCancel",
     args: [proposalId],
   });
-
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 // ── Parameter setters (owner-only) ──
 
 export async function setVotingPeriod(seconds: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -449,14 +422,12 @@ export async function setVotingPeriod(seconds: bigint): Promise<Hex> {
     functionName: "setVotingPeriod",
     args: [seconds],
   });
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function setExecutionWindow(seconds: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -464,14 +435,12 @@ export async function setExecutionWindow(seconds: bigint): Promise<Hex> {
     functionName: "setExecutionWindow",
     args: [seconds],
   });
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function setVetoThresholdBps(bps: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -479,14 +448,12 @@ export async function setVetoThresholdBps(bps: bigint): Promise<Hex> {
     functionName: "setVetoThresholdBps",
     args: [bps],
   });
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function setMaxPerformanceFeeBps(bps: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -494,14 +461,12 @@ export async function setMaxPerformanceFeeBps(bps: bigint): Promise<Hex> {
     functionName: "setMaxPerformanceFeeBps",
     args: [bps],
   });
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function setMaxStrategyDuration(seconds: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -509,14 +474,12 @@ export async function setMaxStrategyDuration(seconds: bigint): Promise<Hex> {
     functionName: "setMaxStrategyDuration",
     args: [seconds],
   });
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function setCooldownPeriod(seconds: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -524,14 +487,12 @@ export async function setCooldownPeriod(seconds: bigint): Promise<Hex> {
     functionName: "setCooldownPeriod",
     args: [seconds],
   });
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function vetoProposal(proposalId: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -539,14 +500,12 @@ export async function vetoProposal(proposalId: bigint): Promise<Hex> {
     functionName: "vetoProposal",
     args: [proposalId],
   });
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }
 
 export async function setProtocolFeeBps(bps: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getGovernorAddress(),
@@ -554,6 +513,6 @@ export async function setProtocolFeeBps(bps: bigint): Promise<Hex> {
     functionName: "setProtocolFeeBps",
     args: [bps],
   });
-  const receipt = await client.waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
   return receipt.transactionHash;
 }

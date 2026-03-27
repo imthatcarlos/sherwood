@@ -7,7 +7,7 @@
 
 import type { Address, Hex } from "viem";
 import { concat } from "viem";
-import { getPublicClient, getAccount, sendTxWithRetry } from "./client.js";
+import { getPublicClient, getAccount, sendTxWithRetry, waitForReceipt } from "./client.js";
 import { getChain } from "./network.js";
 
 /**
@@ -38,7 +38,7 @@ export async function cloneTemplate(
     value: 0n,
   });
 
-  const receipt = await getPublicClient().waitForTransactionReceipt({ hash });
+  const receipt = await waitForReceipt(hash);
 
   if (!receipt.contractAddress) {
     throw new Error(`Clone deployment failed — no contract address in receipt (tx: ${hash})`);

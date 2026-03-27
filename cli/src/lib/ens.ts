@@ -14,7 +14,7 @@
 import { encodeFunctionData } from "viem";
 import type { Address, Hex } from "viem";
 import { namehash } from "viem/ens";
-import { getPublicClient, getWalletClient, getAccount } from "./client.js";
+import { getPublicClient, getWalletClient, getAccount, waitForReceipt } from "./client.js";
 import { getChain, getNetwork } from "./network.js";
 import { SYNDICATE_FACTORY_ABI, L2_REGISTRY_ABI } from "./abis.js";
 import { ENS, SHERWOOD } from "./addresses.js";
@@ -24,8 +24,7 @@ import * as vaultLib from "./vault.js";
  * Wait for a transaction to be mined before proceeding.
  */
 async function waitForTx(hash: Hex): Promise<void> {
-  const client = getPublicClient();
-  await client.waitForTransactionReceipt({ hash });
+  await waitForReceipt(hash);
 }
 
 const ENS_DOMAIN = "sherwoodagent.eth";

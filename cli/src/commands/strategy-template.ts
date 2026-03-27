@@ -15,7 +15,7 @@ import ora from "ora";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { getPublicClient, getAccount, writeContractWithRetry } from "../lib/client.js";
+import { getPublicClient, getAccount, writeContractWithRetry, waitForReceipt } from "../lib/client.js";
 import { getChain, getExplorerUrl } from "../lib/network.js";
 import { TOKENS, MOONWELL, VENICE, AERODROME, STRATEGY_TEMPLATES } from "../lib/addresses.js";
 import { BASE_STRATEGY_ABI } from "../lib/abis.js";
@@ -402,7 +402,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
           args: [vault, account.address, initData],
         });
 
-        const receipt = await getPublicClient().waitForTransactionReceipt({ hash: initHash });
+        const receipt = await waitForReceipt(initHash);
         if (receipt.status === "reverted") {
           throw new Error("Initialize transaction reverted on-chain");
         }
@@ -489,7 +489,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
           args: [vault, account.address, initData],
         });
 
-        const receipt = await publicClient.waitForTransactionReceipt({ hash: initHash });
+        const receipt = await waitForReceipt(initHash);
         if (receipt.status === "reverted") {
           throw new Error("Initialize transaction reverted on-chain");
         }
@@ -592,7 +592,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
           args: [vault, account.address, built.initData],
         });
 
-        const initReceipt = await getPublicClient().waitForTransactionReceipt({ hash: initHash });
+        const initReceipt = await waitForReceipt(initHash);
         if (initReceipt.status === "reverted") {
           throw new Error("Initialize transaction reverted on-chain");
         }

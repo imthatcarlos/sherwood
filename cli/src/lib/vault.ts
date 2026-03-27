@@ -10,9 +10,9 @@ import { formatUnits } from "viem";
 import { getChain } from "./network.js";
 import {
   getPublicClient,
-  getWalletClient,
   getAccount,
-  estimateFeesWithBuffer,
+  writeContractWithRetry,
+  waitForReceipt,
 } from "./client.js";
 import { SYNDICATE_VAULT_ABI, ERC20_ABI } from "./abis.js";
 import type { BatchCall } from "./batch.js";
@@ -73,12 +73,10 @@ export async function getAssetDecimals(): Promise<number> {
  * Deposit into the vault. Handles approval + deposit for the vault's asset.
  */
 export async function deposit(amount: bigint): Promise<Hex> {
-  const wallet = getWalletClient();
   const client = getPublicClient();
   const vaultAddress = getVaultAddress();
   const account = getAccount();
   const asset = await getAssetAddress();
-  const fees = await estimateFeesWithBuffer();
 
   // Check existing allowance — skip approve if sufficient
   const currentAllowance = (await client.readContract({
@@ -89,29 +87,28 @@ export async function deposit(amount: bigint): Promise<Hex> {
   })) as bigint;
 
   if (currentAllowance < amount) {
-    const approveHash = await wallet.writeContract({
-      account: getAccount(),
+    const approveHash = await writeContractWithRetry({
+      account,
       chain: getChain(),
       address: asset,
       abi: ERC20_ABI,
       functionName: "approve",
       args: [vaultAddress, amount],
-      ...fees,
     });
-    await client.waitForTransactionReceipt({ hash: approveHash });
+    // Wait for approve to confirm before deposit — prevents nonce collision
+    await waitForReceipt(approveHash);
   }
 
-  // Deposit
-  const depositHash = await wallet.writeContract({
-    account: getAccount(),
+  // Deposit — retry wrapper handles nonce/gas automatically
+  const depositHash = await writeContractWithRetry({
+    account,
     chain: getChain(),
     address: vaultAddress,
     abi: SYNDICATE_VAULT_ABI,
     functionName: "deposit",
     args: [amount, account.address],
-    ...fees,
   });
-  await client.waitForTransactionReceipt({ hash: depositHash });
+  await waitForReceipt(depositHash);
   return depositHash;
 }
 
@@ -123,10 +120,7 @@ export async function deposit(amount: bigint): Promise<Hex> {
  * All calls execute as the vault — positions live on the vault.
  */
 export async function executeBatch(calls: BatchCall[]): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getVaultAddress(),
@@ -140,7 +134,7 @@ export async function executeBatch(calls: BatchCall[]): Promise<Hex> {
       })),
     ],
   });
-  await client.waitForTransactionReceipt({ hash });
+  await waitForReceipt(hash);
   return hash;
 }
 
@@ -150,9 +144,7 @@ export async function executeBatch(calls: BatchCall[]): Promise<Hex> {
  * Approve a depositor address (owner only).
  */
 export async function approveDepositor(depositor: Address): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getVaultAddress(),
@@ -160,7 +152,7 @@ export async function approveDepositor(depositor: Address): Promise<Hex> {
     functionName: "approveDepositor",
     args: [depositor],
   });
-  await client.waitForTransactionReceipt({ hash });
+  await waitForReceipt(hash);
   return hash;
 }
 
@@ -168,9 +160,7 @@ export async function approveDepositor(depositor: Address): Promise<Hex> {
  * Remove a depositor from the whitelist (owner only).
  */
 export async function removeDepositor(depositor: Address): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getVaultAddress(),
@@ -178,7 +168,7 @@ export async function removeDepositor(depositor: Address): Promise<Hex> {
     functionName: "removeDepositor",
     args: [depositor],
   });
-  await client.waitForTransactionReceipt({ hash });
+  await waitForReceipt(hash);
   return hash;
 }
 
@@ -186,9 +176,7 @@ export async function removeDepositor(depositor: Address): Promise<Hex> {
  * Approve multiple depositors in a batch (owner only).
  */
 export async function approveDepositors(depositors: Address[]): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getVaultAddress(),
@@ -196,7 +184,7 @@ export async function approveDepositors(depositors: Address[]): Promise<Hex> {
     functionName: "approveDepositors",
     args: [depositors],
   });
-  await client.waitForTransactionReceipt({ hash });
+  await waitForReceipt(hash);
   return hash;
 }
 
@@ -283,10 +271,7 @@ export async function registerAgent(
   agentId: bigint,
   agentAddress: Address,
 ): Promise<Hex> {
-  const wallet = getWalletClient();
-  const client = getPublicClient();
-
-  const hash = await wallet.writeContract({
+  const hash = await writeContractWithRetry({
     account: getAccount(),
     chain: getChain(),
     address: getVaultAddress(),
@@ -294,8 +279,7 @@ export async function registerAgent(
     functionName: "registerAgent",
     args: [agentId, agentAddress],
   });
-
-  await client.waitForTransactionReceipt({ hash });
+  await waitForReceipt(hash);
   return hash;
 }
 

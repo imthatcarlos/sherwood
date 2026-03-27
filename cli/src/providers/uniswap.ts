@@ -17,7 +17,7 @@ import type { Address, Hex } from "viem";
 import { isAddress, isHex, formatUnits } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import type { TradingProvider, ProviderInfo, SwapParams, SwapQuoteParams, TxResult, SwapQuote } from "../types.js";
-import { getPublicClient, getAccount } from "../lib/client.js";
+import { getPublicClient, getAccount, writeContractWithRetry, sendTxWithRetry, waitForReceipt } from "../lib/client.js";
 import { getChain } from "../lib/network.js";
 import { getUniswapApiKey } from "../lib/config.js";
 
@@ -267,17 +267,34 @@ export class UniswapProvider implements TradingProvider {
     const data = (await res.json()) as ApprovalResponse;
 
     if (data.approval) {
+<<<<<<< HEAD
       // The Trading API returns a ready-to-send approval transaction
       const { getWalletClient } = await import("../lib/client.js");
       const wallet = getWalletClient();
       const approvalHash = await wallet.sendTransaction({
+=======
+      // Submit the approval transaction
+      const hash = await writeContractWithRetry({
+        address: data.approval.to,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        // Decode the approval data — the API returns the full calldata
+        // but we need to send the raw transaction
+        args: [], // unused — we send raw data
+        account,
+        chain: getChain(),
+      });
+
+      // API returns a ready-to-send transaction — use sendTxWithRetry for nonce safety
+      const approvalHash = await sendTxWithRetry({
+>>>>>>> 856c631 (fix: address PR #140 review — multi-nonce loop, full migration, backoff, false-positive guard)
         to: data.approval.to,
         data: data.approval.data,
         value: BigInt(data.approval.value || "0"),
         account,
         chain: getChain(),
       });
-      await client.waitForTransactionReceipt({ hash: approvalHash });
+      await waitForReceipt(approvalHash);
     }
   }
 
@@ -357,10 +374,8 @@ export class UniswapProvider implements TradingProvider {
       throw new Error("Invalid address in swap response");
     }
 
-    // 6. Sign and broadcast
-    const { getWalletClient } = await import("../lib/client.js");
-    const wallet = getWalletClient();
-    const hash = await wallet.sendTransaction({
+    // 6. Sign and broadcast with retry-aware sender
+    const hash = await sendTxWithRetry({
       to: swapData.swap.to,
       data: swapData.swap.data,
       value: BigInt(swapData.swap.value || "0"),
@@ -368,7 +383,7 @@ export class UniswapProvider implements TradingProvider {
       chain: getChain(),
     });
 
-    const receipt = await client.waitForTransactionReceipt({ hash });
+    const receipt = await waitForReceipt(hash);
     return {
       hash,
       success: receipt.status === "success",
