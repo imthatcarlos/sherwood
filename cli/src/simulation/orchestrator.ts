@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// Load .env from cli/ directory (same as main CLI entry point)
+import { config as loadDotenv } from "dotenv";
+try { loadDotenv(); } catch {}
+
 /**
  * Multi-Agent Simulation Orchestrator
  *
