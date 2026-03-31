@@ -2,9 +2,10 @@
  * HTTP + WebSocket server for the spectator sidecar.
  *
  * REST endpoints:
- *   GET /health                     — service health
- *   GET /groups                     — list groups spectator belongs to
- *   GET /messages/:groupId          — fetch recent messages from XMTP DB
+ *   GET  /health                    — service health
+ *   GET  /groups                    — list groups spectator belongs to
+ *   POST /sync                      — force syncAll + re-discover new groups (called by CLI)
+ *   GET  /messages/:groupId         — fetch recent messages from XMTP DB
  *
  * WebSocket:
  *   WS /messages/:groupId/stream    — real-time messages for one group
@@ -29,7 +30,7 @@ function setCorsHeaders(
   if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
@@ -65,6 +66,12 @@ async function getGroups(agent: Agent): Promise<GroupInfo[]> {
 
   await agent.client.conversations.syncAll();
   const conversations = await agent.client.conversations.list();
+
+  // Sync each conversation to ensure group metadata (name/description) is populated.
+  // Newly-joined groups (via Welcome message) may lack metadata until explicitly synced.
+  await Promise.allSettled(
+    conversations.map((c: any) => c.sync?.().catch(() => {})),
+  );
 
   groupsCache = await Promise.all(
     conversations
@@ -130,12 +137,25 @@ export function startServer(
       return;
     }
 
+    const { segments, query } = parsePath(req.url || "/");
+
+    // POST /sync — force syncAll + invalidate groups cache (called by CLI after adding spectator)
+    if (req.method === "POST" && segments[0] === "sync" && segments.length === 1) {
+      setCorsHeaders(req, res);
+      try {
+        groupsCacheTime = 0; // invalidate cache
+        const groups = await getGroups(agent); // triggers syncAll + re-populates
+        json(res, { synced: true, groups: groups.length });
+      } catch (err) {
+        error(res, err instanceof Error ? err.message : "Sync failed", 500);
+      }
+      return;
+    }
+
     if (req.method !== "GET") {
       error(res, "Method not allowed", 405);
       return;
     }
-
-    const { segments, query } = parsePath(req.url || "/");
 
     try {
       // GET /health

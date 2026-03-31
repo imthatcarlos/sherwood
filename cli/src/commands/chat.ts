@@ -274,6 +274,35 @@ async function handleRemove(name: string, address: string): Promise<void> {
   }
 }
 
+/**
+ * Notify the spectator service to sync new groups.
+ * Called after adding the spectator wallet to an XMTP group so the service
+ * invalidates its cache, calls syncAll(), and discovers the new group.
+ */
+async function notifySpectatorSync(): Promise<void> {
+  const spectatorUrl =
+    process.env.SPECTATOR_URL || "https://spectator.sherwood.sh";
+  try {
+    const res = await fetch(`${spectatorUrl}/sync`, {
+      method: "POST",
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { groups?: number };
+      console.log(
+        chalk.dim(
+          `  Spectator synced — ${data.groups ?? "?"} groups discovered`,
+        ),
+      );
+    }
+  } catch {
+    // Non-fatal — spectator will self-sync within 60 s via cache TTL
+    console.log(
+      chalk.dim("  (Spectator sync skipped — will auto-discover within 60 s)"),
+    );
+  }
+}
+
 async function handlePublic(name: string, on: boolean): Promise<void> {
   const spectatorAddress = process.env.DASHBOARD_SPECTATOR_ADDRESS;
   if (!spectatorAddress) {
@@ -289,6 +318,7 @@ async function handlePublic(name: string, on: boolean): Promise<void> {
     if (on) {
       await xmtp.addMember(group, spectatorAddress);
       spinner.succeed("Public chat enabled — dashboard spectator added");
+      await notifySpectatorSync();
     } else {
       await xmtp.removeMember(group, spectatorAddress);
       spinner.succeed("Public chat disabled — dashboard spectator removed");
@@ -339,6 +369,11 @@ async function handleInit(name: string, force: boolean, isPublic: boolean): Prom
     spinner.succeed(`Chat group created for ${name}.sherwoodagent.eth`);
     console.log(chalk.dim(`  Group ID: ${groupId}`));
     console.log(chalk.dim(`  Stream:   sherwood chat ${name}`));
+
+    // Notify spectator to sync and discover the new public group
+    if (isPublic) {
+      await notifySpectatorSync();
+    }
   } catch (err) {
     spinner.fail("Failed to initialize chat group");
     console.error(chalk.red(formatContractError(err)));

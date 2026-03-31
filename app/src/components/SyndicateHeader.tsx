@@ -87,7 +87,7 @@ export default function SyndicateHeader({
       <div className="flex justify-between items-end">
         <div>
           <span className="section-num">
-            {"// "}SYNDICATE_{subdomain.toUpperCase().replace(/[^A-Z0-9]/g, "_")}
+            {"//"} {subdomain.toUpperCase().replace(/[^A-Z0-9]/g, "_")}
           </span>
           <h1 className="text-5xl font-medium tracking-tight text-white font-[family-name:var(--font-inter)]">
             {name}{" "}
