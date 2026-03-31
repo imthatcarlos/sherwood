@@ -8,7 +8,29 @@
 
 import { execSherwood } from "../../src/simulation/exec.js";
 import { agentHomeDir } from "../../src/simulation/agent-home.js";
-import type { SimConfig, SimState, SimLogger } from "./types.js";
+import type { SimConfig, SimState, SimLogger, AgentState } from "./types.js";
+import { createPublicClient, http, parseUnits } from "viem";
+import { base } from "viem/chains";
+import { TOKENS } from "../../src/lib/addresses.js";
+
+const USDC_ADDR = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const MIN_USDC = parseUnits("1.5", 6); // Need ~1.5 USDC for the full test
+
+async function findAgentWithUsdc(
+  agents: AgentState[],
+  client: ReturnType<typeof createPublicClient>,
+): Promise<AgentState | undefined> {
+  for (const agent of agents) {
+    const bal = await client.readContract({
+      address: USDC_ADDR as `0x${string}`,
+      abi: [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "", type: "address" }], outputs: [{ type: "uint256" }] }],
+      functionName: "balanceOf",
+      args: [agent.address as `0x${string}`],
+    }) as bigint;
+    if (bal >= MIN_USDC) return agent;
+  }
+  return undefined;
+}
 
 export async function testTrade(config: SimConfig, state: SimState, logger?: SimLogger): Promise<void> {
   // Check for Uniswap API key — required for all trade commands
@@ -19,8 +41,13 @@ export async function testTrade(config: SimConfig, state: SimState, logger?: Sim
     return;
   }
 
-  // Use the first agent (always a creator with USDC from phase 01 funding)
-  const agent = state.agents[0];
+  // Find an agent with enough USDC to run the full test
+  const client = createPublicClient({ chain: base, transport: http(config.rpcUrl) });
+  const agent = await findAgentWithUsdc(state.agents, client);
+  if (!agent) {
+    console.log("  ⚠  No agent has enough USDC (>=1.5) — skipping trade tests");
+    return;
+  }
   const home = agentHomeDir(config.baseDir, agent.index);
 
   console.log(`  Using agent ${agent.index} (${agent.address}) for trade tests`);
@@ -40,12 +67,24 @@ export async function testTrade(config: SimConfig, state: SimState, logger?: Sim
     config, logger, agent.index,
   );
 
-  // 3. buy DEGEN --with WETH (direct WETH input, no wrap)
-  execSherwood(
-    home,
-    ["trade", "buy", "--token", "DEGEN", "--amount", "0.0001", "--with", "WETH", "--slippage", "10"],
-    config, logger, agent.index,
-  );
+  // 3. buy DEGEN --with WETH (direct WETH input)
+  // Note: agent may have no WETH at this point (wrapped WETH was consumed by step 2 swap).
+  // The --with WETH path is exercised fully in step 5 (after step 4 sells for WETH).
+  // Skip gracefully here if no WETH balance.
+  try {
+    execSherwood(
+      home,
+      ["trade", "buy", "--token", "DEGEN", "--amount", "0.0001", "--with", "WETH", "--slippage", "10"],
+      config, logger, agent.index,
+    );
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.toLowerCase().includes("insufficient weth") || msg.toLowerCase().includes("have 0")) {
+      console.log("  ⚠  No WETH at step 3 — --with WETH path tested in step 5 instead");
+    } else {
+      throw err;
+    }
+  }
 
   // 4. sell DEGEN --for WETH (non-USDC output)
   execSherwood(
@@ -54,14 +93,21 @@ export async function testTrade(config: SimConfig, state: SimState, logger?: Sim
     config, logger, agent.index,
   );
 
-  // 5. sell DEGEN (default USDC output)
+  // 5. Buy more DEGEN with WETH (uses WETH received from step 4) — also tests --with WETH path
+  execSherwood(
+    home,
+    ["trade", "buy", "--token", "DEGEN", "--amount", "0.00005", "--with", "WETH", "--slippage", "10"],
+    config, logger, agent.index,
+  );
+
+  // 6. sell DEGEN (default USDC output) — test the default sell path
   execSherwood(
     home,
     ["trade", "sell", "--token", "DEGEN"],
     config, logger, agent.index,
   );
 
-  // 6. positions — should show at least closed entries from above trades
+  // 7. positions — should show at least closed entries from above trades
   const posOut = execSherwood(
     home,
     ["trade", "positions"],

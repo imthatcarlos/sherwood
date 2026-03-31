@@ -61,6 +61,7 @@ export interface SwapParams {
   amountIn: bigint;
   amountOutMinimum: bigint;
   fee: 500 | 3000 | 10000;
+  slippageTolerance?: number; // percent (e.g. 0.5 = 0.5%, 5 = 5%)
 }
 
 export interface SwapQuoteParams {

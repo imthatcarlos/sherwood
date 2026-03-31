@@ -298,12 +298,11 @@ export class UniswapProvider implements TradingProvider {
     }
 
     // 2. Get quote
-    const slippageBps = params.fee; // repurpose fee field for slippage in API mode
     const { quoteResponse } = await this.fullQuote({
       tokenIn: params.tokenIn,
       tokenOut: params.tokenOut,
       amountIn: params.amountIn,
-      slippageTolerance: 0.5, // 0.5%
+      slippageTolerance: params.slippageTolerance ?? 0.5,
     });
 
     // 3. Prepare swap request — routing-aware permitData handling
@@ -311,27 +310,30 @@ export class UniswapProvider implements TradingProvider {
     const { permitData, ...cleanQuote } = quoteRaw;
     const swapRequest: Record<string, unknown> = { ...cleanQuote };
 
-    // UniswapX routes: permitData is for local signing only, must NOT be sent to /swap
-    // For CLASSIC routes without Permit2: omit both signature and permitData
-    // (We use direct approval via /check_approval, not Permit2)
-    if (isUniswapXRouting(quoteResponse.routing)) {
-      // UniswapX: sign the order with permitData locally
-      if (permitData && typeof permitData === "object") {
-        const typedData = permitData as {
-          domain: Record<string, unknown>;
-          types: Record<string, unknown>;
-          values: Record<string, unknown>;
-        };
-        const signature = await account.signTypedData({
-          domain: typedData.domain as Record<string, unknown>,
-          types: typedData.types as Record<string, Array<{ name: string; type: string }>>,
-          primaryType: Object.keys(typedData.types).find((k) => k !== "EIP712Domain") ?? "PermitWitnessTransferFrom",
-          message: typedData.values,
-        });
-        swapRequest.signature = signature;
+    // Sign permitData if present (required for both CLASSIC and UniswapX).
+    // For CLASSIC routes using Permit2 (PermitSingle): include BOTH permitData + signature.
+    // For UniswapX routes: include signature only (order-level signing, no permitData in body).
+    if (permitData && typeof permitData === "object") {
+      const typedData = permitData as {
+        domain: Record<string, unknown>;
+        types: Record<string, unknown>;
+        values: Record<string, unknown>;
+      };
+      const primaryType =
+        Object.keys(typedData.types).find((k) => k !== "EIP712Domain") ?? "PermitSingle";
+      const signature = await account.signTypedData({
+        domain: typedData.domain as Record<string, unknown>,
+        types: typedData.types as Record<string, Array<{ name: string; type: string }>>,
+        primaryType,
+        message: typedData.values,
+      });
+      swapRequest.signature = signature;
+      // CLASSIC routes: /swap requires both permitData and signature
+      // UniswapX routes: /swap requires signature only (order is in quote body)
+      if (!isUniswapXRouting(quoteResponse.routing)) {
+        swapRequest.permitData = permitData;
       }
     }
-    // For CLASSIC: no signature/permitData needed (we use /check_approval)
 
     // 4. Get swap transaction
     const swapRes = await fetchWithRetry(`${API_BASE}/swap`, {
@@ -356,10 +358,16 @@ export class UniswapProvider implements TradingProvider {
     }
 
     // 6. Sign and broadcast with retry-aware sender
+    // Apply a 1.5x buffer to the API's gasLimit: the Uniswap API under-estimates for WETH
+    // and other non-USDC inputs where PermitSingle+transfer adds overhead.
+    const gasLimit = swapData.swap.gasLimit
+      ? (BigInt(swapData.swap.gasLimit) * 150n) / 100n
+      : undefined;
     const hash = await sendTxWithRetry({
       to: swapData.swap.to,
       data: swapData.swap.data,
       value: BigInt(swapData.swap.value || "0"),
+      gas: gasLimit,
       account,
       chain: getChain(),
     });

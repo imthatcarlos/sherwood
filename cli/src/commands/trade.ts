@@ -305,10 +305,9 @@ export function registerTradeCommands(program: Command): void {
         // Wrap ETH → WETH
         const wrapSpinner = ora("Wrapping ETH → WETH...").start();
         try {
-          const { getWalletClient } = await import("../lib/client.js");
-          const wallet = getWalletClient();
+          const { writeContractWithRetry, waitForReceipt: waitForReceiptFn } = await import("../lib/client.js");
           const wethAddr = TOKENS().WETH;
-          const wrapHash = await wallet.writeContract({
+          const wrapHash = await writeContractWithRetry({
             address: wethAddr,
             abi: WETH_ABI,
             functionName: "deposit",
@@ -317,7 +316,7 @@ export function registerTradeCommands(program: Command): void {
             account,
             chain: (await import("../lib/network.js")).getChain(),
           });
-          await client.waitForTransactionReceipt({ hash: wrapHash });
+          await waitForReceiptFn(wrapHash);
           wrapSpinner.succeed(`Wrapped ${opts.amount} ETH → WETH`);
         } catch (err) {
           wrapSpinner.fail("ETH wrap failed");
@@ -371,12 +370,14 @@ export function registerTradeCommands(program: Command): void {
           tokenOut: tokenAddr,
           amountIn: inputAmount,
           amountOutMinimum: 0n, // slippage handled by API
-          fee: 3000, // unused in API mode
+          fee: 3000,
+          slippageTolerance: slippage,
         });
         txHash = result.hash;
 
         if (!result.success) {
           swapSpinner.fail("Swap reverted");
+          console.error(chalk.dim(`  Tx: ${getExplorerUrl(result.hash)}`));
           process.exit(1);
         }
         swapSpinner.succeed("Swap executed");
@@ -548,6 +549,7 @@ export function registerTradeCommands(program: Command): void {
           amountIn: sellAmount,
           amountOutMinimum: 0n,
           fee: 3000,
+          slippageTolerance: slippage,
         });
         txHash = result.hash;
 
@@ -771,6 +773,7 @@ export function registerTradeCommands(program: Command): void {
                   amountIn: sellAmount,
                   amountOutMinimum: 0n,
                   fee: 3000,
+                  slippageTolerance: 1.0, // 1% for auto-sell
                 });
 
                 const usdcReceived = Number(formatUnits(sellQuote, 6));
