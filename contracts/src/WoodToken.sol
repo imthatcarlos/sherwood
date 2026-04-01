@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {OFT} from "LayerZero-v2/packages/layerzero-v2/evm/oapp/contracts/oft/OFT.sol";
+import {OFT} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFT.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title WoodToken — LayerZero OFT with hard 1B supply cap

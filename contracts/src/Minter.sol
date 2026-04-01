@@ -4,7 +4,11 @@ pragma solidity 0.8.28;
 import {IMinter} from "./interfaces/IMinter.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
+import {ISyndicateGauge} from "./interfaces/ISyndicateGauge.sol";
+import {IRewardsDistributor} from "./interfaces/IRewardsDistributor.sol";
 import {MockWoodToken} from "./MockWoodToken.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -81,6 +85,9 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Team treasury address
     address public immutable teamTreasury;
+
+    /// @notice RewardsDistributor for veWOOD rebase
+    address public rewardsDistributor;
 
     // ==================== STORAGE ====================
 
@@ -197,11 +204,22 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
             processed: true
         });
 
-        // Mint WOOD tokens
+        // Mint and distribute WOOD tokens
         if (totalEmission > 0) {
             wood.mint(teamTreasury, teamAllocation);
-            // TODO: Distribute gaugeAllocation to SyndicateGauges based on vote distribution
-            // TODO: Distribute rebaseAmount via RewardsDistributor
+
+            // Distribute gauge allocation to SyndicateGauges based on vote distribution
+            if (gaugeAllocation > 0) {
+                wood.mint(address(this), gaugeAllocation);
+                _distributeToGauges(currentEpoch, gaugeAllocation);
+            }
+
+            // Distribute rebase via RewardsDistributor
+            if (rebaseAmount > 0 && rewardsDistributor != address(0)) {
+                wood.mint(address(this), rebaseAmount);
+                IERC20(address(wood)).approve(rewardsDistributor, rebaseAmount);
+                IRewardsDistributor(rewardsDistributor).distributeRebase(currentEpoch, rebaseAmount);
+            }
         }
 
         _lastProcessedEpoch = currentEpoch;
@@ -221,7 +239,9 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
         uint256 currentEpoch = voter.currentEpoch();
         if (_hasVotedWoodFed[currentEpoch][tokenId]) revert InvalidVote();
 
-        uint256 votingPower = votingEscrow.balanceOfNFT(tokenId);
+        // Use historical snapshot to prevent retroactive vote manipulation
+        uint256 epochStart = voter.getEpochStart(currentEpoch);
+        uint256 votingPower = votingEscrow.balanceOfNFTAt(tokenId, epochStart);
         if (votingPower == 0) revert NotAuthorized();
 
         _woodFedVotes[currentEpoch][vote] += votingPower;
@@ -439,5 +459,52 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
     /// @notice Get maximum emission rate ceiling
     function getMaxEmissionRate() external view returns (uint256) {
         return _maxEmissionRate;
+    }
+
+    /// @notice Set the RewardsDistributor address (only owner)
+    function setRewardsDistributor(address _rewardsDistributor) external onlyOwner {
+        rewardsDistributor = _rewardsDistributor;
+    }
+
+    // ==================== INTERNAL ====================
+
+    /// @dev Distribute gauge allocation to SyndicateGauges proportional to votes
+    function _distributeToGauges(uint256 epoch, uint256 gaugeAllocation) internal {
+        (uint256[] memory syndicateIds, uint256[] memory allocations) = voter.getVoteDistribution(epoch - 1);
+
+        // Calculate total allocation weight
+        uint256 totalWeight = 0;
+        for (uint256 i = 0; i < allocations.length; i++) {
+            totalWeight += allocations[i];
+        }
+
+        if (totalWeight == 0) {
+            // No votes — send gauge allocation to treasury as fallback
+            IERC20(address(wood)).transfer(teamTreasury, gaugeAllocation);
+            return;
+        }
+
+        // Distribute proportionally to each gauge
+        uint256 distributed = 0;
+        for (uint256 i = 0; i < syndicateIds.length; i++) {
+            if (allocations[i] == 0) continue;
+
+            IVoter.GaugeInfo memory gaugeInfo = voter.getGaugeInfo(syndicateIds[i]);
+            if (gaugeInfo.gauge == address(0) || !gaugeInfo.active) continue;
+
+            uint256 gaugeShare = (gaugeAllocation * allocations[i]) / totalWeight;
+            if (gaugeShare == 0) continue;
+
+            // Approve and send to gauge
+            IERC20(address(wood)).approve(gaugeInfo.gauge, gaugeShare);
+            ISyndicateGauge(gaugeInfo.gauge).receiveEmission(epoch, gaugeShare);
+            distributed += gaugeShare;
+        }
+
+        // Send any dust to treasury
+        uint256 dust = gaugeAllocation - distributed;
+        if (dust > 0) {
+            IERC20(address(wood)).transfer(teamTreasury, dust);
+        }
     }
 }

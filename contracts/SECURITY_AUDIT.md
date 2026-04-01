@@ -40,69 +40,17 @@ This audit reviews Sherwood's ve(3,3) tokenomics system consisting of 8 smart co
 
 ## CRITICAL SEVERITY
 
-### [C-1] Missing Access Control in SyndicateGauge.receiveEmission()
+### [C-1] ~~Missing Access Control in SyndicateGauge.receiveEmission()~~ — RESOLVED
 
-**Contract**: SyndicateGauge.sol
-**Location**: Lines 125-148
+**Status**: Fixed. `onlyMinter` modifier is present on `receiveEmission()`.
 
-**Description**: The `receiveEmission()` function lacks access control, allowing anyone to call it and potentially drain the Minter's WOOD balance.
+### [C-2] ~~Missing Access Control in VaultRewardsDistributor.depositRewards()~~ — RESOLVED
 
-**Impact**: An attacker could call `receiveEmission()` with arbitrary amounts, forcing the Minter to transfer WOOD tokens to the gauge contract, potentially draining Minter's balance.
+**Status**: Fixed. `authorizedDepositor` check is implemented with `setAuthorizedDepositor()` owner function.
 
-**Proof of Concept**:
-```solidity
-// Attacker calls directly
-syndicateGauge.receiveEmission(1, 1000000e18); // Forces Minter to transfer 1M WOOD
-```
+### [C-3] ~~Integer Overflow in Rebase Calculation~~ — RESOLVED
 
-**Recommendation**: Add access control to restrict calls to authorized contracts only:
-```solidity
-address public immutable minter;
-modifier onlyMinter() {
-    if (msg.sender != minter) revert NotAuthorized();
-    _;
-}
-function receiveEmission(uint256 epoch, uint256 amount) external onlyMinter {
-    // existing logic
-}
-```
-
-### [C-2] Missing Access Control in VaultRewardsDistributor.depositRewards()
-
-**Contract**: VaultRewardsDistributor.sol
-**Location**: Lines 116-139
-
-**Description**: The `depositRewards()` function contains a TODO comment indicating missing access control, allowing anyone to deposit rewards and manipulate reward calculations.
-
-**Impact**: Attackers could deposit small amounts to create reward pools for arbitrary epochs, potentially disrupting the reward distribution mechanism or causing accounting issues.
-
-**Proof of Concept**:
-```solidity
-// Attacker deposits minimal rewards for future epochs
-vaultRewardsDistributor.depositRewards(1000, 1); // Epoch 1000, 1 wei
-```
-
-**Recommendation**: Implement proper access control to restrict calls to authorized contracts only.
-
-### [C-3] Integer Overflow in Rebase Calculation
-
-**Contract**: Minter.sol
-**Location**: Lines 276-282
-
-**Description**: The rebase calculation performs multiplication that could overflow before division, especially with large emission amounts.
-
-**Impact**: Integer overflow could result in incorrect rebase calculations, potentially allowing users to claim more WOOD than intended or causing transaction reverts.
-
-**Proof of Concept**:
-```solidity
-// If weeklyEmissions = type(uint256).max / 2 and unlockRatioSquared = BASIS_POINTS
-// weeklyEmissions * unlockRatioSquared overflows before division
-```
-
-**Recommendation**: Use checked arithmetic or restructure the calculation:
-```solidity
-return (weeklyEmissions * unlockRatioSquared / BASIS_POINTS * REBASE_MULTIPLIER) / BASIS_POINTS;
-```
+**Status**: Fixed. Calculation restructured to divide between multiplications, preventing overflow.
 
 ---
 

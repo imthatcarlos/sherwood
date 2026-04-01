@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {ISyndicateGauge} from "./interfaces/ISyndicateGauge.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
+import {IVaultRewardsDistributor} from "./interfaces/IVaultRewardsDistributor.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -174,8 +175,8 @@ contract SyndicateGauge is Ownable, ReentrancyGuard {
 
         // Send vault rewards to VaultRewardsDistributor
         if (vaultRewards > 0) {
-            wood.safeTransfer(vaultRewardsDistributor, vaultRewards);
-            // TODO: Call VaultRewardsDistributor.depositRewards(epoch, vaultRewards)
+            wood.forceApprove(vaultRewardsDistributor, vaultRewards);
+            IVaultRewardsDistributor(vaultRewardsDistributor).depositRewards(epoch, vaultRewards);
         }
 
         // LP rewards stay in this contract for claiming
