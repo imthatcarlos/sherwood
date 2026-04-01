@@ -27,7 +27,12 @@ contract MinterSimpleTest is Test {
 
         wood = new MockWoodToken(owner);
         votingEscrow = new VotingEscrow(address(wood), owner);
-        voter = new Voter(address(votingEscrow), mockSyndicateFactory, block.timestamp, owner);
+
+        // Predict minter address for Voter constructor (circular dependency)
+        address predictedMinter = vm.computeCreateAddress(owner, vm.getNonce(owner) + 1);
+        voter = new Voter(
+            address(votingEscrow), mockSyndicateFactory, block.timestamp, address(wood), predictedMinter, owner
+        );
         minter = new Minter(address(wood), address(voter), address(votingEscrow), treasury, owner);
 
         wood.setMinter(address(minter));

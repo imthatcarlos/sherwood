@@ -6,9 +6,8 @@ import {IVoter} from "./interfaces/IVoter.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {ISyndicateGauge} from "./interfaces/ISyndicateGauge.sol";
 import {IRewardsDistributor} from "./interfaces/IRewardsDistributor.sol";
-import {MockWoodToken} from "./MockWoodToken.sol";
+import {IWoodToken} from "./interfaces/IWoodToken.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -17,33 +16,32 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 /// @notice Handles 3-phase emission schedule, epoch flipping, rebase calculations,
 ///         and WOOD Fed voting for emission rate adjustments.
 contract Minter is Ownable, Pausable, ReentrancyGuard {
-
     // ==================== ENUMS ====================
 
     /// @notice Emission phases
     enum Phase {
-        TakeOff,    // Epochs 1-8: +3%/week
-        Cruise,     // Epochs 9-44: -1%/week
-        WoodFed     // Epochs 45+: Voter-controlled ±0.35%/epoch
+        TakeOff, // Epochs 1-8: +3%/week
+        Cruise, // Epochs 9-44: -1%/week
+        WoodFed // Epochs 45+: Voter-controlled ±0.35%/epoch
     }
 
     /// @notice WOOD Fed vote options
     enum WoodFedVote {
-        Increase,   // +0.35% of current rate
-        Decrease,   // -0.35% of current rate
-        Hold        // No change
+        Increase, // +0.35% of current rate
+        Decrease, // -0.35% of current rate
+        Hold // No change
     }
 
     // ==================== STRUCTS ====================
 
     /// @notice Emission state for an epoch
     struct EmissionState {
-        uint256 totalEmission;      // Total WOOD emitted this epoch
-        uint256 teamAllocation;     // 5% to team/treasury
-        uint256 gaugeAllocation;    // 95% to gauges
-        uint256 rebaseAmount;       // veWOOD rebase amount
-        Phase phase;                // Current emission phase
-        bool processed;             // Whether epoch was processed
+        uint256 totalEmission; // Total WOOD emitted this epoch
+        uint256 teamAllocation; // 5% to team/treasury
+        uint256 gaugeAllocation; // 95% to gauges
+        uint256 rebaseAmount; // veWOOD rebase amount
+        Phase phase; // Current emission phase
+        bool processed; // Whether epoch was processed
     }
 
     // ==================== CONSTANTS ====================
@@ -75,7 +73,7 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
     // ==================== IMMUTABLE ====================
 
     /// @notice WoodToken contract
-    MockWoodToken public immutable wood;
+    IWoodToken public immutable wood;
 
     /// @notice Voter contract
     IVoter public immutable voter;
@@ -154,18 +152,14 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
     /// @param _votingEscrow VotingEscrow contract address
     /// @param _teamTreasury Team treasury address
     /// @param _owner Contract owner
-    constructor(
-        address _wood,
-        address _voter,
-        address _votingEscrow,
-        address _teamTreasury,
-        address _owner
-    ) Ownable(_owner) {
+    constructor(address _wood, address _voter, address _votingEscrow, address _teamTreasury, address _owner)
+        Ownable(_owner)
+    {
         if (_wood == address(0) || _voter == address(0) || _votingEscrow == address(0) || _teamTreasury == address(0)) {
             revert NotAuthorized();
         }
 
-        wood = MockWoodToken(_wood);
+        wood = IWoodToken(_wood);
         voter = IVoter(_voter);
         votingEscrow = IVotingEscrow(_votingEscrow);
         teamTreasury = _teamTreasury;
@@ -177,7 +171,6 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
 
     // ==================== CORE FUNCTIONS ====================
 
-    
     function flipEpoch() external nonReentrant whenNotPaused {
         uint256 currentEpoch = voter.currentEpoch();
 
@@ -217,7 +210,7 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
             // Distribute rebase via RewardsDistributor
             if (rebaseAmount > 0 && rewardsDistributor != address(0)) {
                 wood.mint(address(this), rebaseAmount);
-                IERC20(address(wood)).approve(rewardsDistributor, rebaseAmount);
+                wood.approve(rewardsDistributor, rebaseAmount);
                 IRewardsDistributor(rewardsDistributor).distributeRebase(currentEpoch, rebaseAmount);
             }
         }
@@ -225,13 +218,14 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
         _lastProcessedEpoch = currentEpoch;
         _emissionHistory.push(_currentEmissionRate);
 
-        emit EpochProcessed(currentEpoch, totalEmission, teamAllocation, gaugeAllocation, rebaseAmount, getCurrentPhase());
+        emit EpochProcessed(
+            currentEpoch, totalEmission, teamAllocation, gaugeAllocation, rebaseAmount, getCurrentPhase()
+        );
 
         // Flip voter epoch
         voter.flipEpoch();
     }
 
-    
     function voteWoodFed(uint256 tokenId, WoodFedVote vote) external nonReentrant {
         if (getCurrentPhase() != Phase.WoodFed) revert VotingNotActive();
         if (votingEscrow.ownerOf(tokenId) != msg.sender) revert NotAuthorized();
@@ -250,17 +244,14 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
         emit WoodFedVoteCast(msg.sender, tokenId, vote, votingPower);
     }
 
-    
     function pauseEmissions() external onlyOwner {
         _pause();
     }
 
-    
     function resumeEmissions() external onlyOwner {
         _unpause();
     }
 
-    
     function triggerCircuitBreaker() external {
         // TODO: Implement price/lock rate checks for circuit breaker
         // For now, allow owner to manually trigger
@@ -274,7 +265,6 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
 
     // ==================== VIEW FUNCTIONS ====================
 
-    
     function getCurrentEmissionRate() external view returns (uint256) {
         return _currentEmissionRate;
     }
@@ -295,7 +285,6 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
         return baseEmission;
     }
 
-    
     function calculateRebase() public view returns (uint256) {
         uint256 weeklyEmissions = calculateEpochEmission();
         uint256 totalSupply = wood.totalSupply();
@@ -316,12 +305,10 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
         return (intermediate * REBASE_MULTIPLIER) / BASIS_POINTS;
     }
 
-    
     function getEmissionState(uint256 epoch) external view returns (EmissionState memory state) {
         return _emissionStates[epoch];
     }
 
-    
     function getCurrentPhase() public view returns (Phase) {
         uint256 currentEpoch = voter.currentEpoch();
 
@@ -334,13 +321,11 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
         }
     }
 
-    
-    function getWoodFedResults(uint256 epoch) external view returns (
-        uint256 increaseVotes,
-        uint256 decreaseVotes,
-        uint256 holdVotes,
-        WoodFedVote winningVote
-    ) {
+    function getWoodFedResults(uint256 epoch)
+        external
+        view
+        returns (uint256 increaseVotes, uint256 decreaseVotes, uint256 holdVotes, WoodFedVote winningVote)
+    {
         increaseVotes = _woodFedVotes[epoch][WoodFedVote.Increase];
         decreaseVotes = _woodFedVotes[epoch][WoodFedVote.Decrease];
         holdVotes = _woodFedVotes[epoch][WoodFedVote.Hold];
@@ -355,7 +340,6 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
         }
     }
 
-    
     function calculateBaseline() public view returns (uint256) {
         if (_emissionHistory.length == 0) return _currentEmissionRate;
 
@@ -369,12 +353,10 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
         return sum / lookback;
     }
 
-    
     function isEmissionsPaused() external view returns (bool) {
         return paused();
     }
 
-    
     function getCircuitBreakerStatus() external view returns (bool active, uint256 reductionPercent) {
         return (_circuitBreakerActive, _emissionReductionPercent);
     }
@@ -480,7 +462,7 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
 
         if (totalWeight == 0) {
             // No votes — send gauge allocation to treasury as fallback
-            IERC20(address(wood)).transfer(teamTreasury, gaugeAllocation);
+            wood.transfer(teamTreasury, gaugeAllocation);
             return;
         }
 
@@ -496,7 +478,7 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
             if (gaugeShare == 0) continue;
 
             // Approve and send to gauge
-            IERC20(address(wood)).approve(gaugeInfo.gauge, gaugeShare);
+            wood.approve(gaugeInfo.gauge, gaugeShare);
             ISyndicateGauge(gaugeInfo.gauge).receiveEmission(epoch, gaugeShare);
             distributed += gaugeShare;
         }
@@ -504,7 +486,7 @@ contract Minter is Ownable, Pausable, ReentrancyGuard {
         // Send any dust to treasury
         uint256 dust = gaugeAllocation - distributed;
         if (dust > 0) {
-            IERC20(address(wood)).transfer(teamTreasury, dust);
+            wood.transfer(teamTreasury, dust);
         }
     }
 }

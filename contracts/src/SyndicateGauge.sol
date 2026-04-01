@@ -19,11 +19,11 @@ contract SyndicateGauge is Ownable, ReentrancyGuard {
 
     /// @notice Emission distribution for an epoch
     struct EmissionDistribution {
-        uint256 totalReceived;      // Total WOOD received this epoch
-        uint256 vaultRewards;       // Amount sent to vault rewards (90-100%)
-        uint256 lpRewards;          // Amount sent to LPs (0-10%, weeks 1-12 only)
-        uint256 epoch;              // Epoch number
-        bool distributed;           // Whether distribution was executed
+        uint256 totalReceived; // Total WOOD received this epoch
+        uint256 vaultRewards; // Amount sent to vault rewards (90-100%)
+        uint256 lpRewards; // Amount sent to LPs (0-10%, weeks 1-12 only)
+        uint256 epoch; // Epoch number
+        bool distributed; // Whether distribution was executed
     }
 
     // ==================== CONSTANTS ====================
@@ -77,12 +77,7 @@ contract SyndicateGauge is Ownable, ReentrancyGuard {
 
     event EmissionReceived(uint256 indexed epoch, uint256 amount, address indexed from);
 
-    event EmissionDistributed(
-        uint256 indexed epoch,
-        uint256 vaultRewards,
-        uint256 lpRewards,
-        uint256 totalDistributed
-    );
+    event EmissionDistributed(uint256 indexed epoch, uint256 vaultRewards, uint256 lpRewards, uint256 totalDistributed);
 
     event LPRewardsClaimed(address indexed lp, uint256 amount, uint256 epoch);
 
@@ -136,7 +131,6 @@ contract SyndicateGauge is Ownable, ReentrancyGuard {
 
     // ==================== CORE FUNCTIONS ====================
 
-
     function receiveEmission(uint256 epoch, uint256 amount) external onlyMinter {
         if (amount == 0) revert NoEmissionToDistribute();
 
@@ -161,7 +155,6 @@ contract SyndicateGauge is Ownable, ReentrancyGuard {
         emit EmissionReceived(epoch, amount, msg.sender);
     }
 
-    
     function distributeEmission(uint256 epoch) external nonReentrant {
         EmissionDistribution storage distribution = _distributions[epoch];
         if (distribution.totalReceived == 0) revert NoEmissionToDistribute();
@@ -184,7 +177,6 @@ contract SyndicateGauge is Ownable, ReentrancyGuard {
         emit EmissionDistributed(epoch, vaultRewards, lpRewards, distribution.totalReceived);
     }
 
-    
     function claimLPRewards(uint256 epoch) external nonReentrant {
         if (!isLPBootstrappingActive()) revert InvalidEpoch();
 
@@ -209,12 +201,10 @@ contract SyndicateGauge is Ownable, ReentrancyGuard {
 
     // ==================== VIEW FUNCTIONS ====================
 
-    
     function getEmissionDistribution(uint256 epoch) external view returns (EmissionDistribution memory distribution) {
         return _distributions[epoch];
     }
 
-    
     function getLPRewardPercentage(uint256 epoch) public pure returns (uint256) {
         if (epoch <= 4) {
             return 1000; // 10%
@@ -227,7 +217,6 @@ contract SyndicateGauge is Ownable, ReentrancyGuard {
         }
     }
 
-    
     function getPendingLPRewards(address lp, uint256 epoch) external view returns (uint256) {
         if (_lpClaims[epoch][lp] > 0) return 0; // Already claimed
 
@@ -237,12 +226,10 @@ contract SyndicateGauge is Ownable, ReentrancyGuard {
         return _calculateLPReward(lp, epoch, distribution.lpRewards);
     }
 
-    
     function getTotalEmissionsReceived() external view returns (uint256) {
         return _totalEmissionsReceived;
     }
 
-    
     function isLPBootstrappingActive() public view returns (bool) {
         uint256 currentEpoch = voter.currentEpoch();
         return currentEpoch <= LP_BOOTSTRAP_EPOCHS;

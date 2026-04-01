@@ -5,16 +5,15 @@ pragma solidity 0.8.28;
 /// @notice Interface for VaultRewardsDistributor that handles pro-rata WOOD
 ///         reward distribution to vault depositors using ERC20Votes checkpoints.
 interface IVaultRewardsDistributor {
-
     // ==================== STRUCTS ====================
 
     /// @notice Reward pool information for an epoch
     struct RewardPool {
-        uint256 totalRewards;       // Total WOOD rewards for this epoch
-        uint256 totalClaimed;       // Amount already claimed
-        uint256 epochStart;         // Epoch start timestamp (for checkpoint)
-        uint256 expiryTimestamp;    // When rewards expire (52 weeks later)
-        bool expired;               // Whether rewards have expired
+        uint256 totalRewards; // Total WOOD rewards for this epoch
+        uint256 totalClaimed; // Amount already claimed
+        uint256 epochStart; // Epoch start timestamp (for checkpoint)
+        uint256 expiryTimestamp; // When rewards expire (52 weeks later)
+        bool expired; // Whether rewards have expired
     }
 
     // ==================== EVENTS ====================
@@ -22,11 +21,7 @@ interface IVaultRewardsDistributor {
     event RewardsDeposited(uint256 indexed epoch, uint256 amount, address indexed from);
 
     event RewardsClaimed(
-        address indexed depositor,
-        uint256 indexed epoch,
-        uint256 amount,
-        uint256 shares,
-        uint256 totalShares
+        address indexed depositor, uint256 indexed epoch, uint256 amount, uint256 shares, uint256 totalShares
     );
 
     event RewardsExpired(uint256 indexed epoch, uint256 amount, address indexed treasury);
@@ -75,7 +70,10 @@ interface IVaultRewardsDistributor {
     /// @param depositor The depositor address
     /// @param epochs Array of epochs to check
     /// @return rewards Array of pending reward amounts
-    function getPendingMultipleEpochs(address depositor, uint256[] calldata epochs) external view returns (uint256[] memory rewards);
+    function getPendingMultipleEpochs(address depositor, uint256[] calldata epochs)
+        external
+        view
+        returns (uint256[] memory rewards);
 
     /// @notice Get all claimable epochs for a depositor
     /// @param depositor The depositor address

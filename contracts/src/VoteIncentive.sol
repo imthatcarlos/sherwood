@@ -21,17 +21,17 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
 
     /// @notice Incentive pool for a syndicate in an epoch
     struct IncentivePool {
-        address token;              // ERC-20 token address
-        uint256 amount;             // Total amount deposited
-        uint256 totalClaimed;       // Amount already claimed
-        uint256 depositDeadline;    // Deadline for deposits (epoch start)
-        bool active;                // Whether pool accepts new deposits
+        address token; // ERC-20 token address
+        uint256 amount; // Total amount deposited
+        uint256 totalClaimed; // Amount already claimed
+        uint256 depositDeadline; // Deadline for deposits (epoch start)
+        bool active; // Whether pool accepts new deposits
     }
 
     /// @notice Claim information for a voter
     struct ClaimInfo {
-        uint256 amount;             // Amount claimable
-        bool claimed;               // Whether already claimed
+        uint256 amount; // Amount claimable
+        bool claimed; // Whether already claimed
     }
 
     // ==================== CONSTANTS ====================
@@ -57,9 +57,9 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
     /// @dev syndicateId => epoch => EnumerableSet of token addresses
     mapping(uint256 => mapping(uint256 => EnumerableSet.AddressSet)) private _activeTokens;
 
-    /// @notice Claim tracking per voter per syndicate per epoch per token
-    /// @dev voter => syndicateId => epoch => token => ClaimInfo
-    mapping(address => mapping(uint256 => mapping(uint256 => mapping(address => ClaimInfo)))) private _claimInfo;
+    /// @notice Claim tracking per veNFT per syndicate per epoch per token
+    /// @dev tokenId => syndicateId => epoch => token => ClaimInfo
+    mapping(uint256 => mapping(uint256 => mapping(uint256 => mapping(address => ClaimInfo)))) private _claimInfo;
 
     /// @notice Total incentives deposited per token
     /// @dev token => total amount deposited
@@ -72,11 +72,7 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
     // ==================== EVENTS ====================
 
     event IncentiveDeposited(
-        address indexed depositor,
-        uint256 indexed syndicateId,
-        uint256 indexed epoch,
-        address token,
-        uint256 amount
+        address indexed depositor, uint256 indexed syndicateId, uint256 indexed epoch, address token, uint256 amount
     );
 
     event IncentiveClaimed(
@@ -90,10 +86,7 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
     );
 
     event IncentivePoolCreated(
-        uint256 indexed syndicateId,
-        uint256 indexed epoch,
-        address indexed token,
-        uint256 depositDeadline
+        uint256 indexed syndicateId, uint256 indexed epoch, address indexed token, uint256 depositDeadline
     );
 
     // ==================== ERRORS ====================
@@ -107,17 +100,14 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
     error InvalidSyndicateId();
     error InvalidEpoch();
     error TransferFailed();
+    error NotAuthorized();
 
     // ==================== CONSTRUCTOR ====================
 
     /// @param _voter Voter contract address
     /// @param _votingEscrow VotingEscrow contract address
     /// @param _owner Contract owner
-    constructor(
-        address _voter,
-        address _votingEscrow,
-        address _owner
-    ) Ownable(_owner) {
+    constructor(address _voter, address _votingEscrow, address _owner) Ownable(_owner) {
         if (_voter == address(0) || _votingEscrow == address(0)) revert InvalidToken();
 
         voter = IVoter(_voter);
@@ -126,7 +116,6 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
 
     // ==================== CORE FUNCTIONS ====================
 
-    
     function depositIncentive(uint256 syndicateId, uint256 epoch, address token, uint256 amount) external nonReentrant {
         if (amount == 0) revert InvalidAmount();
         if (token == address(0)) revert InvalidToken();
@@ -165,27 +154,32 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
         emit IncentiveDeposited(msg.sender, syndicateId, epoch, token, amount);
     }
 
-    
-    function claimIncentives(uint256 syndicateId, uint256 epoch, address[] calldata tokens) external nonReentrant returns (uint256[] memory amounts) {
+    function claimIncentives(uint256 tokenId, uint256 syndicateId, uint256 epoch, address[] calldata tokens)
+        external
+        nonReentrant
+        returns (uint256[] memory amounts)
+    {
+        if (votingEscrow.ownerOf(tokenId) != msg.sender) revert NotAuthorized();
         amounts = new uint256[](tokens.length);
 
         for (uint256 i = 0; i < tokens.length; i++) {
-            amounts[i] = _claimSingleIncentive(syndicateId, epoch, tokens[i]);
+            amounts[i] = _claimSingleIncentive(tokenId, syndicateId, epoch, tokens[i]);
         }
     }
 
-    
     function claimAllIncentives(
+        uint256 tokenId,
         uint256[] calldata syndicateIds,
         uint256[] calldata epochs,
         address[] calldata tokens
     ) external nonReentrant returns (uint256[] memory totalAmounts) {
+        if (votingEscrow.ownerOf(tokenId) != msg.sender) revert NotAuthorized();
         totalAmounts = new uint256[](tokens.length);
 
         for (uint256 i = 0; i < syndicateIds.length; i++) {
             for (uint256 j = 0; j < epochs.length; j++) {
                 for (uint256 k = 0; k < tokens.length; k++) {
-                    uint256 claimed = _claimSingleIncentive(syndicateIds[i], epochs[j], tokens[k]);
+                    uint256 claimed = _claimSingleIncentive(tokenId, syndicateIds[i], epochs[j], tokens[k]);
                     totalAmounts[k] += claimed;
                 }
             }
@@ -194,73 +188,65 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
 
     // ==================== VIEW FUNCTIONS ====================
 
-    
-    function getPendingIncentives(
-        address voterAddress,
-        uint256 syndicateId,
-        uint256 epoch,
-        address token
-    ) external view returns (uint256 amount) {
-        ClaimInfo storage claimInfo = _claimInfo[voterAddress][syndicateId][epoch][token];
+    function getPendingIncentives(uint256 tokenId, uint256 syndicateId, uint256 epoch, address token)
+        external
+        view
+        returns (uint256 amount)
+    {
+        ClaimInfo storage claimInfo = _claimInfo[tokenId][syndicateId][epoch][token];
         if (claimInfo.claimed) return 0;
 
-        return _calculateIncentiveAmount(voterAddress, syndicateId, epoch, token);
+        return _calculateIncentiveAmount(tokenId, syndicateId, epoch, token);
     }
 
-    
-    function getPendingMultipleTokens(
-        address voterAddress,
-        uint256 syndicateId,
-        uint256 epoch,
-        address[] calldata tokens
-    ) external view returns (uint256[] memory amounts) {
+    function getPendingMultipleTokens(uint256 tokenId, uint256 syndicateId, uint256 epoch, address[] calldata tokens)
+        external
+        view
+        returns (uint256[] memory amounts)
+    {
         amounts = new uint256[](tokens.length);
 
         for (uint256 i = 0; i < tokens.length; i++) {
-            amounts[i] = this.getPendingIncentives(voterAddress, syndicateId, epoch, tokens[i]);
+            amounts[i] = this.getPendingIncentives(tokenId, syndicateId, epoch, tokens[i]);
         }
     }
 
-    
-    function getIncentivePool(
-        uint256 syndicateId,
-        uint256 epoch,
-        address token
-    ) external view returns (IncentivePool memory pool) {
+    function getIncentivePool(uint256 syndicateId, uint256 epoch, address token)
+        external
+        view
+        returns (IncentivePool memory pool)
+    {
         return _incentivePools[syndicateId][epoch][token];
     }
 
-    
-    function getActiveIncentiveTokens(uint256 syndicateId, uint256 epoch) external view returns (address[] memory tokens) {
+    function getActiveIncentiveTokens(uint256 syndicateId, uint256 epoch)
+        external
+        view
+        returns (address[] memory tokens)
+    {
         return _activeTokens[syndicateId][epoch].values();
     }
 
-    
-    function getClaimInfo(
-        address voterAddress,
-        uint256 syndicateId,
-        uint256 epoch,
-        address token
-    ) external view returns (ClaimInfo memory info) {
-        return _claimInfo[voterAddress][syndicateId][epoch][token];
+    function getClaimInfo(uint256 tokenId, uint256 syndicateId, uint256 epoch, address token)
+        external
+        view
+        returns (ClaimInfo memory info)
+    {
+        return _claimInfo[tokenId][syndicateId][epoch][token];
     }
 
-    
-    function hasClaimed(
-        address voterAddress,
-        uint256 syndicateId,
-        uint256 epoch,
-        address token
-    ) external view returns (bool) {
-        return _claimInfo[voterAddress][syndicateId][epoch][token].claimed;
+    function hasClaimed(uint256 tokenId, uint256 syndicateId, uint256 epoch, address token)
+        external
+        view
+        returns (bool)
+    {
+        return _claimInfo[tokenId][syndicateId][epoch][token].claimed;
     }
 
-    
     function getTotalIncentivesDeposited(address token) external view returns (uint256) {
         return _totalDeposited[token];
     }
 
-    
     function getTotalIncentivesClaimed(address token) external view returns (uint256) {
         return _totalClaimed[token];
     }
@@ -268,12 +254,15 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
     // ==================== INTERNAL FUNCTIONS ====================
 
     /// @dev Claim incentive for a single syndicate/epoch/token
-    function _claimSingleIncentive(uint256 syndicateId, uint256 epoch, address token) internal returns (uint256 amount) {
-        ClaimInfo storage claimInfo = _claimInfo[msg.sender][syndicateId][epoch][token];
+    function _claimSingleIncentive(uint256 tokenId, uint256 syndicateId, uint256 epoch, address token)
+        internal
+        returns (uint256 amount)
+    {
+        ClaimInfo storage claimInfo = _claimInfo[tokenId][syndicateId][epoch][token];
         if (claimInfo.claimed) return 0; // Already claimed
 
         // Calculate claimable amount
-        amount = _calculateIncentiveAmount(msg.sender, syndicateId, epoch, token);
+        amount = _calculateIncentiveAmount(tokenId, syndicateId, epoch, token);
         if (amount == 0) return 0;
 
         // Get pool reference for validation
@@ -297,11 +286,11 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
         IERC20(token).safeTransfer(msg.sender, amount);
 
         // Get vote info for event
-        IVoter.VoteAllocation memory allocation = voter.getVoteAllocation(_getVoterTokenId(msg.sender), epoch);
+        IVoter.VoteAllocation memory allocation = voter.getVoteAllocation(tokenId, epoch);
         uint256 voterVotes = 0;
         for (uint256 i = 0; i < allocation.syndicateIds.length; i++) {
             if (allocation.syndicateIds[i] == syndicateId) {
-                uint256 totalVotingPower = votingEscrow.balanceOfNFTAt(_getVoterTokenId(msg.sender), voter.getEpochStart(epoch));
+                uint256 totalVotingPower = votingEscrow.balanceOfNFTAt(tokenId, voter.getEpochStart(epoch));
                 voterVotes = (totalVotingPower * allocation.weights[i]) / 10000;
                 break;
             }
@@ -312,14 +301,14 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
         emit IncentiveClaimed(msg.sender, syndicateId, epoch, token, amount, voterVotes, totalVotes);
     }
 
-    /// @dev Calculate incentive amount for a voter
-    function _calculateIncentiveAmount(address voterAddress, uint256 syndicateId, uint256 epoch, address token) internal view returns (uint256) {
+    /// @dev Calculate incentive amount for a veNFT in a syndicate/epoch/token
+    function _calculateIncentiveAmount(uint256 tokenId, uint256 syndicateId, uint256 epoch, address token)
+        internal
+        view
+        returns (uint256)
+    {
         IncentivePool storage pool = _incentivePools[syndicateId][epoch][token];
         if (pool.amount == 0 || !pool.active) return 0;
-
-        // Get voter's vote allocation for this syndicate in this epoch
-        uint256 tokenId = _getVoterTokenId(voterAddress);
-        if (tokenId == 0) return 0; // Voter doesn't own a veNFT
 
         IVoter.VoteAllocation memory allocation = voter.getVoteAllocation(tokenId, epoch);
 
@@ -340,12 +329,5 @@ contract VoteIncentive is Ownable, ReentrancyGuard {
         if (totalSyndicateVotes == 0) return 0;
 
         return (pool.amount * voterVotes) / totalSyndicateVotes;
-    }
-
-    /// @dev Get the first veNFT token ID owned by an address
-    /// @dev Simplified - in production, might want to allow voters to specify which tokenId to use
-    function _getVoterTokenId(address voterAddress) internal view returns (uint256) {
-        uint256[] memory tokenIds = votingEscrow.getTokenIds(voterAddress);
-        return tokenIds.length > 0 ? tokenIds[0] : 0;
     }
 }

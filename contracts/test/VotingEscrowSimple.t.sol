@@ -119,4 +119,54 @@ contract VotingEscrowSimpleTest is Test {
         assertEq(votingEscrow.MIN_LOCK_DURATION(), 4 weeks);
         assertEq(votingEscrow.MAX_LOCK_DURATION(), 365 days);
     }
+
+    function testTotalLockedAmount() public {
+        vm.prank(user1);
+        uint256 tokenId = votingEscrow.createLock(LOCK_AMOUNT, block.timestamp + MAX_LOCK, false);
+
+        assertEq(votingEscrow.totalLockedAmount(), LOCK_AMOUNT);
+
+        // Increase
+        vm.prank(user1);
+        votingEscrow.increaseAmount(tokenId, 50e18);
+        assertEq(votingEscrow.totalLockedAmount(), LOCK_AMOUNT + 50e18);
+
+        // Create second lock
+        vm.prank(user1);
+        votingEscrow.createLock(200e18, block.timestamp + MAX_LOCK, false);
+        assertEq(votingEscrow.totalLockedAmount(), LOCK_AMOUNT + 50e18 + 200e18);
+
+        // Withdraw first lock after expiry
+        vm.warp(block.timestamp + MAX_LOCK);
+        vm.prank(user1);
+        votingEscrow.withdraw(tokenId);
+        assertEq(votingEscrow.totalLockedAmount(), 200e18);
+    }
+
+    function testGetLockAmountAt() public {
+        uint256 t0 = block.timestamp;
+
+        vm.prank(user1);
+        uint256 tokenId = votingEscrow.createLock(LOCK_AMOUNT, block.timestamp + MAX_LOCK, false);
+
+        // Before lock: 0
+        assertEq(votingEscrow.getLockAmountAt(tokenId, t0 - 1), 0);
+
+        // At lock time: LOCK_AMOUNT
+        assertEq(votingEscrow.getLockAmountAt(tokenId, t0), LOCK_AMOUNT);
+
+        // Increase at t0 + 100
+        vm.warp(t0 + 100);
+        vm.prank(user1);
+        votingEscrow.increaseAmount(tokenId, 50e18);
+
+        // Before increase: original amount
+        assertEq(votingEscrow.getLockAmountAt(tokenId, t0 + 50), LOCK_AMOUNT);
+
+        // After increase: new amount
+        assertEq(votingEscrow.getLockAmountAt(tokenId, t0 + 100), LOCK_AMOUNT + 50e18);
+
+        // Far future: latest checkpoint
+        assertEq(votingEscrow.getLockAmountAt(tokenId, t0 + 10000), LOCK_AMOUNT + 50e18);
+    }
 }

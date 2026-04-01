@@ -5,19 +5,18 @@ pragma solidity 0.8.28;
 /// @notice Interface for the Voter contract that manages 7-day epoch voting
 ///         for syndicate gauge emissions allocation.
 interface IVoter {
-
     // ==================== STRUCTS ====================
 
     /// @notice Vote allocation for a veNFT in an epoch
     struct VoteAllocation {
-        uint256[] syndicateIds;     // Syndicates voted for
-        uint256[] weights;          // Vote weights (basis points, must sum to 10000)
+        uint256[] syndicateIds; // Syndicates voted for
+        uint256[] weights; // Vote weights (basis points, must sum to 10000)
     }
 
     /// @notice Gauge information for a syndicate
     struct GaugeInfo {
-        address gauge;              // SyndicateGauge contract address
-        bool active;                // Whether gauge is active for voting
+        address gauge; // SyndicateGauge contract address
+        bool active; // Whether gauge is active for voting
     }
 
     // ==================== EVENTS ====================
@@ -65,11 +64,19 @@ interface IVoter {
     /// @notice Flip to the next epoch (callable by anyone after epoch ends)
     function flipEpoch() external;
 
-    /// @notice Create a gauge for a syndicate
+    /// @notice Create a gauge for a syndicate (deploys a SyndicateGauge)
     /// @param syndicateId The syndicate ID from SyndicateFactory
+    /// @param syndicateVault The syndicate vault address
+    /// @param vaultRewardsDistributor The VaultRewardsDistributor contract
     /// @param pool The Uniswap V3 pool address for shareToken/WOOD
     /// @param nftTokenId The Uniswap V3 LP position NFT token ID
-    function createGauge(uint256 syndicateId, address pool, uint256 nftTokenId) external;
+    function createGauge(
+        uint256 syndicateId,
+        address syndicateVault,
+        address vaultRewardsDistributor,
+        address pool,
+        uint256 nftTokenId
+    ) external;
 
     /// @notice Activate/deactivate a gauge
     /// @param syndicateId The syndicate ID
@@ -131,7 +138,10 @@ interface IVoter {
     /// @param epoch The epoch number
     /// @return syndicateIds Array of syndicate IDs
     /// @return allocations Array of vote percentages (basis points)
-    function getVoteDistribution(uint256 epoch) external view returns (uint256[] memory syndicateIds, uint256[] memory allocations);
+    function getVoteDistribution(uint256 epoch)
+        external
+        view
+        returns (uint256[] memory syndicateIds, uint256[] memory allocations);
 
     /// @notice Minimum quorum threshold (10% of total veWOOD supply)
     function QUORUM_THRESHOLD() external view returns (uint256);
@@ -147,4 +157,10 @@ interface IVoter {
 
     /// @notice SyndicateFactory contract address
     function syndicateFactory() external view returns (address);
+
+    /// @notice WOOD token address
+    function wood() external view returns (address);
+
+    /// @notice Minter contract address
+    function minter() external view returns (address);
 }

@@ -28,10 +28,14 @@ contract VeWoodTest is Test {
 
         // Create a mock syndicate factory address
         address mockSyndicateFactory = address(0x4);
+        // Predict minter address for Voter constructor (circular dependency)
+        address predictedMinter = vm.computeCreateAddress(owner, vm.getNonce(owner) + 1);
         voter = new Voter(
             address(votingEscrow),
             mockSyndicateFactory,
             block.timestamp, // Epoch start reference
+            address(wood),
+            predictedMinter,
             owner
         );
 

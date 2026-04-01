@@ -21,11 +21,11 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
 
     /// @notice Reward pool information for an epoch
     struct RewardPool {
-        uint256 totalRewards;       // Total WOOD rewards for this epoch
-        uint256 totalClaimed;       // Amount already claimed
-        uint256 epochStart;         // Epoch start timestamp (for checkpoint)
-        uint256 expiryTimestamp;    // When rewards expire (52 weeks later)
-        bool expired;               // Whether rewards have expired
+        uint256 totalRewards; // Total WOOD rewards for this epoch
+        uint256 totalClaimed; // Amount already claimed
+        uint256 epochStart; // Epoch start timestamp (for checkpoint)
+        uint256 expiryTimestamp; // When rewards expire (52 weeks later)
+        bool expired; // Whether rewards have expired
     }
 
     // ==================== CONSTANTS ====================
@@ -71,11 +71,7 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
     event RewardsDeposited(uint256 indexed epoch, uint256 amount, address indexed from);
 
     event RewardsClaimed(
-        address indexed depositor,
-        uint256 indexed epoch,
-        uint256 amount,
-        uint256 shares,
-        uint256 totalShares
+        address indexed depositor, uint256 indexed epoch, uint256 amount, uint256 shares, uint256 totalShares
     );
 
     event RewardsExpired(uint256 indexed epoch, uint256 amount, address indexed treasury);
@@ -98,13 +94,9 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
     /// @param _treasury Protocol treasury address
     /// @param _voter Voter contract address
     /// @param _owner Contract owner
-    constructor(
-        address _syndicateVault,
-        address _wood,
-        address _treasury,
-        address _voter,
-        address _owner
-    ) Ownable(_owner) {
+    constructor(address _syndicateVault, address _wood, address _treasury, address _voter, address _owner)
+        Ownable(_owner)
+    {
         if (_syndicateVault == address(0) || _wood == address(0) || _treasury == address(0) || _voter == address(0)) {
             revert InvalidAmount();
         }
@@ -142,7 +134,6 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
         emit RewardsDeposited(epoch, amount, msg.sender);
     }
 
-    
     function claimRewards(uint256 epoch) external nonReentrant returns (uint256 amount) {
         if (_claims[msg.sender][epoch]) revert AlreadyClaimed();
 
@@ -170,7 +161,6 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
         emit RewardsClaimed(msg.sender, epoch, amount, depositorShares, totalShares);
     }
 
-    
     function claimMultipleEpochs(uint256[] calldata epochs) external nonReentrant returns (uint256 totalAmount) {
         for (uint256 i = 0; i < epochs.length; i++) {
             uint256 epoch = epochs[i];
@@ -222,7 +212,6 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
         emit RewardsExpired(epoch, expiredAmount, treasury);
     }
 
-
     function returnMultipleExpiredRewards(uint256[] calldata epochs) external nonReentrant {
         uint256 totalExpiredAmount = 0;
 
@@ -252,7 +241,6 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
 
     // ==================== VIEW FUNCTIONS ====================
 
-    
     function getPendingRewards(address depositor, uint256 epoch) external view returns (uint256 reward) {
         if (_claims[depositor][epoch]) return 0; // Already claimed
 
@@ -269,8 +257,11 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
         return (pool.totalRewards * depositorShares) / totalShares;
     }
 
-    
-    function getPendingMultipleEpochs(address depositor, uint256[] calldata epochs) external view returns (uint256[] memory rewards) {
+    function getPendingMultipleEpochs(address depositor, uint256[] calldata epochs)
+        external
+        view
+        returns (uint256[] memory rewards)
+    {
         rewards = new uint256[](epochs.length);
 
         for (uint256 i = 0; i < epochs.length; i++) {
@@ -287,12 +278,11 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
         return this.getClaimableEpochs(depositor, startEpoch, currentEpoch);
     }
 
-
-    function getClaimableEpochs(
-        address depositor,
-        uint256 fromEpoch,
-        uint256 toEpoch
-    ) external view returns (uint256[] memory epochs) {
+    function getClaimableEpochs(address depositor, uint256 fromEpoch, uint256 toEpoch)
+        external
+        view
+        returns (uint256[] memory epochs)
+    {
         require(fromEpoch <= toEpoch, "Invalid epoch range");
         require(toEpoch <= voter.currentEpoch(), "ToEpoch exceeds current epoch");
 
@@ -314,21 +304,17 @@ contract VaultRewardsDistributor is Ownable, ReentrancyGuard {
         }
     }
 
-    
     function getRewardPool(uint256 epoch) external view returns (RewardPool memory pool) {
         return _rewardPools[epoch];
     }
 
-    
     function hasClaimed(address depositor, uint256 epoch) external view returns (bool) {
         return _claims[depositor][epoch];
     }
 
-    
     function getTotalRewardsDeposited() external view returns (uint256) {
         return _totalRewardsDeposited;
     }
-
 
     function getTotalRewardsClaimed() external view returns (uint256) {
         return _totalRewardsClaimed;

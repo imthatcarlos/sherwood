@@ -7,21 +7,23 @@ import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /// @title VotingEscrow — Lock WOOD → veWOOD NFT with voting power
 /// @notice Users lock WOOD for chosen duration (4 weeks - 1 year) and receive veWOOD NFT
 ///         with time-weighted voting power that decays linearly to expiry.
 contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.UintSet;
 
     // ==================== STRUCTS ====================
 
     /// @notice Lock information for a veNFT
     struct LockInfo {
-        uint256 amount;         // Amount of WOOD locked
-        uint256 end;            // Lock end timestamp
-        uint256 createdBlock;   // Block when lock was created (for flash loan protection)
-        bool autoMaxLock;       // If true, treated as 1-year lock with no decay
+        uint256 amount; // Amount of WOOD locked
+        uint256 end; // Lock end timestamp
+        uint256 createdBlock; // Block when lock was created (for flash loan protection)
+        bool autoMaxLock; // If true, treated as 1-year lock with no decay
     }
 
     // ==================== CONSTANTS ====================
@@ -70,14 +72,20 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
     /// @notice Current global epoch
     uint256 private _globalEpoch;
 
+    /// @notice Set of active (non-burned) token IDs for efficient iteration
+    EnumerableSet.UintSet private _activeTokenIds;
+
+    /// @notice Running total of WOOD locked across all veNFTs
+    uint256 private _totalLockedAmount;
+
+    /// @notice Lock amount history per token for historical queries
+    /// @dev tokenId => LockAmountCheckpoint[]
+    mapping(uint256 => LockAmountCheckpoint[]) private _lockAmountHistory;
+
     // ==================== EVENTS ====================
 
     event Deposit(
-        address indexed provider,
-        uint256 indexed tokenId,
-        uint256 value,
-        uint256 locktime,
-        uint256 timestamp
+        address indexed provider, uint256 indexed tokenId, uint256 value, uint256 locktime, uint256 timestamp
     );
 
     event Withdraw(address indexed provider, uint256 indexed tokenId, uint256 value, uint256 timestamp);
@@ -99,10 +107,16 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
 
     /// @dev Point struct for checkpointing
     struct Point {
-        int256 bias;        // Voting power at this point
-        int256 slope;       // Rate of decay (voting power lost per second)
-        uint256 timestamp;  // When this point was recorded
+        int256 bias; // Voting power at this point
+        int256 slope; // Rate of decay (voting power lost per second)
+        uint256 timestamp; // When this point was recorded
         uint256 blockNumber; // Block number for this point
+    }
+
+    /// @dev Lock amount checkpoint for historical queries
+    struct LockAmountCheckpoint {
+        uint256 timestamp;
+        uint256 amount;
     }
 
     // ==================== CONSTRUCTOR ====================
@@ -116,8 +130,11 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
 
     // ==================== CORE FUNCTIONS ====================
 
-    
-    function createLock(uint256 value, uint256 unlockTime, bool autoMaxLock) external nonReentrant returns (uint256 tokenId) {
+    function createLock(uint256 value, uint256 unlockTime, bool autoMaxLock)
+        external
+        nonReentrant
+        returns (uint256 tokenId)
+    {
         if (value == 0) revert InvalidAmount();
         if (wood.balanceOf(msg.sender) < value) revert InsufficientBalance();
 
@@ -137,12 +154,13 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
         _safeMint(msg.sender, tokenId);
 
         // Store lock info
-        _locks[tokenId] = LockInfo({
-            amount: value,
-            end: unlockTime,
-            createdBlock: block.number,
-            autoMaxLock: autoMaxLock
-        });
+        _locks[tokenId] =
+            LockInfo({amount: value, end: unlockTime, createdBlock: block.number, autoMaxLock: autoMaxLock});
+
+        // Track active token and totals
+        _activeTokenIds.add(tokenId);
+        _totalLockedAmount += value;
+        _lockAmountHistory[tokenId].push(LockAmountCheckpoint({timestamp: block.timestamp, amount: value}));
 
         // Add to user's token list
         _addTokenToUser(msg.sender, tokenId);
@@ -157,7 +175,6 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
         emit Deposit(msg.sender, tokenId, value, unlockTime, block.timestamp);
     }
 
-    
     function increaseAmount(uint256 tokenId, uint256 value) external nonReentrant {
         if (!_isTokenOwner(tokenId, msg.sender)) revert NotOwner();
         if (value == 0) revert InvalidAmount();
@@ -168,6 +185,8 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
 
         // Update lock amount
         lock.amount += value;
+        _totalLockedAmount += value;
+        _lockAmountHistory[tokenId].push(LockAmountCheckpoint({timestamp: block.timestamp, amount: lock.amount}));
 
         // Transfer WOOD tokens
         wood.safeTransferFrom(msg.sender, address(this), value);
@@ -179,7 +198,6 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
         emit Deposit(msg.sender, tokenId, value, lock.end, block.timestamp);
     }
 
-    
     function increaseUnlockTime(uint256 tokenId, uint256 unlockTime) external nonReentrant {
         if (!_isTokenOwner(tokenId, msg.sender)) revert NotOwner();
 
@@ -205,7 +223,6 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
         emit Deposit(msg.sender, tokenId, 0, unlockTime, block.timestamp);
     }
 
-    
     function withdraw(uint256 tokenId) external nonReentrant {
         if (!_isTokenOwner(tokenId, msg.sender)) revert NotOwner();
 
@@ -219,6 +236,11 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
 
         uint256 amount = lock.amount;
         if (amount == 0) revert InvalidAmount();
+
+        // Track removal
+        _activeTokenIds.remove(tokenId);
+        _totalLockedAmount -= amount;
+        _lockAmountHistory[tokenId].push(LockAmountCheckpoint({timestamp: block.timestamp, amount: 0}));
 
         // Clear lock data
         delete _locks[tokenId];
@@ -238,7 +260,6 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
         emit Withdraw(msg.sender, tokenId, amount, block.timestamp);
     }
 
-    
     function toggleAutoMaxLock(uint256 tokenId) external {
         if (!_isTokenOwner(tokenId, msg.sender)) revert NotOwner();
 
@@ -259,35 +280,64 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
 
     // ==================== VIEW FUNCTIONS ====================
 
-    
     function balanceOfNFT(uint256 tokenId) external view returns (uint256) {
         return _balanceOfNFTAt(tokenId, block.timestamp);
     }
 
-    
     function balanceOfNFTAt(uint256 tokenId, uint256 timestamp) external view returns (uint256) {
         return _balanceOfNFTAt(tokenId, timestamp);
     }
 
-    
     function totalSupply() external view returns (uint256) {
         return _totalSupplyAt(block.timestamp);
     }
 
-    
     function totalSupplyAt(uint256 timestamp) external view returns (uint256) {
         return _totalSupplyAt(timestamp);
     }
 
-    
     function getLock(uint256 tokenId) external view returns (LockInfo memory lock) {
         if (!_exists(tokenId)) revert TokenNotExists();
         return _locks[tokenId];
     }
 
-    
     function getTokenIds(address owner) external view returns (uint256[] memory tokenIds) {
         return _userTokenIds[owner];
+    }
+
+    /// @notice Get the total amount of WOOD locked across all veNFTs
+    function totalLockedAmount() external view returns (uint256) {
+        return _totalLockedAmount;
+    }
+
+    /// @notice Get the lock amount for a veNFT at a specific timestamp (binary search)
+    function getLockAmountAt(uint256 tokenId, uint256 timestamp) external view returns (uint256) {
+        LockAmountCheckpoint[] storage checkpoints = _lockAmountHistory[tokenId];
+        uint256 len = checkpoints.length;
+        if (len == 0) return 0;
+
+        // If timestamp is at or after the latest checkpoint, return latest
+        if (timestamp >= checkpoints[len - 1].timestamp) {
+            return checkpoints[len - 1].amount;
+        }
+
+        // If timestamp is before the first checkpoint, return 0
+        if (timestamp < checkpoints[0].timestamp) {
+            return 0;
+        }
+
+        // Binary search for the checkpoint at or before timestamp
+        uint256 low = 0;
+        uint256 high = len - 1;
+        while (low < high) {
+            uint256 mid = (low + high + 1) / 2;
+            if (checkpoints[mid].timestamp <= timestamp) {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return checkpoints[low].amount;
     }
 
     // ==================== INTERNAL FUNCTIONS ====================
@@ -319,17 +369,13 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
         return (lock.amount * timeLeft) / MAX_LOCK_DURATION;
     }
 
-    /// @dev Calculate total voting power at a specific timestamp
+    /// @dev Calculate total voting power at a specific timestamp (iterates only active tokens)
     function _totalSupplyAt(uint256 timestamp) internal view returns (uint256) {
         uint256 totalPower = 0;
-
-        // Sum voting power across all existing tokens
-        for (uint256 tokenId = 1; tokenId < _tokenIdCounter; tokenId++) {
-            if (_exists(tokenId)) {
-                totalPower += _balanceOfNFTAt(tokenId, timestamp);
-            }
+        uint256 length = _activeTokenIds.length();
+        for (uint256 i = 0; i < length; i++) {
+            totalPower += _balanceOfNFTAt(_activeTokenIds.at(i), timestamp);
         }
-
         return totalPower;
     }
 
@@ -358,7 +404,10 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
             blockNumber: block.number
         });
 
-        emit Supply(_globalEpoch > 1 ? uint256(_supplyPointHistory[epoch - 1].bias) : 0, uint256(_supplyPointHistory[epoch].bias));
+        emit Supply(
+            _globalEpoch > 1 ? uint256(_supplyPointHistory[epoch - 1].bias) : 0,
+            uint256(_supplyPointHistory[epoch].bias)
+        );
     }
 
     /// @dev Calculate slope (decay rate) for a lock
@@ -407,12 +456,8 @@ contract VotingEscrow is ERC721, Ownable, ReentrancyGuard {
         return from;
     }
 
-    /// @dev Check if token exists
+    /// @dev Check if token exists (OZ v5 internal — no external self-call)
     function _exists(uint256 tokenId) internal view returns (bool) {
-        try this.ownerOf(tokenId) returns (address) {
-            return true;
-        } catch {
-            return false;
-        }
+        return _ownerOf(tokenId) != address(0);
     }
 }

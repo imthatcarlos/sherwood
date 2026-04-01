@@ -5,33 +5,32 @@ pragma solidity 0.8.28;
 /// @notice Interface for the Minter contract that handles 3-phase emission schedule,
 ///         epoch flipping, rebase calculations, and WOOD Fed voting.
 interface IMinter {
-
     // ==================== ENUMS ====================
 
     /// @notice Emission phases
     enum Phase {
-        TakeOff,    // Epochs 1-8: +3%/week
-        Cruise,     // Epochs 9-44: -1%/week
-        WoodFed     // Epochs 45+: Voter-controlled ±0.35%/epoch
+        TakeOff, // Epochs 1-8: +3%/week
+        Cruise, // Epochs 9-44: -1%/week
+        WoodFed // Epochs 45+: Voter-controlled ±0.35%/epoch
     }
 
     /// @notice WOOD Fed vote options
     enum WoodFedVote {
-        Increase,   // +0.35% of current rate
-        Decrease,   // -0.35% of current rate
-        Hold        // No change
+        Increase, // +0.35% of current rate
+        Decrease, // -0.35% of current rate
+        Hold // No change
     }
 
     // ==================== STRUCTS ====================
 
     /// @notice Emission state for an epoch
     struct EmissionState {
-        uint256 totalEmission;      // Total WOOD emitted this epoch
-        uint256 teamAllocation;     // 5% to team/treasury
-        uint256 gaugeAllocation;    // 95% to gauges
-        uint256 rebaseAmount;       // veWOOD rebase amount
-        Phase phase;                // Current emission phase
-        bool processed;             // Whether epoch was processed
+        uint256 totalEmission; // Total WOOD emitted this epoch
+        uint256 teamAllocation; // 5% to team/treasury
+        uint256 gaugeAllocation; // 95% to gauges
+        uint256 rebaseAmount; // veWOOD rebase amount
+        Phase phase; // Current emission phase
+        bool processed; // Whether epoch was processed
     }
 
     // ==================== EVENTS ====================
@@ -112,12 +111,10 @@ interface IMinter {
     /// @return decreaseVotes Total votes for Decrease
     /// @return holdVotes Total votes for Hold
     /// @return winningVote The winning vote option
-    function getWoodFedResults(uint256 epoch) external view returns (
-        uint256 increaseVotes,
-        uint256 decreaseVotes,
-        uint256 holdVotes,
-        WoodFedVote winningVote
-    );
+    function getWoodFedResults(uint256 epoch)
+        external
+        view
+        returns (uint256 increaseVotes, uint256 decreaseVotes, uint256 holdVotes, WoodFedVote winningVote);
 
     /// @notice Calculate 8-epoch rolling baseline
     /// @return Rolling average of last 8 epochs' emission rates

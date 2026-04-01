@@ -18,16 +18,16 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
 
     /// @notice Rebase distribution for an epoch
     struct RebaseDistribution {
-        uint256 totalRebase;        // Total rebase amount for epoch
-        uint256 totalLocked;        // Total WOOD locked at distribution time
-        uint256 distributionTime;   // When distribution was calculated
-        bool processed;             // Whether distribution was processed
+        uint256 totalRebase; // Total rebase amount for epoch
+        uint256 totalLocked; // Total WOOD locked at distribution time
+        uint256 distributionTime; // When distribution was calculated
+        bool processed; // Whether distribution was processed
     }
 
     /// @notice Claim information for a veNFT
     struct RebaseClaim {
-        uint256 amount;             // Claimable rebase amount
-        bool claimed;               // Whether already claimed
+        uint256 amount; // Claimable rebase amount
+        bool claimed; // Whether already claimed
     }
 
     // ==================== IMMUTABLE ====================
@@ -90,12 +90,7 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
     /// @param _wood WOOD token contract address
     /// @param _minter Minter contract address (authorized to call distributeRebase)
     /// @param _owner Contract owner
-    constructor(
-        address _votingEscrow,
-        address _wood,
-        address _minter,
-        address _owner
-    ) Ownable(_owner) {
+    constructor(address _votingEscrow, address _wood, address _minter, address _owner) Ownable(_owner) {
         if (_votingEscrow == address(0) || _wood == address(0) || _minter == address(0)) {
             revert NotAuthorized();
         }
@@ -107,7 +102,6 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
 
     // ==================== CORE FUNCTIONS ====================
 
-    
     function distributeRebase(uint256 epoch, uint256 rebaseAmount) external {
         if (msg.sender != minter) revert NotAuthorized();
         if (rebaseAmount == 0) revert InvalidEpoch();
@@ -133,7 +127,6 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
         emit RebaseDistributed(epoch, rebaseAmount, totalLocked);
     }
 
-    
     function claimRebase(uint256 tokenId, uint256 epoch) external nonReentrant returns (uint256 amount) {
         if (votingEscrow.ownerOf(tokenId) != msg.sender) revert TokenNotOwned();
 
@@ -143,8 +136,11 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
         }
     }
 
-    
-    function claimMultipleEpochs(uint256 tokenId, uint256[] calldata epochs) external nonReentrant returns (uint256 totalAmount) {
+    function claimMultipleEpochs(uint256 tokenId, uint256[] calldata epochs)
+        external
+        nonReentrant
+        returns (uint256 totalAmount)
+    {
         if (votingEscrow.ownerOf(tokenId) != msg.sender) revert TokenNotOwned();
 
         for (uint256 i = 0; i < epochs.length; i++) {
@@ -156,7 +152,6 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
         }
     }
 
-    
     function claimAll(uint256 tokenId) external nonReentrant returns (uint256 totalAmount) {
         if (votingEscrow.ownerOf(tokenId) != msg.sender) revert TokenNotOwned();
 
@@ -174,7 +169,6 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
 
     // ==================== VIEW FUNCTIONS ====================
 
-    
     function getPendingRebase(uint256 tokenId, uint256 epoch) external view returns (uint256 reward) {
         RebaseClaim storage claim = _rebaseClaims[tokenId][epoch];
         if (claim.claimed) return 0;
@@ -182,8 +176,11 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
         return _calculateRebaseAmount(tokenId, epoch);
     }
 
-    
-    function getPendingMultipleEpochs(uint256 tokenId, uint256[] calldata epochs) external view returns (uint256[] memory rewards) {
+    function getPendingMultipleEpochs(uint256 tokenId, uint256[] calldata epochs)
+        external
+        view
+        returns (uint256[] memory rewards)
+    {
         rewards = new uint256[](epochs.length);
 
         for (uint256 i = 0; i < epochs.length; i++) {
@@ -191,13 +188,11 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
         }
     }
 
-    
     function getUnclaimedEpochs(uint256 tokenId) external view returns (uint256[] memory epochs) {
         uint256 lastClaim = _lastClaimEpoch[tokenId];
         return _getUnclaimedEpochsInternal(tokenId, lastClaim);
     }
 
-    
     function getTotalPendingRebase(uint256 tokenId) external view returns (uint256 totalPending) {
         uint256[] memory epochs = this.getUnclaimedEpochs(tokenId);
 
@@ -206,32 +201,26 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
         }
     }
 
-    
     function getRebaseDistribution(uint256 epoch) external view returns (RebaseDistribution memory distribution) {
         return _rebaseDistributions[epoch];
     }
 
-    
     function getRebaseClaim(uint256 tokenId, uint256 epoch) external view returns (RebaseClaim memory claim) {
         return _rebaseClaims[tokenId][epoch];
     }
 
-    
     function hasClaimed(uint256 tokenId, uint256 epoch) external view returns (bool) {
         return _rebaseClaims[tokenId][epoch].claimed;
     }
 
-    
     function getTotalRebaseDistributed() external view returns (uint256) {
         return _totalRebaseDistributed;
     }
 
-    
     function getTotalRebaseClaimed() external view returns (uint256) {
         return _totalRebaseClaimed;
     }
 
-    
     function getLastClaimEpoch(uint256 tokenId) external view returns (uint256) {
         return _lastClaimEpoch[tokenId];
     }
@@ -259,14 +248,7 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
         // Get lock info for event
         IVotingEscrow.LockInfo memory lockInfo = votingEscrow.getLock(tokenId);
 
-        emit RebaseClaimed(
-            msg.sender,
-            tokenId,
-            epoch,
-            amount,
-            lockInfo.amount,
-            _rebaseDistributions[epoch].totalLocked
-        );
+        emit RebaseClaimed(msg.sender, tokenId, epoch, amount, lockInfo.amount, _rebaseDistributions[epoch].totalLocked);
     }
 
     /// @dev Calculate rebase amount for a veNFT in an epoch
@@ -274,22 +256,26 @@ contract RewardsDistributor is Ownable, ReentrancyGuard {
         RebaseDistribution storage distribution = _rebaseDistributions[epoch];
         if (!distribution.processed || distribution.totalLocked == 0) return 0;
 
-        // Get lock info at distribution time
-        IVotingEscrow.LockInfo memory lockInfo = votingEscrow.getLock(tokenId);
-        if (lockInfo.amount == 0) return 0;
+        // Use historical lock amount at distribution time (prevents post-distribution inflation)
+        uint256 lockedAmount = votingEscrow.getLockAmountAt(tokenId, distribution.distributionTime);
+        if (lockedAmount == 0) return 0;
 
-        // Pro-rata share based on locked amount
-        return (distribution.totalRebase * lockInfo.amount) / distribution.totalLocked;
+        // Pro-rata share based on locked amount at distribution time
+        return (distribution.totalRebase * lockedAmount) / distribution.totalLocked;
     }
 
-    /// @dev Calculate total locked WOOD across all veNFTs using VotingEscrow's totalSupply
+    /// @dev Calculate total locked WOOD across all veNFTs (actual locked amount, not voting power)
     function _calculateTotalLocked() internal view returns (uint256 totalLocked) {
-        totalLocked = votingEscrow.totalSupply();
+        totalLocked = votingEscrow.totalLockedAmount();
         if (totalLocked == 0) totalLocked = 1; // Avoid division by zero
     }
 
     /// @dev Get unclaimed epochs for a tokenId since last claim
-    function _getUnclaimedEpochsInternal(uint256 tokenId, uint256 lastClaim) internal view returns (uint256[] memory epochs) {
+    function _getUnclaimedEpochsInternal(uint256 tokenId, uint256 lastClaim)
+        internal
+        view
+        returns (uint256[] memory epochs)
+    {
         // This is a simplified implementation
         // In production, you'd want to limit the search range and use more efficient data structures
 

@@ -49,8 +49,11 @@ contract VoteIncentiveTest is Test {
         // 2. Deploy VotingEscrow
         votingEscrow = new VotingEscrow(address(wood), owner);
 
-        // 3. Deploy Voter (needs VotingEscrow + factory + epoch start)
-        voter = new Voter(address(votingEscrow), address(mockFactory), block.timestamp, owner);
+        // 3. Deploy Voter (needs VotingEscrow + factory + epoch start + wood + minter)
+        address predictedMinter = vm.computeCreateAddress(owner, vm.getNonce(owner) + 1);
+        voter = new Voter(
+            address(votingEscrow), address(mockFactory), block.timestamp, address(wood), predictedMinter, owner
+        );
 
         // 4. Deploy Minter (needs all addresses)
         minter = new Minter(address(wood), address(voter), address(votingEscrow), treasury, owner);
@@ -65,9 +68,9 @@ contract VoteIncentiveTest is Test {
         voteIncentive = new VoteIncentive(address(voter), address(votingEscrow), owner);
 
         // 8. Create gauges
-        voter.createGauge(syndicateId1, address(0x100), 1);
+        voter.createGauge(syndicateId1, address(0x10), address(0x11), address(0x100), 1);
         voter.setGaugeActive(syndicateId1, true);
-        voter.createGauge(syndicateId2, address(0x200), 2);
+        voter.createGauge(syndicateId2, address(0x20), address(0x21), address(0x200), 2);
         voter.setGaugeActive(syndicateId2, true);
 
         vm.stopPrank();
@@ -108,7 +111,8 @@ contract VoteIncentiveTest is Test {
         vm.prank(briber);
         voteIncentive.depositIncentive(syndicateId1, epoch, address(bribeToken1), amount);
 
-        VoteIncentive.IncentivePool memory pool = voteIncentive.getIncentivePool(syndicateId1, epoch, address(bribeToken1));
+        VoteIncentive.IncentivePool memory pool =
+            voteIncentive.getIncentivePool(syndicateId1, epoch, address(bribeToken1));
         assertEq(pool.amount, amount);
         assertEq(pool.totalClaimed, 0);
         assertTrue(pool.active);
@@ -188,7 +192,7 @@ contract VoteIncentiveTest is Test {
         tokens[0] = address(bribeToken1);
 
         vm.prank(user1);
-        uint256[] memory claimed = voteIncentive.claimIncentives(syndicateId1, epoch, tokens);
+        uint256[] memory claimed = voteIncentive.claimIncentives(tokenId1, syndicateId1, epoch, tokens);
 
         uint256 user1BalanceAfter = bribeToken1.balanceOf(user1);
 
@@ -196,7 +200,7 @@ contract VoteIncentiveTest is Test {
         assertEq(claimed[0], incentiveAmount);
         assertEq(user1BalanceAfter - user1BalanceBefore, incentiveAmount);
 
-        assertTrue(voteIncentive.hasClaimed(user1, syndicateId1, epoch, address(bribeToken1)));
+        assertTrue(voteIncentive.hasClaimed(tokenId1, syndicateId1, epoch, address(bribeToken1)));
     }
 
     function testMultipleVotersClaimProportionally() public {
@@ -234,7 +238,7 @@ contract VoteIncentiveTest is Test {
         {
             uint256 balanceBefore = bribeToken1.balanceOf(user1);
             vm.prank(user1);
-            uint256[] memory claimed = voteIncentive.claimIncentives(syndicateId1, epoch, tokens);
+            uint256[] memory claimed = voteIncentive.claimIncentives(tokenId1, syndicateId1, epoch, tokens);
             uint256 balanceAfter = bribeToken1.balanceOf(user1);
             assertGt(claimed[0], 0);
             assertEq(balanceAfter - balanceBefore, claimed[0]);
@@ -244,7 +248,7 @@ contract VoteIncentiveTest is Test {
         {
             uint256 balanceBefore = bribeToken1.balanceOf(user2);
             vm.prank(user2);
-            uint256[] memory claimed = voteIncentive.claimIncentives(syndicateId1, epoch, tokens);
+            uint256[] memory claimed = voteIncentive.claimIncentives(tokenId2, syndicateId1, epoch, tokens);
             uint256 balanceAfter = bribeToken1.balanceOf(user2);
             assertGt(claimed[0], 0);
             assertEq(balanceAfter - balanceBefore, claimed[0]);
@@ -280,7 +284,7 @@ contract VoteIncentiveTest is Test {
         tokens[0] = address(bribeToken1);
 
         vm.prank(user1);
-        uint256[] memory claimed = voteIncentive.claimIncentives(syndicateId1, 2, tokens);
+        uint256[] memory claimed = voteIncentive.claimIncentives(tokenId1, syndicateId1, 2, tokens);
         assertEq(claimed[0], incentiveAmount); // Full amount since only voter
     }
 
@@ -318,7 +322,7 @@ contract VoteIncentiveTest is Test {
         uint256 balance2Before = bribeToken2.balanceOf(user1);
 
         vm.prank(user1);
-        uint256[] memory claimed = voteIncentive.claimIncentives(syndicateId1, epoch, tokens);
+        uint256[] memory claimed = voteIncentive.claimIncentives(tokenId1, syndicateId1, epoch, tokens);
 
         assertEq(claimed[0], amount1);
         assertEq(claimed[1], amount2);
@@ -361,10 +365,10 @@ contract VoteIncentiveTest is Test {
         uint256 balanceBefore = bribeToken1.balanceOf(user1);
 
         vm.prank(user1);
-        uint256[] memory claimed1 = voteIncentive.claimIncentives(syndicateId1, epoch, tokens);
+        uint256[] memory claimed1 = voteIncentive.claimIncentives(tokenId1, syndicateId1, epoch, tokens);
 
         vm.prank(user1);
-        uint256[] memory claimed2 = voteIncentive.claimIncentives(syndicateId2, epoch, tokens);
+        uint256[] memory claimed2 = voteIncentive.claimIncentives(tokenId1, syndicateId2, epoch, tokens);
 
         uint256 balanceAfter = bribeToken1.balanceOf(user1);
 
@@ -398,7 +402,7 @@ contract VoteIncentiveTest is Test {
         voter.flipEpoch();
 
         // After epoch 2 ends, should show full amount
-        uint256 pendingAfter = voteIncentive.getPendingIncentives(user1, syndicateId1, epoch, address(bribeToken1));
+        uint256 pendingAfter = voteIncentive.getPendingIncentives(tokenId1, syndicateId1, epoch, address(bribeToken1));
         assertEq(pendingAfter, incentiveAmount);
 
         // After claiming, pending should be 0
@@ -406,9 +410,10 @@ contract VoteIncentiveTest is Test {
         tokens[0] = address(bribeToken1);
 
         vm.prank(user1);
-        voteIncentive.claimIncentives(syndicateId1, epoch, tokens);
+        voteIncentive.claimIncentives(tokenId1, syndicateId1, epoch, tokens);
 
-        uint256 pendingAfterClaim = voteIncentive.getPendingIncentives(user1, syndicateId1, epoch, address(bribeToken1));
+        uint256 pendingAfterClaim =
+            voteIncentive.getPendingIncentives(tokenId1, syndicateId1, epoch, address(bribeToken1));
         assertEq(pendingAfterClaim, 0);
     }
 
@@ -452,7 +457,7 @@ contract VoteIncentiveTest is Test {
         uint256 balanceBefore = bribeToken1.balanceOf(user1);
 
         vm.prank(user1);
-        uint256[] memory totalClaimed = voteIncentive.claimAllIncentives(claimSyndicateIds, epochs, tokens);
+        uint256[] memory totalClaimed = voteIncentive.claimAllIncentives(tokenId1, claimSyndicateIds, epochs, tokens);
 
         uint256 balanceAfter = bribeToken1.balanceOf(user1);
 

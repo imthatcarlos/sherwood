@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {IVoter} from "./interfaces/IVoter.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {ISyndicateFactory} from "./interfaces/ISyndicateFactory.sol";
+import {SyndicateGauge} from "./SyndicateGauge.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
@@ -18,14 +19,14 @@ contract Voter is Ownable, ReentrancyGuard {
 
     /// @notice Vote allocation for a veNFT in an epoch
     struct VoteAllocation {
-        uint256[] syndicateIds;     // Syndicates voted for
-        uint256[] weights;          // Vote weights (basis points, must sum to 10000)
+        uint256[] syndicateIds; // Syndicates voted for
+        uint256[] weights; // Vote weights (basis points, must sum to 10000)
     }
 
     /// @notice Gauge information for a syndicate
     struct GaugeInfo {
-        address gauge;              // SyndicateGauge contract address
-        bool active;                // Whether gauge is active for voting
+        address gauge; // SyndicateGauge contract address
+        bool active; // Whether gauge is active for voting
     }
 
     // ==================== CONSTANTS ====================
@@ -58,6 +59,12 @@ contract Voter is Ownable, ReentrancyGuard {
 
     /// @notice SyndicateFactory contract
     ISyndicateFactory public immutable syndicateFactory;
+
+    /// @notice WOOD token address (needed for SyndicateGauge deployment)
+    address public immutable wood;
+
+    /// @notice Minter contract address (needed for SyndicateGauge deployment)
+    address public immutable minter;
 
     // ==================== STORAGE ====================
 
@@ -134,6 +141,8 @@ contract Voter is Ownable, ReentrancyGuard {
         address _votingEscrow,
         address _syndicateFactory,
         uint256 _epochStartReference,
+        address _wood,
+        address _minter,
         address _owner
     ) Ownable(_owner) {
         if (_votingEscrow == address(0) || _syndicateFactory == address(0)) revert NotAuthorized();
@@ -141,12 +150,13 @@ contract Voter is Ownable, ReentrancyGuard {
         votingEscrow = IVotingEscrow(_votingEscrow);
         syndicateFactory = ISyndicateFactory(_syndicateFactory);
         EPOCH_START_REFERENCE = _epochStartReference;
+        wood = _wood;
+        minter = _minter;
         _currentEpoch = 1;
     }
 
     // ==================== CORE FUNCTIONS ====================
 
-    
     function vote(uint256 tokenId, uint256[] calldata syndicateIds, uint256[] calldata weights) external nonReentrant {
         if (!isVotingActive()) revert VotingNotActive();
         if (votingEscrow.ownerOf(tokenId) != msg.sender) revert NotAuthorized();
@@ -186,7 +196,6 @@ contract Voter is Ownable, ReentrancyGuard {
         emit Voted(msg.sender, tokenId, epoch, syndicateIds, weights, votingPower);
     }
 
-    
     function reset(uint256 tokenId) external nonReentrant {
         if (!isVotingActive()) revert VotingNotActive();
         if (votingEscrow.ownerOf(tokenId) != msg.sender) revert NotAuthorized();
@@ -212,24 +221,28 @@ contract Voter is Ownable, ReentrancyGuard {
         emit EpochFlipped(_currentEpoch, block.timestamp);
     }
 
-    
-    function createGauge(uint256 syndicateId, address pool, uint256 nftTokenId) external onlyOwner {
+    function createGauge(
+        uint256 syndicateId,
+        address syndicateVault,
+        address vaultRewardsDistributor,
+        address pool,
+        uint256 nftTokenId
+    ) external onlyOwner {
         if (_gauges[syndicateId].gauge != address(0)) revert GaugeAlreadyExists();
 
-        // TODO: Deploy SyndicateGauge contract here
-        // For now, just store the gauge info
-        _gauges[syndicateId] = GaugeInfo({
-            gauge: pool, // Temporary - will be actual gauge contract
-            active: true
-        });
+        // Deploy a real SyndicateGauge for this syndicate
+        SyndicateGauge gauge = new SyndicateGauge(
+            syndicateId, syndicateVault, vaultRewardsDistributor, pool, nftTokenId, wood, address(this), minter, owner()
+        );
+
+        _gauges[syndicateId] = GaugeInfo({gauge: address(gauge), active: true});
 
         _activeSyndicates.add(syndicateId);
 
-        emit GaugeCreated(syndicateId, pool, pool, nftTokenId);
-        emit GaugeActivated(syndicateId, pool);
+        emit GaugeCreated(syndicateId, address(gauge), pool, nftTokenId);
+        emit GaugeActivated(syndicateId, address(gauge));
     }
 
-    
     function setGaugeActive(uint256 syndicateId, bool active) external onlyOwner {
         if (_gauges[syndicateId].gauge == address(0)) revert GaugeNotExists();
 
@@ -246,18 +259,15 @@ contract Voter is Ownable, ReentrancyGuard {
 
     // ==================== VIEW FUNCTIONS ====================
 
-    
     function currentEpoch() external view returns (uint256) {
         return _currentEpoch;
     }
 
-    
     function getEpochStart(uint256 epoch) public view returns (uint256) {
         if (epoch == 0) return 0;
         return EPOCH_START_REFERENCE + (epoch - 1) * EPOCH_DURATION;
     }
 
-    
     function getEpochEnd(uint256 epoch) public view returns (uint256) {
         if (epoch == 0) return 0;
         return getEpochStart(epoch) + EPOCH_DURATION - 1;
@@ -275,25 +285,25 @@ contract Voter is Ownable, ReentrancyGuard {
         return currentTime >= votingStart && currentTime <= epochEnd;
     }
 
-    
-    function getVoteAllocation(uint256 tokenId, uint256 epoch) external view returns (VoteAllocation memory allocation) {
+    function getVoteAllocation(uint256 tokenId, uint256 epoch)
+        external
+        view
+        returns (VoteAllocation memory allocation)
+    {
         if (epoch == 0) epoch = _currentEpoch;
         return _voteAllocations[tokenId][epoch];
     }
 
-    
     function getSyndicateVotes(uint256 syndicateId, uint256 epoch) external view returns (uint256) {
         if (epoch == 0) epoch = _currentEpoch;
         return _syndicateVotes[syndicateId][epoch];
     }
 
-    
     function getTotalVotes(uint256 epoch) external view returns (uint256) {
         if (epoch == 0) epoch = _currentEpoch;
         return _totalVotes[epoch];
     }
 
-    
     function isQuorumMet(uint256 epoch) external view returns (bool) {
         if (epoch == 0) epoch = _currentEpoch;
 
@@ -304,17 +314,19 @@ contract Voter is Ownable, ReentrancyGuard {
         return _totalVotes[epoch] >= requiredVotes;
     }
 
-    
     function getGaugeInfo(uint256 syndicateId) external view returns (GaugeInfo memory info) {
         return _gauges[syndicateId];
     }
 
-    
     function getActiveSyndicates() external view returns (uint256[] memory) {
         return _activeSyndicates.values();
     }
 
-    function getVoteDistribution(uint256 epoch) external view returns (uint256[] memory syndicateIds, uint256[] memory allocations) {
+    function getVoteDistribution(uint256 epoch)
+        external
+        view
+        returns (uint256[] memory syndicateIds, uint256[] memory allocations)
+    {
         if (epoch == 0) epoch = _currentEpoch;
 
         // If quorum wasn't met for this epoch, use the last epoch where quorum was met

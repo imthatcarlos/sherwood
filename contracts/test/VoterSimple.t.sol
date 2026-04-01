@@ -23,12 +23,13 @@ contract VoterSimpleTest is Test {
 
         wood = new MockWoodToken(owner);
         votingEscrow = new VotingEscrow(address(wood), owner);
-        voter = new Voter(address(votingEscrow), mockSyndicateFactory, block.timestamp, owner);
+        voter =
+            new Voter(address(votingEscrow), mockSyndicateFactory, block.timestamp, address(wood), address(0), owner);
 
         wood.ownerMint(user1, 10000e18);
 
         voter.startVoting();
-        voter.createGauge(1, address(0x100), 1);
+        voter.createGauge(1, address(0x10), address(0x11), address(0x100), 1);
         voter.setGaugeActive(1, true);
 
         vm.stopPrank();
@@ -72,7 +73,7 @@ contract VoterSimpleTest is Test {
 
     function testGaugeManagement() public {
         vm.prank(owner);
-        voter.createGauge(2, address(0x200), 2);
+        voter.createGauge(2, address(0x20), address(0x21), address(0x200), 2);
 
         vm.prank(owner);
         voter.setGaugeActive(2, true);

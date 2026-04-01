@@ -5,28 +5,22 @@ pragma solidity 0.8.28;
 /// @notice Interface for SyndicateGauge contract that receives WOOD emissions
 ///         proportional to votes and streams them to vault rewards + LPs.
 interface ISyndicateGauge {
-
     // ==================== STRUCTS ====================
 
     /// @notice Emission distribution for an epoch
     struct EmissionDistribution {
-        uint256 totalReceived;      // Total WOOD received this epoch
-        uint256 vaultRewards;       // Amount sent to vault rewards (90-100%)
-        uint256 lpRewards;          // Amount sent to LPs (0-10%, weeks 1-12 only)
-        uint256 epoch;              // Epoch number
-        bool distributed;           // Whether distribution was executed
+        uint256 totalReceived; // Total WOOD received this epoch
+        uint256 vaultRewards; // Amount sent to vault rewards (90-100%)
+        uint256 lpRewards; // Amount sent to LPs (0-10%, weeks 1-12 only)
+        uint256 epoch; // Epoch number
+        bool distributed; // Whether distribution was executed
     }
 
     // ==================== EVENTS ====================
 
     event EmissionReceived(uint256 indexed epoch, uint256 amount, address indexed from);
 
-    event EmissionDistributed(
-        uint256 indexed epoch,
-        uint256 vaultRewards,
-        uint256 lpRewards,
-        uint256 totalDistributed
-    );
+    event EmissionDistributed(uint256 indexed epoch, uint256 vaultRewards, uint256 lpRewards, uint256 totalDistributed);
 
     event LPRewardsClaimed(address indexed lp, uint256 amount, uint256 epoch);
 

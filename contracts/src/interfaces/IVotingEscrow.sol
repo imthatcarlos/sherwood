@@ -7,24 +7,19 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 /// @notice Interface for the VotingEscrow contract that allows users to lock WOOD tokens
 ///         to receive veWOOD NFTs with time-weighted voting power.
 interface IVotingEscrow is IERC721 {
-
     // ==================== STRUCTS ====================
 
     /// @notice Lock information for a veNFT
     struct LockInfo {
-        uint256 amount;         // Amount of WOOD locked
-        uint256 end;            // Lock end timestamp
-        bool autoMaxLock;       // If true, treated as 1-year lock with no decay
+        uint256 amount; // Amount of WOOD locked
+        uint256 end; // Lock end timestamp
+        bool autoMaxLock; // If true, treated as 1-year lock with no decay
     }
 
     // ==================== EVENTS ====================
 
     event Deposit(
-        address indexed provider,
-        uint256 indexed tokenId,
-        uint256 value,
-        uint256 locktime,
-        uint256 timestamp
+        address indexed provider, uint256 indexed tokenId, uint256 value, uint256 locktime, uint256 timestamp
     );
 
     event Withdraw(address indexed provider, uint256 indexed tokenId, uint256 value, uint256 timestamp);
@@ -110,4 +105,14 @@ interface IVotingEscrow is IERC721 {
 
     /// @notice WOOD token address
     function wood() external view returns (address);
+
+    /// @notice Get the total amount of WOOD locked across all veNFTs
+    /// @return Total locked WOOD amount (not voting power)
+    function totalLockedAmount() external view returns (uint256);
+
+    /// @notice Get the lock amount for a veNFT at a specific timestamp
+    /// @param tokenId The veNFT to query
+    /// @param timestamp The timestamp to query at
+    /// @return Lock amount at the given timestamp
+    function getLockAmountAt(uint256 tokenId, uint256 timestamp) external view returns (uint256);
 }

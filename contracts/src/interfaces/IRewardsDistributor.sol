@@ -5,21 +5,20 @@ pragma solidity 0.8.28;
 /// @notice Interface for RewardsDistributor that distributes rebase rewards
 ///         to veWOOD holders proportional to their locked amounts.
 interface IRewardsDistributor {
-
     // ==================== STRUCTS ====================
 
     /// @notice Rebase distribution for an epoch
     struct RebaseDistribution {
-        uint256 totalRebase;        // Total rebase amount for epoch
-        uint256 totalLocked;        // Total WOOD locked at distribution time
-        uint256 distributionTime;   // When distribution was calculated
-        bool processed;             // Whether distribution was processed
+        uint256 totalRebase; // Total rebase amount for epoch
+        uint256 totalLocked; // Total WOOD locked at distribution time
+        uint256 distributionTime; // When distribution was calculated
+        bool processed; // Whether distribution was processed
     }
 
     /// @notice Claim information for a veNFT
     struct RebaseClaim {
-        uint256 amount;             // Claimable rebase amount
-        bool claimed;               // Whether already claimed
+        uint256 amount; // Claimable rebase amount
+        bool claimed; // Whether already claimed
     }
 
     // ==================== EVENTS ====================
@@ -82,7 +81,10 @@ interface IRewardsDistributor {
     /// @param tokenId The veNFT to check
     /// @param epochs Array of epochs to check
     /// @return rewards Array of pending amounts per epoch
-    function getPendingMultipleEpochs(uint256 tokenId, uint256[] calldata epochs) external view returns (uint256[] memory rewards);
+    function getPendingMultipleEpochs(uint256 tokenId, uint256[] calldata epochs)
+        external
+        view
+        returns (uint256[] memory rewards);
 
     /// @notice Get all unclaimed epochs for a veNFT
     /// @param tokenId The veNFT to check

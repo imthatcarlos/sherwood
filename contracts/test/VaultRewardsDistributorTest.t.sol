@@ -65,8 +65,11 @@ contract VaultRewardsDistributorTest is Test {
         // 2. Deploy VotingEscrow
         votingEscrow = new VotingEscrow(address(wood), owner);
 
-        // 3. Deploy Voter (needs VotingEscrow + factory + epoch start)
-        voter = new Voter(address(votingEscrow), address(mockFactory), block.timestamp, owner);
+        // 3. Deploy Voter (needs VotingEscrow + factory + epoch start + wood + minter)
+        address predictedMinter = vm.computeCreateAddress(owner, vm.getNonce(owner) + 1);
+        voter = new Voter(
+            address(votingEscrow), address(mockFactory), block.timestamp, address(wood), predictedMinter, owner
+        );
 
         // 4. Deploy Minter (needs all addresses)
         minter = new Minter(address(wood), address(voter), address(votingEscrow), treasury, owner);
@@ -81,13 +84,7 @@ contract VaultRewardsDistributorTest is Test {
         mockVault = new MockVault();
 
         // 8. Deploy VaultRewardsDistributor
-        distributor = new VaultRewardsDistributor(
-            address(mockVault),
-            address(wood),
-            treasury,
-            address(voter),
-            owner
-        );
+        distributor = new VaultRewardsDistributor(address(mockVault), address(wood), treasury, address(voter), owner);
 
         vm.stopPrank();
 
