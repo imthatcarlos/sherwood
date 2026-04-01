@@ -27,6 +27,7 @@ contract MamoYieldStrategy is BaseStrategy {
     error InvalidAmount();
     error CreateStrategyFailed();
     error WithdrawFailed();
+    error NoTunableParams();
 
     // ── Storage (per-clone) ──
     address public underlying; // e.g., USDC
@@ -87,6 +88,6 @@ contract MamoYieldStrategy is BaseStrategy {
 
     /// @notice No param updates for this strategy.
     function _updateParams(bytes calldata) internal pure override {
-        revert InvalidAmount(); // no tunable params
+        revert NoTunableParams();
     }
 }

@@ -247,7 +247,7 @@ contract MamoYieldStrategyTest is Test {
 
         // No tunable params — always reverts
         vm.prank(proposer);
-        vm.expectRevert(MamoYieldStrategy.InvalidAmount.selector);
+        vm.expectRevert(MamoYieldStrategy.NoTunableParams.selector);
         strategy.updateParams(abi.encode(uint256(0)));
     }
 
