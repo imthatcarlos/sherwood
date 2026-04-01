@@ -1,3 +1,6 @@
 [submodule "mintlify-docs"]
 	path = mintlify-docs
 	url = https://github.com/imthatcarlos/mintlify-docs.git
+[submodule "contracts/lib/LayerZero-v2"]
+	path = contracts/lib/LayerZero-v2
+	url = https://github.com/LayerZero-Labs/LayerZero-v2
