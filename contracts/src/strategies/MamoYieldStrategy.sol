@@ -26,7 +26,7 @@ contract MamoYieldStrategy is BaseStrategy {
     // ── Errors ──
     error InvalidAmount();
     error CreateStrategyFailed();
-    error WithdrawFailed();
+    error DepositFailed();
     error NoTunableParams();
 
     // ── Storage (per-clone) ──
@@ -66,11 +66,19 @@ contract MamoYieldStrategy is BaseStrategy {
         if (mamoStrategy_ == address(0)) revert CreateStrategyFailed();
         mamoStrategy = mamoStrategy_;
 
+        // Verify the factory returned a contract, not an EOA
+        uint256 codeSize;
+        assembly { codeSize := extcodesize(mamoStrategy_) }
+        if (codeSize == 0) revert CreateStrategyFailed();
+
         // Approve the Mamo strategy to pull our underlying (deposit does safeTransferFrom)
         IERC20(underlying).forceApprove(mamoStrategy_, amount);
 
-        // Deposit into Mamo strategy
+        // Deposit into Mamo strategy and verify funds left this contract
+        uint256 balanceBefore = IERC20(underlying).balanceOf(address(this));
         IMamoERC20Strategy(mamoStrategy_).deposit(amount);
+        uint256 balanceAfter = IERC20(underlying).balanceOf(address(this));
+        if (balanceBefore - balanceAfter < amount) revert DepositFailed();
     }
 
     /// @notice Withdraw all from Mamo strategy, push underlying back to vault
