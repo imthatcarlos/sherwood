@@ -59,5 +59,7 @@ export function loadSimConfig(chainOverride?: Network): SimConfig {
     fundAmountEth: process.env.SIM_FUND_ETH || "0.007",
     fundAmountUsdc: process.env.SIM_FUND_USDC || "10",
     strategyDuration: process.env.SIM_STRATEGY_DURATION || "3h",
+    concurrency: parseInt(process.env.SIM_CONCURRENCY || "4", 10),
+    compiled: process.env.SIM_COMPILED === "true",
   };
 }

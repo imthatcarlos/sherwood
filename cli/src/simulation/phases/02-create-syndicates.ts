@@ -11,7 +11,8 @@
 
 import type { SimConfig, SimState } from "../types.js";
 import { agentHomeDir, updateAgentConfig } from "../agent-home.js";
-import { execSherwood, parseVaultAddress } from "../exec.js";
+import { execSherwoodAsync, parseVaultAddress } from "../exec.js";
+import { runInPool } from "../pool.js";
 import { updateAgent, updateSyndicate } from "../state.js";
 import { PERSONAS } from "../personas.js";
 import { CHAIN_REGISTRY } from "../../lib/network.js";
@@ -24,25 +25,25 @@ export async function runPhase02(config: SimConfig, state: SimState, logger?: Si
 
   const creators = state.agents.filter((a) => a.role === "creator");
 
-  for (const creator of creators) {
+  await runInPool(creators, config.concurrency, async (creator) => {
     if (creator.syndicateCreated) {
       console.log(
         `  [agent-${creator.index}] Already created syndicate "${creator.syndicateSubdomain}" — skipping`,
       );
-      continue;
+      return;
     }
 
     if (!creator.identityMinted || creator.agentId === undefined) {
       console.error(
         `  [agent-${creator.index}] Identity not minted yet — skipping syndicate creation`,
       );
-      continue;
+      return;
     }
 
     const persona = PERSONAS.find((p) => p.index === creator.index);
     if (!persona || !persona.syndicateName || !persona.syndicateSubdomain) {
       console.error(`  [agent-${creator.index}] No syndicate persona — skipping`);
-      continue;
+      return;
     }
 
     const agentHome = agentHomeDir(config.baseDir, creator.index);
@@ -54,21 +55,15 @@ export async function runPhase02(config: SimConfig, state: SimState, logger?: Si
 
       const vaultAsset = persona.vaultAsset || "USDC";
 
-      const output = execSherwood(
+      const output = await execSherwoodAsync(
         agentHome,
         [
-          "syndicate",
-          "create",
-          "--name",
-          persona.syndicateName,
-          "--subdomain",
-          persona.syndicateSubdomain,
-          "--description",
-          persona.syndicateDescription || persona.description,
-          "--agent-id",
-          String(creator.agentId),
-          "--asset",
-          vaultAsset,
+          "syndicate", "create",
+          "--name", persona.syndicateName,
+          "--subdomain", persona.syndicateSubdomain,
+          "--description", persona.syndicateDescription || persona.description,
+          "--agent-id", String(creator.agentId),
+          "--asset", vaultAsset,
           "--open-deposits",
           "--public-chat",
           "-y",
@@ -78,29 +73,24 @@ export async function runPhase02(config: SimConfig, state: SimState, logger?: Si
         creator.index,
       );
 
-      // Parse vault address
       const vault = config.dryRun
         ? `0x${creator.index.toString().padStart(40, "0")}`
         : parseVaultAddress(output);
 
       if (vault) {
-        // Update agent HOME config with vault (keyed by chain ID)
         const chainId = String(CHAIN_REGISTRY[config.chain].chain.id);
         updateAgentConfig(config.baseDir, creator.index, {
           contracts: { [chainId]: { vault } },
         });
-
         updateAgent(config.stateFile, state, creator.index - 1, {
           syndicateCreated: true,
           syndicateSubdomain: persona.syndicateSubdomain,
           syndicateVault: vault,
         });
-
         updateSyndicate(config.stateFile, state, persona.syndicateSubdomain, {
           vault,
           asset: vaultAsset,
         });
-
         console.log(`  [agent-${creator.index}] Syndicate created! Vault: ${vault}`);
       } else {
         console.warn(
@@ -116,7 +106,7 @@ export async function runPhase02(config: SimConfig, state: SimState, logger?: Si
         `  [agent-${creator.index}] Syndicate creation failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }
+  });
 
   logger?.info("phase 02 complete");
   console.log("\nPhase 02 complete.");

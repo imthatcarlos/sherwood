@@ -8,7 +8,8 @@
 
 import type { SimConfig, SimState } from "../types.js";
 import { agentHomeDir } from "../agent-home.js";
-import { execSherwood } from "../exec.js";
+import { execSherwoodAsync } from "../exec.js";
+import { runInPool } from "../pool.js";
 import { PERSONAS } from "../personas.js";
 import type { SimLogger } from "../logger.js";
 
@@ -47,27 +48,21 @@ export async function runPhase06(config: SimConfig, state: SimState, logger?: Si
     const shuffled = [...memberAgents].sort(() => Math.random() - 0.5);
     const speakers = shuffled.slice(0, Math.min(3, memberAgents.length));
 
-    for (const agent of speakers) {
+    await runInPool(speakers, config.concurrency, async (agent) => {
       const persona = PERSONAS.find((p) => p.index === agent.index);
-      if (!persona) continue;
+      if (!persona) return;
 
       const message = pickRandom(persona.chatLines);
-      if (!message) continue;
+      if (!message) return;
 
       const agentHome = agentHomeDir(config.baseDir, agent.index);
 
       try {
         console.log(`    [agent-${agent.index}] sending: "${message.slice(0, 60)}..."`);
 
-        execSherwood(
+        await execSherwoodAsync(
           agentHome,
-          [
-            "chat",
-            syndicate.subdomain,
-            "send",
-            message,
-            "--markdown",
-          ],
+          ["chat", syndicate.subdomain, "send", message, "--markdown"],
           config,
           logger,
           agent.index,
@@ -78,7 +73,7 @@ export async function runPhase06(config: SimConfig, state: SimState, logger?: Si
           `    [agent-${agent.index}] Chat failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-    }
+    });
   }
 
   logger?.info("phase 06 complete");

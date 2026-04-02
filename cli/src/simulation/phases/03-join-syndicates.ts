@@ -11,7 +11,8 @@
 
 import type { SimConfig, SimState } from "../types.js";
 import { agentHomeDir } from "../agent-home.js";
-import { execSherwood } from "../exec.js";
+import { execSherwoodAsync } from "../exec.js";
+import { runInPool } from "../pool.js";
 import { updateAgent } from "../state.js";
 import { PERSONAS } from "../personas.js";
 import type { SimLogger } from "../logger.js";
@@ -60,23 +61,23 @@ export async function runPhase03(config: SimConfig, state: SimState, logger?: Si
     }
   }
 
-  for (const joiner of joiners) {
+  await runInPool(joiners, config.concurrency, async (joiner) => {
     if (joiner.joinRequested) {
       console.log(
         `  [agent-${joiner.index}] Already requested join for "${joiner.syndicateSubdomain}" — skipping`,
       );
-      continue;
+      return;
     }
 
     if (!joiner.identityMinted) {
       console.error(`  [agent-${joiner.index}] Identity not minted yet — skipping join`);
-      continue;
+      return;
     }
 
     const subdomain = assignments.get(joiner.index);
     if (!subdomain) {
       console.error(`  [agent-${joiner.index}] No syndicate assigned — skipping`);
-      continue;
+      return;
     }
 
     const persona = PERSONAS.find((p) => p.index === joiner.index);
@@ -89,16 +90,9 @@ export async function runPhase03(config: SimConfig, state: SimState, logger?: Si
     try {
       console.log(`  [agent-${joiner.index}] Requesting to join "${subdomain}"...`);
 
-      execSherwood(
+      await execSherwoodAsync(
         agentHome,
-        [
-          "syndicate",
-          "join",
-          "--subdomain",
-          subdomain,
-          "--message",
-          message,
-        ],
+        ["syndicate", "join", "--subdomain", subdomain, "--message", message],
         config,
         logger,
         joiner.index,
@@ -115,7 +109,7 @@ export async function runPhase03(config: SimConfig, state: SimState, logger?: Si
         `  [agent-${joiner.index}] Join request failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }
+  });
 
   logger?.info("phase 03 complete");
   console.log("\nPhase 03 complete.");

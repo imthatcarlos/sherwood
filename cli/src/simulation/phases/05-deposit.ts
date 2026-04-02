@@ -10,7 +10,8 @@
 
 import type { SimConfig, SimState } from "../types.js";
 import { agentHomeDir } from "../agent-home.js";
-import { execSherwood } from "../exec.js";
+import { execSherwoodAsync } from "../exec.js";
+import { runInPool } from "../pool.js";
 import { updateAgent } from "../state.js";
 import { PERSONAS } from "../personas.js";
 import type { SimLogger } from "../logger.js";
@@ -38,28 +39,25 @@ export async function runPhase05(config: SimConfig, state: SimState, logger?: Si
 
   console.log(`Depositing for ${eligibleAgents.length} agents...\n`);
 
-  for (const agent of eligibleAgents) {
+  await runInPool(eligibleAgents, config.concurrency, async (agent) => {
     // Resolve vault address
     let vault: string | undefined;
 
     if (agent.role === "creator") {
       vault = agent.syndicateVault;
     } else {
-      // Joiner: get vault from their assigned syndicate
       const syn = state.syndicates.find((s) => s.subdomain === agent.syndicateSubdomain);
       vault = syn?.vault;
     }
 
     if (!vault) {
       console.error(`  [agent-${agent.index}] No vault address found — skipping deposit`);
-      continue;
+      return;
     }
 
-    // Determine vault asset type
     const syn = state.syndicates.find((s) => s.subdomain === agent.syndicateSubdomain);
     const isWethVault = syn?.asset === "WETH";
 
-    // Get deposit amount — WETH vaults use a fixed ETH amount (~$10 at ~$2500/ETH)
     const persona = PERSONAS.find((p) => p.index === agent.index);
     const amount = isWethVault ? "0.004" : (persona?.depositAmount || "10");
     const assetLabel = isWethVault ? "ETH (->WETH)" : "USDC";
@@ -69,27 +67,10 @@ export async function runPhase05(config: SimConfig, state: SimState, logger?: Si
     try {
       console.log(`  [agent-${agent.index}] Depositing ${amount} ${assetLabel} into ${vault}...`);
 
-      const depositArgs = [
-        "vault",
-        "deposit",
-        "--amount",
-        amount,
-        "--vault",
-        vault,
-      ];
+      const depositArgs = ["vault", "deposit", "--amount", amount, "--vault", vault];
+      if (isWethVault) depositArgs.push("--use-eth");
 
-      // For WETH vaults, --use-eth wraps native ETH to WETH
-      if (isWethVault) {
-        depositArgs.push("--use-eth");
-      }
-
-      execSherwood(
-        agentHome,
-        depositArgs,
-        config,
-        logger,
-        agent.index,
-      );
+      await execSherwoodAsync(agentHome, depositArgs, config, logger, agent.index);
 
       updateAgent(config.stateFile, state, agent.index - 1, { deposited: true });
       console.log(`  [agent-${agent.index}] Deposited ${amount} ${assetLabel}`);
@@ -98,7 +79,7 @@ export async function runPhase05(config: SimConfig, state: SimState, logger?: Si
         `  [agent-${agent.index}] Deposit failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }
+  });
 
   logger?.info("phase 05 complete");
   console.log("\nPhase 05 complete.");

@@ -16,6 +16,8 @@ export interface SimConfig {
   fundAmountEth: string; // default "0.007" (gas + WETH deposit buffer)
   fundAmountUsdc: string; // default "10"
   strategyDuration: string; // default "3h", from SIM_STRATEGY_DURATION
+  concurrency: number; // max parallel agent ops per batch, from SIM_CONCURRENCY (default 4)
+  compiled: boolean; // use dist/index.js instead of npx tsx src/index.ts (from SIM_COMPILED)
 }
 
 /** A single structured log entry written as a JSONL line. */

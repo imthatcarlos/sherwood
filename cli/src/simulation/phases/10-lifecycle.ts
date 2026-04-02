@@ -13,7 +13,8 @@
 
 import type { SimConfig, SimState } from "../types.js";
 import { agentHomeDir } from "../agent-home.js";
-import { execSherwood, parseProposalId } from "../exec.js";
+import { execSherwood, execSherwoodAsync, parseProposalId } from "../exec.js";
+import { runInPool } from "../pool.js";
 import { updateSyndicate, saveState } from "../state.js";
 import { getProposalSpec } from "../proposal-specs.js";
 import type { SimLogger } from "../logger.js";
@@ -56,135 +57,150 @@ export async function runPhase10(
 
   const result: LifecycleResult = { executed: 0, settled: 0, proposed: 0, errors: [] };
 
-  for (const syndicate of state.syndicates) {
-    if (!syndicate.vault && !config.dryRun) continue;
-
-    const creator = state.agents.find(
-      (a) => a.role === "creator" && a.syndicateSubdomain === syndicate.subdomain,
-    );
-    if (!creator) continue;
-
-    const creatorHome = agentHomeDir(config.baseDir, creator.index);
-    const vault = syndicate.vault!;
-
-    // 1. Fetch current on-chain proposal states
-    let onChainProposals: Array<{ id: number; state: string }> = [];
-    try {
-      const listOutput = execSherwood(
-        creatorHome,
-        ["proposal", "list", "--vault", vault, "--state", "all"],
-        config,
-        logger,
-        creator.index,
+  // Different syndicates use different creator wallets — parallelize across syndicates.
+  // Within each syndicate, execute/settle/re-propose stay sequential (same wallet, ordered nonces).
+  await runInPool(
+    state.syndicates.filter((s) => s.vault || config.dryRun),
+    config.concurrency,
+    async (syndicate) => {
+      const creator = state.agents.find(
+        (a) => a.role === "creator" && a.syndicateSubdomain === syndicate.subdomain,
       );
-      onChainProposals = parseProposalList(listOutput);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      result.errors.push(`${syndicate.subdomain}: failed to list proposals: ${msg.split("\n")[0]}`);
-      continue;
-    }
+      if (!creator) return;
 
-    console.log(`  [${syndicate.subdomain}] ${onChainProposals.length} proposals on-chain`);
+      const creatorHome = agentHomeDir(config.baseDir, creator.index);
+      const vault = syndicate.vault!;
 
-    // 2. Execute approved proposals
-    for (const onChain of onChainProposals.filter((p) => p.state === "Approved")) {
+      // 1. Fetch current on-chain proposal states
+      let onChainProposals: Array<{ id: number; state: string }> = [];
       try {
-        console.log(`  [${syndicate.subdomain}] Executing proposal #${onChain.id}...`);
-        execSherwood(
+        const listOutput = await execSherwoodAsync(
           creatorHome,
-          ["proposal", "execute", "--id", String(onChain.id)],
+          ["proposal", "list", "--vault", vault, "--state", "all"],
           config,
           logger,
           creator.index,
         );
-
-        // Update tracked state
-        const tracked = syndicate.proposals.find((p) => p.id === onChain.id);
-        if (tracked) {
-          tracked.state = "executed";
-          tracked.executedAt = Date.now();
-        }
-        saveState(config.stateFile, state);
-        result.executed++;
-        console.log(`  [${syndicate.subdomain}] Proposal #${onChain.id} executed`);
+        onChainProposals = parseProposalList(listOutput);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        result.errors.push(`${syndicate.subdomain} execute #${onChain.id}: ${msg.split("\n")[0]}`);
-      }
-    }
-
-    // 3. Settle executed proposals (contract rejects if duration hasn't elapsed)
-    for (const onChain of onChainProposals.filter((p) => p.state === "Executed")) {
-      try {
-        console.log(`  [${syndicate.subdomain}] Settling proposal #${onChain.id}...`);
-        execSherwood(
-          creatorHome,
-          ["proposal", "settle", "--id", String(onChain.id)],
-          config,
-          logger,
-          creator.index,
+        result.errors.push(
+          `${syndicate.subdomain}: failed to list proposals: ${msg.split("\n")[0]}`,
         );
+        return;
+      }
 
-        const tracked = syndicate.proposals.find((p) => p.id === onChain.id);
-        if (tracked) {
-          tracked.state = "settled";
-          tracked.settledAt = Date.now();
+      console.log(`  [${syndicate.subdomain}] ${onChainProposals.length} proposals on-chain`);
+
+      // 2. Execute approved proposals (sequential — same wallet)
+      for (const onChain of onChainProposals.filter((p) => p.state === "Approved")) {
+        try {
+          console.log(`  [${syndicate.subdomain}] Executing proposal #${onChain.id}...`);
+          execSherwood(
+            creatorHome,
+            ["proposal", "execute", "--id", String(onChain.id)],
+            config,
+            logger,
+            creator.index,
+          );
+
+          const tracked = syndicate.proposals.find((p) => p.id === onChain.id);
+          if (tracked) {
+            tracked.state = "executed";
+            tracked.executedAt = Date.now();
+          }
+          saveState(config.stateFile, state);
+          result.executed++;
+          console.log(`  [${syndicate.subdomain}] Proposal #${onChain.id} executed`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          result.errors.push(
+            `${syndicate.subdomain} execute #${onChain.id}: ${msg.split("\n")[0]}`,
+          );
         }
-        saveState(config.stateFile, state);
-        result.settled++;
-        console.log(`  [${syndicate.subdomain}] Proposal #${onChain.id} settled`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        // "duration not elapsed" is expected — not a real error
-        const lower = msg.toLowerCase();
-        if (lower.includes("duration") || lower.includes("not elapsed") || lower.includes("too early")) {
-          console.log(`  [${syndicate.subdomain}] Proposal #${onChain.id} duration not yet elapsed — skipping`);
-        } else {
-          result.errors.push(`${syndicate.subdomain} settle #${onChain.id}: ${msg.split("\n")[0]}`);
+      }
+
+      // 3. Settle executed proposals (contract rejects if duration hasn't elapsed)
+      for (const onChain of onChainProposals.filter((p) => p.state === "Executed")) {
+        try {
+          console.log(`  [${syndicate.subdomain}] Settling proposal #${onChain.id}...`);
+          execSherwood(
+            creatorHome,
+            ["proposal", "settle", "--id", String(onChain.id)],
+            config,
+            logger,
+            creator.index,
+          );
+
+          const tracked = syndicate.proposals.find((p) => p.id === onChain.id);
+          if (tracked) {
+            tracked.state = "settled";
+            tracked.settledAt = Date.now();
+          }
+          saveState(config.stateFile, state);
+          result.settled++;
+          console.log(`  [${syndicate.subdomain}] Proposal #${onChain.id} settled`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const lower = msg.toLowerCase();
+          if (
+            lower.includes("duration") ||
+            lower.includes("not elapsed") ||
+            lower.includes("too early")
+          ) {
+            console.log(
+              `  [${syndicate.subdomain}] Proposal #${onChain.id} duration not yet elapsed — skipping`,
+            );
+          } else {
+            result.errors.push(
+              `${syndicate.subdomain} settle #${onChain.id}: ${msg.split("\n")[0]}`,
+            );
+          }
         }
       }
-    }
 
-    // 4. Re-propose if no active proposals remain (including vaults with no proposals at all)
-    const hasActiveProposal = onChainProposals.some((p) => ACTIVE_STATES.includes(p.state));
+      // 4. Re-propose if no active proposals remain
+      const hasActiveProposal = onChainProposals.some((p) => ACTIVE_STATES.includes(p.state));
 
-    if (!hasActiveProposal) {
-      // Count settled proposals to determine cycle number
-      const settledCount = syndicate.proposals.filter((p) => p.state === "settled").length;
-      const cycle = settledCount + 1;
+      if (!hasActiveProposal) {
+        const settledCount = syndicate.proposals.filter((p) => p.state === "settled").length;
+        const cycle = settledCount + 1;
 
-      try {
-        console.log(`  [${syndicate.subdomain}] No active proposals — creating cycle ${cycle} proposal...`);
-        const spec = getProposalSpec(creator.index, vault, config.strategyDuration, cycle);
+        try {
+          console.log(
+            `  [${syndicate.subdomain}] No active proposals — creating cycle ${cycle} proposal...`,
+          );
+          const spec = getProposalSpec(creator.index, vault, config.strategyDuration, cycle);
 
-        const output = execSherwood(
-          creatorHome,
-          ["strategy", "propose", spec.strategy, ...spec.args],
-          config,
-          logger,
-          creator.index,
-        );
+          const output = execSherwood(
+            creatorHome,
+            ["strategy", "propose", spec.strategy, ...spec.args],
+            config,
+            logger,
+            creator.index,
+          );
 
-        const proposalId = config.dryRun ? Date.now() % 10000 : parseProposalId(output);
+          const proposalId = config.dryRun ? Date.now() % 10000 : parseProposalId(output);
 
-        syndicate.proposals.push({
-          id: proposalId,
-          proposerIndex: creator.index,
-          strategy: spec.strategy,
-          state: "proposed",
-          duration: config.strategyDuration,
-        });
-        saveState(config.stateFile, state);
-        result.proposed++;
-        console.log(
-          `  [${syndicate.subdomain}] New proposal created${proposalId !== undefined ? ` (#${proposalId})` : ""}`,
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        result.errors.push(`${syndicate.subdomain} re-propose: ${msg.split("\n")[0]}`);
+          syndicate.proposals.push({
+            id: proposalId,
+            proposerIndex: creator.index,
+            strategy: spec.strategy,
+            state: "proposed",
+            duration: config.strategyDuration,
+          });
+          saveState(config.stateFile, state);
+          result.proposed++;
+          console.log(
+            `  [${syndicate.subdomain}] New proposal created${proposalId !== undefined ? ` (#${proposalId})` : ""}`,
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          result.errors.push(`${syndicate.subdomain} re-propose: ${msg.split("\n")[0]}`);
+        }
       }
-    }
-  }
+    },
+  );
 
   logger?.info(
     `phase 10 complete: executed=${result.executed} settled=${result.settled} proposed=${result.proposed} errors=${result.errors.length}`,

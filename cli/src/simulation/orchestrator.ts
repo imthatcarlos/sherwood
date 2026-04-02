@@ -34,6 +34,7 @@ import { VALID_NETWORKS, type Network } from "../lib/network.js";
 import { loadSimConfig } from "./config.js";
 import { loadState, saveState, advancePhase, printStateSummary } from "./state.js";
 import { SimLogger } from "./logger.js";
+import { runPhase00 } from "./phases/00-preflight.js";
 import { runPhase01 } from "./phases/01-setup.js";
 import { runPhase02 } from "./phases/02-create-syndicates.js";
 import { runPhase03 } from "./phases/03-join-syndicates.js";
@@ -61,6 +62,24 @@ program
 function getChain(): Network {
   return program.opts().chain as Network;
 }
+
+// ── preflight ──
+
+program
+  .command("preflight")
+  .description("Phase 00 — validate env: Node version, npx, esbuild arch, RPC, mnemonic, balance")
+  .action(async () => {
+    try {
+      const config = loadSimConfig(getChain());
+      const result = await runPhase00(config);
+      if (!result.ok) {
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error(`\nError: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
 
 // ── setup ──
 
@@ -296,6 +315,13 @@ program
       logger.info("run-all started", 0);
 
       console.log(`Starting full simulation run (phases 01-08) on ${config.chain}...\n`);
+
+      // Phase 00 — Preflight
+      const preflightResult = await runPhase00(config);
+      if (!preflightResult.ok) {
+        console.error("\nPreflight checks failed — aborting run-all.");
+        process.exit(1);
+      }
 
       // Phase 01 — Setup
       const existingState = loadState(config.stateFile);

@@ -12,7 +12,8 @@
 
 import type { SimConfig, SimState } from "../types.js";
 import { agentHomeDir } from "../agent-home.js";
-import { execSherwood, parseProposalId } from "../exec.js";
+import { execSherwoodAsync, parseProposalId } from "../exec.js";
+import { runInPool } from "../pool.js";
 import { updateSyndicate } from "../state.js";
 import { getProposalSpec } from "../proposal-specs.js";
 import type { SimLogger } from "../logger.js";
@@ -24,23 +25,22 @@ export async function runPhase07(config: SimConfig, state: SimState, logger?: Si
 
   const creators = state.agents.filter((a) => a.role === "creator" && a.syndicateCreated);
 
-  for (const creator of creators) {
+  await runInPool(creators, config.concurrency, async (creator) => {
     const subdomain = creator.syndicateSubdomain;
-    if (!subdomain) continue;
+    if (!subdomain) return;
 
     const syndicate = state.syndicates.find((s) => s.subdomain === subdomain);
-    if (!syndicate) continue;
+    if (!syndicate) return;
 
-    // Skip if syndicate already has a proposal
     if (syndicate.proposals.length > 0) {
       console.log(`  [agent-${creator.index}] "${subdomain}" already has proposals — skipping`);
-      continue;
+      return;
     }
 
     const vault = syndicate.vault;
     if (!vault && !config.dryRun) {
       console.error(`  [agent-${creator.index}] No vault for "${subdomain}" — skipping proposal`);
-      continue;
+      return;
     }
 
     const spec = getProposalSpec(
@@ -55,7 +55,7 @@ export async function runPhase07(config: SimConfig, state: SimState, logger?: Si
         `  [agent-${creator.index}] Proposing "${spec.name}" (${spec.strategy}) for "${subdomain}"...`,
       );
 
-      const output = execSherwood(
+      const output = await execSherwoodAsync(
         creatorHome,
         ["strategy", "propose", spec.strategy, ...spec.args],
         config,
@@ -86,7 +86,7 @@ export async function runPhase07(config: SimConfig, state: SimState, logger?: Si
         `  [agent-${creator.index}] Proposal failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }
+  });
 
   logger?.info("phase 07 complete");
   console.log("\nPhase 07 complete.");

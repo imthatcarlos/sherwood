@@ -10,7 +10,8 @@
 
 import type { SimConfig, SimState } from "../types.js";
 import { agentHomeDir } from "../agent-home.js";
-import { execSherwood } from "../exec.js";
+import { execSherwoodAsync } from "../exec.js";
+import { runInPool } from "../pool.js";
 import { updateSyndicate } from "../state.js";
 import { PERSONAS } from "../personas.js";
 import type { SimLogger } from "../logger.js";
@@ -51,7 +52,7 @@ export async function runPhase08(config: SimConfig, state: SimState, logger?: Si
       );
 
       let voteCount = 0;
-      for (const voter of voters) {
+      await runInPool(voters, config.concurrency, async (voter) => {
         const persona = PERSONAS.find((p) => p.index === voter.index);
 
         // Risk Sentinel votes AGAINST sometimes to add realism
@@ -61,16 +62,9 @@ export async function runPhase08(config: SimConfig, state: SimState, logger?: Si
         const voterHome = agentHomeDir(config.baseDir, voter.index);
 
         try {
-          execSherwood(
+          await execSherwoodAsync(
             voterHome,
-            [
-              "proposal",
-              "vote",
-              "--id",
-              String(proposal.id),
-              "--support",
-              support,
-            ],
+            ["proposal", "vote", "--id", String(proposal.id), "--support", support],
             config,
             logger,
             voter.index,
@@ -81,14 +75,13 @@ export async function runPhase08(config: SimConfig, state: SimState, logger?: Si
           console.log(`    [agent-${voter.index}] Voted ${supportLabel} on #${proposal.id}`);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          // "already voted" is expected if re-running phase
           if (msg.toLowerCase().includes("already voted") || msg.toLowerCase().includes("already cast")) {
             console.log(`    [agent-${voter.index}] Already voted on #${proposal.id} — skipping`);
           } else {
             console.error(`    [agent-${voter.index}] Vote failed: ${msg}`);
           }
         }
-      }
+      });
 
       if (voteCount > 0) {
         // Mark proposal as voted

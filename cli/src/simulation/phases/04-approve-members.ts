@@ -11,7 +11,8 @@
 
 import type { SimConfig, SimState } from "../types.js";
 import { agentHomeDir } from "../agent-home.js";
-import { execSherwood } from "../exec.js";
+import { execSherwood, execSherwoodAsync } from "../exec.js";
+import { runInPool } from "../pool.js";
 import { updateAgent } from "../state.js";
 import type { SimLogger } from "../logger.js";
 
@@ -73,14 +74,15 @@ export async function runPhase04(config: SimConfig, state: SimState, logger?: Si
     return;
   }
 
-  for (const creator of creators) {
+  // Different creators use different wallets — parallelize across creators.
+  // Within each creator, approvals must be sequential (same wallet, sequential nonces).
+  await runInPool(creators, config.concurrency, async (creator) => {
     const subdomain = creator.syndicateSubdomain;
-    if (!subdomain) continue;
+    if (!subdomain) return;
 
     const syndicate = state.syndicates.find((s) => s.subdomain === subdomain);
-    if (!syndicate) continue;
+    if (!syndicate) return;
 
-    // Find joiners for this syndicate that need approval
     const pendingJoiners = state.agents.filter(
       (a) =>
         a.role === "joiner" &&
@@ -91,7 +93,7 @@ export async function runPhase04(config: SimConfig, state: SimState, logger?: Si
 
     if (pendingJoiners.length === 0) {
       console.log(`  [agent-${creator.index}] No pending joiners for "${subdomain}" — skipping`);
-      continue;
+      return;
     }
 
     const creatorHome = agentHomeDir(config.baseDir, creator.index);
@@ -102,7 +104,7 @@ export async function runPhase04(config: SimConfig, state: SimState, logger?: Si
 
     if (!config.dryRun) {
       try {
-        const requestsOutput = execSherwood(
+        const requestsOutput = await execSherwoodAsync(
           creatorHome,
           ["syndicate", "requests", "--subdomain", subdomain],
           config,
@@ -115,11 +117,10 @@ export async function runPhase04(config: SimConfig, state: SimState, logger?: Si
         console.error(
           `  [agent-${creator.index}] Failed to fetch requests: ${err instanceof Error ? err.message : String(err)}`,
         );
-        // Fall back to approving known joiners directly
       }
     }
 
-    // Approve each pending joiner
+    // Approve each pending joiner — sequential within a creator (same wallet, nonce order)
     for (const joiner of pendingJoiners) {
       if (!joiner.agentId) {
         console.error(
@@ -136,14 +137,10 @@ export async function runPhase04(config: SimConfig, state: SimState, logger?: Si
         execSherwood(
           creatorHome,
           [
-            "syndicate",
-            "approve",
-            "--agent-id",
-            String(joiner.agentId),
-            "--wallet",
-            joiner.address,
-            "--subdomain",
-            subdomain,
+            "syndicate", "approve",
+            "--agent-id", String(joiner.agentId),
+            "--wallet", joiner.address,
+            "--subdomain", subdomain,
           ],
           config,
           logger,
@@ -158,7 +155,7 @@ export async function runPhase04(config: SimConfig, state: SimState, logger?: Si
         );
       }
     }
-  }
+  });
 
   logger?.info("phase 04 complete");
   console.log("\nPhase 04 complete.");

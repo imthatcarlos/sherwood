@@ -4,48 +4,46 @@
  * Each invocation:
  *   - Sets HOME to the agent's isolated directory
  *   - Sets BASE_RPC_URL from config
- *   - Calls: npx tsx <sherwoodBin> <args...>
+ *   - Calls: npx tsx <sherwoodBin> <args...>  (or node dist/index.js if SIM_COMPILED=true)
  *   - Appends a structured LogEntry to the SimLogger (if provided)
  *
  * This keeps XMTP DBs and sherwood configs per-agent without modifying the CLI.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import { CHAIN_REGISTRY } from "../lib/network.js";
 import type { SimConfig } from "./types.js";
 import type { SimLogger } from "./logger.js";
 
+const execFileAsync = promisify(execFile);
+
 /**
- * Execute a sherwood CLI command for a specific agent.
+ * Shared context builder — used by both sync and async exec variants.
  *
- * @param agentHome - The HOME directory for this agent
- * @param args - CLI arguments (e.g. ["identity", "mint", "--name", "Alpha"])
- * @param config - SimConfig
- * @param logger - Optional SimLogger for structured log output
- * @param agentIndex - Agent index for log attribution
- * @returns stdout as string
+ * SIM_COMPILED=true mode: spawns `node dist/index.js` instead of `npx tsx src/index.ts`.
+ * Cuts per-call startup from ~1.5s to ~100-200ms by skipping TypeScript compilation.
+ * Requires running `npm run build` in cli/ before starting the simulation.
  */
-export function execSherwood(
+function buildExecContext(
   agentHome: string,
   args: string[],
   config: SimConfig,
-  logger?: SimLogger,
-  agentIndex?: number,
-): string {
+): {
+  bin: string;
+  binArgs: string[];
+  cliDir: string;
+  fullArgs: string[];
+  env: Record<string, string>;
+  displayArgs: string;
+  agentLabel: string;
+} {
   const agentLabel = path.basename(agentHome);
-  const cliPath = path.resolve(config.sherwoodBin);
+  const srcPath = path.resolve(config.sherwoodBin);
   // cwd should be the cli/ directory so tsx/tsconfig resolves correctly
-  const cliDir = path.resolve(cliPath, "../..");
-
+  const cliDir = path.resolve(srcPath, "../..");
   const displayArgs = args.join(" ");
-  console.log(`  [${agentLabel}] sherwood ${displayArgs}`);
-
-  if (config.dryRun) {
-    console.log(`  [${agentLabel}] [DRY RUN] skipped`);
-    logger?.skip(`sherwood ${displayArgs}`, agentIndex);
-    return "";
-  }
 
   const env: Record<string, string> = {
     ...filterEnv(process.env),
@@ -68,9 +66,55 @@ export function execSherwood(
   // Prepend --chain flag so the CLI targets the correct network
   const fullArgs = ["--chain", config.chain, ...args];
 
+  // SIM_COMPILED: use pre-built dist/index.js to skip ~1.5s tsx startup per call
+  let bin: string;
+  let binArgs: string[];
+  if (config.compiled) {
+    const distPath = path.resolve(cliDir, "dist", "index.js");
+    bin = process.execPath; // node binary
+    binArgs = [distPath];
+  } else {
+    bin = "npx";
+    binArgs = ["tsx", srcPath];
+  }
+
+  return { bin, binArgs, cliDir, fullArgs, env, displayArgs, agentLabel };
+}
+
+/**
+ * Execute a sherwood CLI command for a specific agent (synchronous).
+ *
+ * @param agentHome - The HOME directory for this agent
+ * @param args - CLI arguments (e.g. ["identity", "mint", "--name", "Alpha"])
+ * @param config - SimConfig
+ * @param logger - Optional SimLogger for structured log output
+ * @param agentIndex - Agent index for log attribution
+ * @returns stdout as string
+ */
+export function execSherwood(
+  agentHome: string,
+  args: string[],
+  config: SimConfig,
+  logger?: SimLogger,
+  agentIndex?: number,
+): string {
+  const { bin, binArgs, cliDir, fullArgs, env, displayArgs, agentLabel } = buildExecContext(
+    agentHome,
+    args,
+    config,
+  );
+
+  console.log(`  [${agentLabel}] sherwood ${displayArgs}`);
+
+  if (config.dryRun) {
+    console.log(`  [${agentLabel}] [DRY RUN] skipped`);
+    logger?.skip(`sherwood ${displayArgs}`, agentIndex);
+    return "";
+  }
+
   const t0 = Date.now();
   try {
-    const output = execFileSync("npx", ["tsx", cliPath, ...fullArgs], {
+    const output = execFileSync(bin, [...binArgs, ...fullArgs], {
       encoding: "utf8",
       timeout: 180_000, // 3 minutes per command
       env,
@@ -79,6 +123,55 @@ export function execSherwood(
     });
 
     const result = (output || "").trim();
+    logger?.ok(`sherwood ${displayArgs}`, result.slice(0, 500), agentIndex, Date.now() - t0);
+    return result;
+  } catch (err: unknown) {
+    const execErr = err as { stdout?: string; stderr?: string; message?: string };
+    const stderr = execErr.stderr || "";
+    const stdout = execErr.stdout || "";
+    const combined = [stdout, stderr].filter(Boolean).join("\n");
+    const message = `sherwood ${displayArgs} failed:\n${combined || execErr.message}`;
+    logger?.err(`sherwood ${displayArgs}`, message, agentIndex, Date.now() - t0);
+    throw new Error(message);
+  }
+}
+
+/**
+ * Execute a sherwood CLI command for a specific agent (async — for parallel phases).
+ * Identical behavior to execSherwood but non-blocking, enabling Promise.all batching.
+ * SIM_COMPILED=true uses node dist/index.js via buildExecContext to skip tsx startup overhead.
+ */
+export async function execSherwoodAsync(
+  agentHome: string,
+  args: string[],
+  config: SimConfig,
+  logger?: SimLogger,
+  agentIndex?: number,
+): Promise<string> {
+  const { bin, binArgs, cliDir, fullArgs, env, displayArgs, agentLabel } = buildExecContext(
+    agentHome,
+    args,
+    config,
+  );
+
+  console.log(`  [${agentLabel}] sherwood ${displayArgs}`);
+
+  if (config.dryRun) {
+    console.log(`  [${agentLabel}] [DRY RUN] skipped`);
+    logger?.skip(`sherwood ${displayArgs}`, agentIndex);
+    return "";
+  }
+
+  const t0 = Date.now();
+  try {
+    const { stdout } = await execFileAsync(bin, [...binArgs, ...fullArgs], {
+      encoding: "utf8",
+      timeout: 180_000, // 3 minutes per command
+      env,
+      cwd: cliDir,
+    });
+
+    const result = (stdout || "").trim();
     logger?.ok(`sherwood ${displayArgs}`, result.slice(0, 500), agentIndex, Date.now() - t0);
     return result;
   } catch (err: unknown) {

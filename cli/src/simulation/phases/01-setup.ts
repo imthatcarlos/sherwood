@@ -15,7 +15,8 @@ import type { SimConfig, SimState, AgentState, SyndicateState } from "../types.j
 import { deriveWallets } from "../wallets.js";
 import { setupAgentHome, updateAgentConfig } from "../agent-home.js";
 import { fundAgents } from "../fund-agents.js";
-import { execSherwood, parseAgentId } from "../exec.js";
+import { execSherwoodAsync, parseAgentId } from "../exec.js";
+import { runInPool } from "../pool.js";
 import { saveState, updateAgent, initState } from "../state.js";
 import { PERSONAS, getCreators, getJoiners } from "../personas.js";
 import type { SimLogger } from "../logger.js";
@@ -106,30 +107,19 @@ export async function runPhase01(config: SimConfig, state: SimState | null, logg
     console.log("\nAll agents have identities — skipping mint.");
   }
 
-  for (const agent of agentsNeedingIdentity) {
+  await runInPool(agentsNeedingIdentity, config.concurrency, async (agent) => {
     const persona = PERSONAS.find((p) => p.index === agent.index);
     if (!persona) {
       console.error(`  [agent-${agent.index}] No persona found — skipping`);
-      continue;
+      return;
     }
 
-    const agentHome = setupAgentHome(
-      config.baseDir,
-      agent.index,
-      agent.privateKey,
-    );
+    const agentHome = setupAgentHome(config.baseDir, agent.index, agent.privateKey);
 
     try {
-      const output = execSherwood(
+      const output = await execSherwoodAsync(
         agentHome,
-        [
-          "identity",
-          "mint",
-          "--name",
-          persona.name,
-          "--description",
-          persona.description,
-        ],
+        ["identity", "mint", "--name", persona.name, "--description", persona.description],
         config,
         logger,
         agent.index,
@@ -138,12 +128,8 @@ export async function runPhase01(config: SimConfig, state: SimState | null, logg
       // Parse agent ID from output
       const agentId = config.dryRun ? agent.index * 100 : parseAgentId(output);
       if (agentId !== undefined) {
-        // Update HOME config with agentId
         updateAgentConfig(config.baseDir, agent.index, { agentId });
-        updateAgent(config.stateFile, state, agent.index - 1, {
-          identityMinted: true,
-          agentId,
-        });
+        updateAgent(config.stateFile, state, agent.index - 1, { identityMinted: true, agentId });
         console.log(`  [agent-${agent.index}] Identity minted: #${agentId}`);
       } else {
         console.warn(
@@ -155,9 +141,9 @@ export async function runPhase01(config: SimConfig, state: SimState | null, logg
       console.error(
         `  [agent-${agent.index}] Identity mint failed: ${err instanceof Error ? err.message : String(err)}`,
       );
-      // Continue to next agent — idempotent, will retry on next run
+      // Continue — idempotent, will retry on next run
     }
-  }
+  });
 
   logger?.info("phase 01 complete");
   console.log("\nPhase 01 complete.");

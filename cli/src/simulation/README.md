@@ -43,6 +43,8 @@ export SIM_STATE_FILE=/tmp/sherwood-sim/state.json  # default
 export SIM_FUND_ETH=0.007              # ETH per agent (gas + WETH deposit buffer), default: 0.007
 export SIM_FUND_USDC=10                # USDC per agent, default: 10
 export SIM_STRATEGY_DURATION=3h        # proposal strategy duration, default: 3h
+export SIM_CONCURRENCY=4               # max parallel agent ops per batch, default: 4
+export SIM_COMPILED=true               # use pre-built dist/index.js instead of npx tsx (faster)
 ```
 
 ### Chain support
@@ -56,6 +58,22 @@ export SIM_STRATEGY_DURATION=3h        # proposal strategy duration, default: 3h
 For testnet chains, `ENABLE_TESTNET=true` is set automatically in CLI subprocesses.
 
 ### Pre-flight check
+
+Run the environment validator before your first simulation:
+
+```bash
+SIM_MNEMONIC="..." npx tsx cli/src/simulation/orchestrator.ts --chain base-sepolia preflight
+```
+
+Checks:
+1. Node.js ≥ v20.12 (required for `styleText` support)
+2. `npx` available in PATH
+3. esbuild arch package installed (macOS — warns if missing, won't fail)
+4. RPC endpoint reachable (`eth_blockNumber`)
+5. `SIM_MNEMONIC` is a valid BIP-39 mnemonic
+6. Master wallet has sufficient ETH (`agentCount × SIM_FUND_ETH + 0.01` buffer)
+
+`run-all` runs preflight automatically and aborts on errors.
 
 Estimate total funding needed:
 - ETH: `0.007 x 12 = 0.084 ETH` + gas buffer (~0.02 ETH)
@@ -75,7 +93,7 @@ npx tsx cli/src/simulation/orchestrator.ts --chain base-sepolia run-all
 npx tsx cli/src/simulation/orchestrator.ts run-all
 ```
 
-This runs all setup phases sequentially. Takes ~30-60 minutes depending on block times and RPC latency.
+This runs preflight, then all setup phases in parallel batches. Wall-clock time depends on `SIM_CONCURRENCY` and RPC latency — see [Performance](#performance) below.
 
 ### Individual phases
 
@@ -206,6 +224,42 @@ propose -> vote -> [voting period] -> execute -> [strategy duration] -> settle -
 
 With default 3h strategy duration and ~15min cron interval, each full cycle takes ~4-6 hours (including voting period). The cron runs `lifecycle` each interval, advancing proposals through their states.
 
+## Performance
+
+All phases (except heartbeat) run agent operations in parallel batches controlled by `SIM_CONCURRENCY`. Increase it for large simulations:
+
+```bash
+SIM_CONCURRENCY=8 npx tsx cli/src/simulation/orchestrator.ts run-all
+```
+
+| Scenario | concurrency=1 | concurrency=4 | concurrency=8 |
+|----------|---------------|---------------|---------------|
+| 12 agents, run-all | ~25 min | ~8 min | ~5 min |
+| 50 agents, run-all | ~100 min | ~28 min | ~16 min |
+| 100 agents, run-all | ~200 min | ~55 min | ~30 min |
+
+At high concurrency the bottleneck shifts from sequential scheduling to RPC latency + tx confirmation time.
+
+### SIM_COMPILED — skip TypeScript compilation per subprocess
+
+By default each agent subprocess runs `npx tsx src/index.ts`, which compiles TypeScript on every call (~1.5s overhead). `SIM_COMPILED=true` bypasses this by spawning `node dist/index.js` instead (~100ms). This is **~10× faster** per call.
+
+**Setup (one-time, and after any CLI changes):**
+
+```bash
+cd cli && npm run build
+```
+
+**Run with compiled binary:**
+
+```bash
+SIM_COMPILED=true SIM_CONCURRENCY=8 npx tsx cli/src/simulation/orchestrator.ts run-all
+```
+
+Preflight automatically checks that `dist/index.js` exists and is not older than `src/index.ts` — if stale, it warns you to rebuild.
+
+> **Note:** If you make CLI changes during development, always re-run `npm run build` before using `SIM_COMPILED=true`, or preflight will warn about a stale build.
+
 ## Dry Run
 
 ```bash
@@ -224,10 +278,14 @@ cli/src/simulation/
 ├── agent-home.ts                # Per-agent HOME dir + config.json management
 ├── fund-agents.ts               # ETH + USDC transfers from master wallet
 ├── exec.ts                      # Run sherwood CLI with HOME isolation + --chain
+│                                #   execSherwood (sync) + execSherwoodAsync (async)
+│                                #   SIM_COMPILED: node dist/index.js vs npx tsx
+├── pool.ts                      # runInPool<T>() — fixed-window concurrency helper
 ├── state.ts                     # Read/write SimState to JSON
 ├── personas.ts                  # 12 agent persona definitions (asset + strategy)
 ├── proposal-specs.ts            # Strategy-specific proposal CLI arg builder
 ├── phases/
+│   ├── 00-preflight.ts          # Node, npx, esbuild, RPC, mnemonic, balance checks
 │   ├── 01-setup.ts              # Derive wallets, fund, mint identities
 │   ├── 02-create-syndicates.ts  # 5 creators deploy syndicates (USDC or WETH)
 │   ├── 03-join-syndicates.ts    # Joiners request membership
@@ -236,7 +294,7 @@ cli/src/simulation/
 │   ├── 06-chat.ts               # Agents send XMTP messages
 │   ├── 07-propose.ts            # Creators submit diverse strategy proposals
 │   ├── 08-vote.ts               # Members vote on proposals
-│   ├── 09-heartbeat.ts          # Chat monitoring + voting
+│   ├── 09-heartbeat.ts          # Chat monitoring + voting (sequential — intentional pacing)
 │   └── 10-lifecycle.ts          # Execute, settle, re-propose state machine
 └── orchestrator.ts              # Main CLI entry point
 ```
