@@ -176,7 +176,7 @@ export default async function Home() {
                   Non-Custodial
                 </h3>
                 <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
-                  ERC-4626 vaults. Your keys, your capital. Redeem shares anytime.
+                  ERC-4626 vaults. Your keys, your capital. Redeem shares when no strategy is active.
                 </p>
               </div>
 
