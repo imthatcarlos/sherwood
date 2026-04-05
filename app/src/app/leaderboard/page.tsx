@@ -97,7 +97,7 @@ const SYMBOL_TO_COINGECKO: Record<string, string> = {
   rETH: "rocket-pool-eth",
 };
 
-type TokenPrices=*** number>;
+type TokenPrices = Record<string, number>;
 
 async function fetchTokenPrices(): Promise<TokenPrices> {
   const ids = [...new Set(Object.values(SYMBOL_TO_COINGECKO))].join(",");
@@ -112,7 +112,7 @@ async function fetchTokenPrices(): Promise<TokenPrices> {
     }
     const data = await res.json();
     // Flatten to { "ethereum": 3500.12, ... }
-    const prices: TokenPrices=***
+    const prices: TokenPrices = {};
     for (const [id, val] of Object.entries(data)) {
       prices[id] = (val as { usd: number }).usd;
     }
