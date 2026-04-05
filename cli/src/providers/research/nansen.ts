@@ -3,8 +3,9 @@
  *
  * Docs: https://docs.nansen.ai
  * Payment: x402 (USDC on Base) — no API key required
- * Pricing: Basic $0.01/call (Token Screener, Wallet Balances, PnL, DEX Trades)
- *          Premium $0.05/call (Smart Money Net Flow, Holdings, PnL Leaderboard)
+ * Pricing: Basic $0.01/call (Token Screener, Wallet Balances, PnL, Transactions)
+ *          Smart Money $0.05/call (SM Net Flow, SM Holdings, SM DEX Trades)
+ *          Premium $0.05/call (Counterparties, Holders, PnL Leaderboard)
  *
  * Supports all query types:
  *   token       → token screener (on-chain metrics, holder quality)
@@ -201,19 +202,29 @@ export class NansenProvider implements ResearchProvider {
   }
 
   /**
-   * Wallet Profile — PnL history, transaction patterns, counterparties.
-   * Endpoint: POST /api/v1/profiler/wallet-pnl
+   * Wallet Profile — PnL summary, realized/unrealized gains, token breakdown.
+   * Endpoint: POST /api/v1/profiler/address/pnl-summary
    * Cost: ~$0.01 (basic tier)
+   *
+   * Note: /api/v1/profiler/wallet-pnl requires an API key and does not support x402.
+   * The correct x402 endpoint is /api/v1/profiler/address/pnl-summary.
    */
   private async walletProfile(address: string): Promise<ResearchResult> {
     const fetchWithPay = await getX402Fetch();
 
+    // pnl-summary uses `chain` (singular) + a date range, not `chains` array
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const body = {
-      chains: ["base"],
       address,
+      chain: "base",
+      date: {
+        from: thirtyDaysAgo.toISOString().replace(/\.\d{3}Z$/, "Z"),
+        to: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
+      },
     };
 
-    const res = await fetchWithPay(`${BASE_URL}/api/v1/profiler/wallet-pnl`, {
+    const res = await fetchWithPay(`${BASE_URL}/api/v1/profiler/address/pnl-summary`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
