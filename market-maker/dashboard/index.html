@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<title>Sherwood MM Dashboard v2</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d;
+  --text: #e6edf3; --text-dim: #8b949e; --accent: #58a6ff;
+  --green: #3fb950; --red: #f85149; --orange: #d29922;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+.mono { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
+  flex-wrap: wrap; gap: 8px;
+}
+.topbar h1 { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.topbar h1 .icon { font-size: 22px; }
+.badge {
+  font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 10px;
+  background: rgba(88,166,255,0.15); color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px;
+}
+.eth-badge {
+  font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 10px;
+  background: rgba(63,185,80,0.15); color: var(--green);
+}
+.topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.status-dot.ok { background: var(--green); animation: pulse 2s infinite; }
+.status-dot.err { background: var(--red); }
+.status-dot.connecting { background: var(--orange); animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.last-update { font-size: 12px; color: var(--text-dim); }
+
+.stats-row {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: 12px; padding: 16px 20px;
+}
+@media (min-width: 900px) { .stats-row { grid-template-columns: repeat(4, 1fr); } }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px;
+}
+.stat-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.stat-value { font-size: 20px; font-weight: 600; }
+.stat-sub { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+.chart-container {
+  margin: 0 20px; border: 1px solid var(--border); border-radius: 8px;
+  overflow: hidden; background: var(--surface);
+}
+.chart-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+}
+.chart-header h2 { font-size: 14px; font-weight: 600; }
+.chart-toggle { display: flex; gap: 4px; }
+.chart-toggle button {
+  background: none; border: 1px solid var(--border); color: var(--text-dim);
+  padding: 3px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;
+}
+.chart-toggle button.active, .tf-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tf-btn { background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 3px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+#chart { width: 100%; height: 350px; }
+@media (min-width: 900px) { #chart { height: 420px; } }
+
+.table-container {
+  margin: 16px 20px 24px; border: 1px solid var(--border); border-radius: 8px;
+  overflow-x: auto; background: var(--surface);
+}
+.table-header { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 480px; }
+thead th {
+  text-align: left; padding: 8px 12px; color: var(--text-dim); font-weight: 500;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+tbody tr:last-child td { border-bottom: none; }
+.type-buy { color: var(--green); font-weight: 600; }
+.type-sell { color: var(--red); font-weight: 600; }
+.truncate { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+.empty-state { padding: 30px; text-align: center; color: var(--text-dim); }
+a { color: var(--accent); text-decoration: none; }
+.usd { color: var(--text-dim); font-size: 11px; }
+
+.spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#errorBanner { display: none; background: rgba(248,81,73,0.15); border: 1px solid var(--red); color: var(--red); padding: 10px 20px; margin: 12px 20px 0; border-radius: 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1><span class="icon">🌲</span> Sherwood MM</h1>
+  <div class="topbar-right">
+    <span class="badge">Base Sepolia</span>
+    <span class="eth-badge" id="ethUsdBadge">ETH $--</span>
+    <span class="status-dot connecting" id="statusDot"></span>
+    <span class="last-update" id="lastUpdate">Connecting...</span>
+  </div>
+</div>
+
+<div id="errorBanner"></div>
+
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-label">WOOD Price</div>
+    <div class="stat-value mono" id="currentPrice">--</div>
+    <div class="stat-sub" id="priceChange">--</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">WOOD/ETH Rate</div>
+    <div class="stat-value mono" id="woodPerEth">--</div>
+    <div class="stat-sub">WOOD per 1 ETH</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Pool TVL</div>
+    <div class="stat-value mono" id="poolTvl">--</div>
+    <div class="stat-sub" id="poolTvlSub">Active liquidity</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Bot Position</div>
+    <div class="stat-value mono" id="botPosition">--</div>
+    <div class="stat-sub" id="botPositionSub">Loading...</div>
+  </div>
+</div>
+
+<div class="chart-container">
+  <div class="chart-header">
+    <h2>WOOD Price</h2>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="chart-toggle" style="margin-right:8px">
+        <button class="tf-btn" data-tf="15" onclick="setCandleInterval(15)">15s</button>
+        <button class="tf-btn active" data-tf="30" onclick="setCandleInterval(30)">30s</button>
+        <button class="tf-btn" data-tf="60" onclick="setCandleInterval(60)">1m</button>
+        <button class="tf-btn" data-tf="300" onclick="setCandleInterval(300)">5m</button>
+      </div>
+      <div class="chart-toggle">
+        <button id="btnUsd" class="active" onclick="setChartMode('usd')">USD</button>
+        <button id="btnEth" onclick="setChartMode('eth')">ETH</button>
+      </div>
+      <span id="chartStatus" style="font-size:12px;color:var(--text-dim)"><span class="spinner"></span></span>
+    </div>
+  </div>
+  <div id="chart"></div>
+</div>
+
+<div class="table-container">
+  <div class="table-header">Recent Swaps</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Type</th>
+        <th>ETH Value</th>
+        <th>WOOD Amt</th>
+        <th>WOOD Price</th>
+        <th>Tx</th>
+      </tr>
+    </thead>
+    <tbody id="swapTable">
+      <tr><td colspan="6" class="empty-state">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+// ── Config ──
+const RPC = 'https://sepolia.base.org';
+const POOL = '0xfc3409f7090e09937f64e2390995395c5367647c';
+const NFP_MANAGER = '0x27F971cb582BF9E50F397e4d29a5C7A34f11faA2';
+const BOT_WALLET = '0x5A00afAecE9CF61A768E2AE2713084C8d354DF94';
+const SWAP_TOPIC = '0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
+const POLL_MS = 30000;
+
+let rawPrices = [];  // { time (unix), eth, usd }
+let firstPrice = null;
+let ethUsd = 0;
+let chartMode = 'usd';
+let candleInterval = 30; // seconds per candle
+let chart, candleSeries, volumeSeries, posLowerLine, posUpperLine;
+let lastWoodPriceEth = 0;
+
+// ── ETH/USD price ──
+async function fetchEthUsd() {
+  try {
+    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+    const data = await res.json();
+    ethUsd = data.ethereum.usd;
+    document.getElementById('ethUsdBadge').textContent = 'ETH $' + ethUsd.toLocaleString();
+  } catch (e) {
+    console.warn('ETH/USD fetch failed, using fallback');
+    if (!ethUsd) ethUsd = 2500; // fallback
+  }
+}
+
+// ── RPC ──
+let rpcId = 1;
+async function rpc(method, params = []) {
+  const res = await fetch(RPC, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }),
+  });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.message);
+  return json.result;
+}
+async function ethCall(to, data) { return rpc('eth_call', [{ to, data }, 'latest']); }
+
+// ── ABI helpers ──
+function padAddr(a) { return '000000000000000000000000' + a.slice(2).toLowerCase(); }
+function padUint(n) { return BigInt(n).toString(16).padStart(64, '0'); }
+function decodeInt24(h) { const n = parseInt(h, 16); return n > 0x7fffff ? n - 0x1000000 : n; }
+
+// ── Price math ──
+// Pool token ordering: token0=WOOD (0x7865), token1=MockWETH (0xe8c1)
+// sqrtPriceX96 gives price = token1/token0 = mWETH/WOOD
+// So the raw price IS ETH-per-WOOD directly (no inversion needed)
+function sqrtPriceToEthPerWood(sqrtPriceX96) {
+  const sq = sqrtPriceX96 * sqrtPriceX96;
+  const scaled = (sq * 10n**18n) / (2n ** 192n);
+  return Number(scaled) / 1e18; // mWETH per WOOD = ETH per WOOD
+}
+function tickToEthPerWood(tick) {
+  return Math.pow(1.0001, tick); // mWETH per WOOD
+}
+
+// ── Formatters ──
+function fmtUsd(n) {
+  if (!n || isNaN(n)) return '$--';
+  if (n < 0.00001) return '$' + n.toExponential(2);
+  if (n < 0.01) return '$' + n.toFixed(6);
+  if (n < 1) return '$' + n.toFixed(4);
+  if (n < 1000) return '$' + n.toFixed(2);
+  return '$' + n.toLocaleString(undefined, {maximumFractionDigits: 0});
+}
+function fmtEth(n) {
+  if (!n || isNaN(n)) return '--';
+  if (n < 0.0000001) return n.toExponential(2) + ' Ξ';
+  if (n < 0.001) return n.toFixed(8) + ' Ξ';
+  if (n < 1) return n.toFixed(6) + ' Ξ';
+  return n.toFixed(4) + ' Ξ';
+}
+function fmtWoodAmt(wei) {
+  // wei is a BigInt-compatible value
+  const n = Number(wei) / 1e18;
+  if (n < 0.01) return n.toFixed(6);
+  if (n < 1000) return n.toFixed(2);
+  if (n < 1e6) return (n/1000).toFixed(1) + 'K';
+  return (n/1e6).toFixed(2) + 'M';
+}
+function fmtEthAmt(wei) {
+  const n = Number(wei) / 1e18;
+  if (Math.abs(n) < 0.000001) return n.toFixed(8);
+  if (Math.abs(n) < 0.01) return n.toFixed(6);
+  return n.toFixed(4);
+}
+function fmtRate(woodPerEth) {
+  if (!woodPerEth) return '--';
+  if (woodPerEth > 1e6) return (woodPerEth/1e6).toFixed(1) + 'M';
+  if (woodPerEth > 1e3) return (woodPerEth/1e3).toFixed(1) + 'K';
+  return woodPerEth.toFixed(1);
+}
+
+function setStatus(type, text) {
+  document.getElementById('statusDot').className = 'status-dot ' + type;
+  document.getElementById('lastUpdate').textContent = text;
+}
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 15000);
+}
+
+// ── Chart ──
+function initChart() {
+  chart = LightweightCharts.createChart(document.getElementById('chart'), {
+    width: document.getElementById('chart').clientWidth,
+    height: document.getElementById('chart').clientHeight || 350,
+    layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e' },
+    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d' },
+    timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false },
+  });
+  candleSeries = chart.addCandlestickSeries({
+    upColor: '#3fb950', downColor: '#f85149',
+    borderUpColor: '#3fb950', borderDownColor: '#f85149',
+    wickUpColor: '#56d364', wickDownColor: '#ff7b72',
+  });
+  volumeSeries = chart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    priceScaleId: 'vol',
+  });
+  chart.priceScale('vol').applyOptions({
+    scaleMargins: { top: 0.85, bottom: 0 },
+  });
+  applyChartFormat();
+  window.addEventListener('resize', () => {
+    chart.applyOptions({ width: document.getElementById('chart').clientWidth });
+  });
+}
+
+function applyChartFormat() {
+  const priceFormat = chartMode === 'usd'
+    ? { type: 'price', precision: 6, minMove: 0.000001 }
+    : { type: 'price', precision: 8, minMove: 0.00000001 };
+  candleSeries.applyOptions({ priceFormat });
+}
+
+function setChartMode(mode) {
+  chartMode = mode;
+  document.getElementById('btnUsd').className = mode === 'usd' ? 'active' : '';
+  document.getElementById('btnEth').className = mode === 'eth' ? 'active' : '';
+  applyChartFormat();
+  updateChart();
+}
+
+function setCandleInterval(secs) {
+  candleInterval = secs;
+  document.querySelectorAll('.tf-btn').forEach(b => b.className = 'tf-btn' + (parseInt(b.dataset.tf) === secs ? ' active' : ''));
+  updateChart();
+}
+
+// Build OHLC candles from raw price ticks
+function buildCandles(prices, field, interval) {
+  if (!prices.length) return { candles: [], volumes: [] };
+  // Deduplicate by time first
+  const seen = new Map();
+  for (const p of prices) {
+    seen.set(p.time, p);
+  }
+  const unique = Array.from(seen.values()).sort((a, b) => a.time - b.time);
+
+  const buckets = new Map();
+  for (const p of unique) {
+    const t = Math.floor(p.time / interval) * interval;
+    const v = p[field];
+    if (!v || isNaN(v) || v <= 0) continue;
+    if (!buckets.has(t)) {
+      buckets.set(t, { time: t, open: v, high: v, low: v, close: v, count: 1 });
+    } else {
+      const c = buckets.get(t);
+      c.high = Math.max(c.high, v);
+      c.low = Math.min(c.low, v);
+      c.close = v;
+      c.count++;
+    }
+  }
+  const sorted = Array.from(buckets.values()).sort((a, b) => a.time - b.time);
+
+  // If only 1 candle, create a synthetic previous one so the chart isn't empty
+  if (sorted.length === 1) {
+    const c = sorted[0];
+    sorted.unshift({ time: c.time - interval, open: c.open, high: c.open, low: c.open, close: c.open, count: 0 });
+  }
+
+  // Ensure candle bodies are visible: add minimum spread if open≈close
+  const candles = sorted.map(c => {
+    const mid = (c.open + c.close) / 2;
+    const minSpread = mid * 0.002; // 0.2% minimum body
+    let { open, close, high, low } = c;
+    if (Math.abs(close - open) < minSpread && c.count > 0) {
+      // Preserve direction but widen the body
+      if (close >= open) {
+        open = mid - minSpread / 2;
+        close = mid + minSpread / 2;
+      } else {
+        open = mid + minSpread / 2;
+        close = mid - minSpread / 2;
+      }
+    }
+    high = Math.max(high, open, close);
+    low = Math.min(low, open, close);
+    return { time: c.time, open, high, low, close };
+  });
+  const volumes = sorted.map(c => ({
+    time: c.time,
+    value: c.count,
+    color: c.close >= c.open ? 'rgba(63,185,80,0.3)' : 'rgba(248,81,73,0.3)',
+  }));
+  return { candles, volumes };
+}
+
+function updateChart() {
+  if (!rawPrices.length) return;
+  const field = chartMode === 'usd' ? 'usd' : 'eth';
+  const { candles, volumes } = buildCandles(rawPrices, field, candleInterval);
+  if (!candles.length) return;
+  candleSeries.setData(candles);
+  volumeSeries.setData(volumes);
+  chart.timeScale().fitContent();
+  updatePositionLines();
+  document.getElementById('chartStatus').innerHTML =
+    '<span style="color:var(--green)">● Live</span> ' + candles.length + ' candles';
+}
+
+function updatePositionLines() {
+  if (posLowerLine) { try { candleSeries.removePriceLine(posLowerLine); } catch(e){} posLowerLine = null; }
+  if (posUpperLine) { try { candleSeries.removePriceLine(posUpperLine); } catch(e){} posUpperLine = null; }
+  if (!window._posLowerEth) return;
+  const lo = chartMode === 'usd' ? window._posLowerEth * ethUsd : window._posLowerEth;
+  const hi = chartMode === 'usd' ? window._posUpperEth * ethUsd : window._posUpperEth;
+  posLowerLine = candleSeries.createPriceLine({ price: lo, color: '#d29922', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'Lower' });
+  posUpperLine = candleSeries.createPriceLine({ price: hi, color: '#d29922', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'Upper' });
+}
+
+// ── Data ──
+async function fetchPoolState() {
+  const slot0Raw = await ethCall(POOL, '0x3850c7bd');
+  const hex = slot0Raw.slice(2);
+  const sqrtPriceX96 = BigInt('0x' + hex.slice(0, 64));
+  const tick = decodeInt24(hex.slice(64, 128).slice(-6));
+
+  const ethPerWood = sqrtPriceToEthPerWood(sqrtPriceX96);
+  lastWoodPriceEth = ethPerWood;
+  const usdPerWood = ethPerWood * ethUsd;
+  const woodPerEth = ethPerWood > 0 ? 1 / ethPerWood : 0;
+
+  // Main price card — show USD
+  document.getElementById('currentPrice').textContent = fmtUsd(usdPerWood);
+  document.getElementById('currentPrice').title = fmtEth(ethPerWood);
+
+  // WOOD/ETH rate card  
+  document.getElementById('woodPerEth').textContent = fmtRate(woodPerEth);
+  
+
+
+  if (firstPrice === null) firstPrice = usdPerWood;
+  const change = firstPrice > 0 ? ((usdPerWood - firstPrice) / firstPrice * 100) : 0;
+  const changeEl = document.getElementById('priceChange');
+  const ethStr = fmtEth(ethPerWood);
+  if (change >= 0) {
+    changeEl.innerHTML = ethStr + ' &nbsp;<span style="color:var(--green)">+' + change.toFixed(2) + '%</span>';
+  } else {
+    changeEl.innerHTML = ethStr + ' &nbsp;<span style="color:var(--red)">' + change.toFixed(2) + '%</span>';
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  rawPrices.push({ time: now, eth: ethPerWood, usd: usdPerWood });
+
+  // TVL from actual token balances in pool
+  // balanceOf(POOL) for WETH and WOOD
+  const wethInPool = await ethCall('0xe8c19B62b80C9d2574c291923c1a12C3edf15bA5', '0x70a08231' + padAddr(POOL));
+  const woodInPool = await ethCall('0x7865eEA4063c22d0F55FdD412D345495c7b73f64', '0x70a08231' + padAddr(POOL));
+  const wethBal = Number(BigInt(wethInPool)) / 1e18;
+  const woodBal = Number(BigInt(woodInPool)) / 1e18;
+  const tvlEth = wethBal + (woodBal * ethPerWood);
+  const tvlUsd = tvlEth * ethUsd;
+  document.getElementById('poolTvl').textContent = fmtUsd(tvlUsd);
+  document.getElementById('poolTvlSub').textContent =
+    fmtEthAmt(wethBal * 1e18) + ' Ξ + ' + fmtWoodAmt(woodBal * 1e18) + ' WOOD • Tick ' + tick.toLocaleString();
+
+  setStatus('ok', new Date().toLocaleTimeString());
+  updateChart();
+  return { ethPerWood, tick, sqrtPriceX96 };
+}
+
+async function fetchBotPosition() {
+  try {
+    const balRaw = await ethCall(NFP_MANAGER, '0x70a08231' + padAddr(BOT_WALLET));
+    const balance = Number(BigInt(balRaw));
+    if (balance === 0) {
+      document.getElementById('botPosition').textContent = 'None';
+      document.getElementById('botPositionSub').textContent = 'No active positions';
+      return;
+    }
+    const tokRaw = await ethCall(NFP_MANAGER, '0x2f745c59' + padAddr(BOT_WALLET) + padUint(balance - 1));
+    const tokenId = BigInt(tokRaw);
+    const posRaw = await ethCall(NFP_MANAGER, '0x99fbab88' + padUint(tokenId));
+    const ph = posRaw.slice(2);
+    const tickLower = decodeInt24(ph.slice(320, 384).slice(-6));
+    const tickUpper = decodeInt24(ph.slice(384, 448).slice(-6));
+    const liquidity = BigInt('0x' + ph.slice(448, 512));
+
+    // token0=WOOD, token1=mWETH: tickToEthPerWood gives mWETH/WOOD directly
+    // Lower tick = lower price, upper tick = higher price
+    const pLower = tickToEthPerWood(tickLower);
+    const pUpper = tickToEthPerWood(tickUpper);
+    window._posLowerEth = pLower;
+    window._posUpperEth = pUpper;
+
+    const pLowerUsd = pLower * ethUsd;
+    const pUpperUsd = pUpper * ethUsd;
+
+    document.getElementById('botPosition').textContent =
+      fmtUsd(pLowerUsd) + ' – ' + fmtUsd(pUpperUsd);
+    document.getElementById('botPositionSub').textContent =
+      'NFT #' + tokenId + (liquidity === 0n ? ' (empty)' : ' • Active');
+
+    updatePositionLines();
+  } catch (e) {
+    console.error('Bot position error:', e);
+    document.getElementById('botPosition').textContent = 'Error';
+    document.getElementById('botPositionSub').textContent = String(e.message || e).slice(0, 50);
+  }
+}
+
+async function fetchSwaps() {
+  try {
+    const blockHex = await rpc('eth_blockNumber');
+    const currentBlock = Number(BigInt(blockHex));
+    const fromBlock = Math.max(0, currentBlock - 5000);
+
+    const logs = await rpc('eth_getLogs', [{
+      address: POOL,
+      topics: [SWAP_TOPIC],
+      fromBlock: '0x' + fromBlock.toString(16),
+      toBlock: 'latest',
+    }]);
+
+    const swaps = [];
+    for (const log of logs) {
+      try {
+        const d = log.data.slice(2);
+        const amount0 = BigInt('0x' + d.slice(0, 64));
+        const amount1 = BigInt('0x' + d.slice(64, 128));
+        const sqrtPriceX96 = BigInt('0x' + d.slice(128, 192));
+        const tick = decodeInt24(d.slice(256, 320).slice(-6));
+        const ethPerWood = sqrtPriceToEthPerWood(sqrtPriceX96);
+        const blockNum = Number(BigInt(log.blockNumber));
+        const timestamp = Math.floor(Date.now() / 1000) - (currentBlock - blockNum) * 2;
+
+        const a0 = amount0 > 2n**255n ? amount0 - 2n**256n : amount0;
+        const a1 = amount1 > 2n**255n ? amount1 - 2n**256n : amount1;
+
+        swaps.push({
+          time: timestamp,
+          ethPerWood,
+          usdPerWood: ethPerWood * ethUsd,
+          ethAmt: Number(a0 < 0n ? -a0 : a0) / 1e18,
+          woodAmt: Number(a1 < 0n ? -a1 : a1) / 1e18,
+          isBuy: a0 > 0n,
+          txHash: log.transactionHash,
+        });
+
+        rawPrices.push({ time: timestamp, eth: ethPerWood, usd: ethPerWood * ethUsd });
+      } catch (e) { console.warn('Swap decode:', e); }
+    }
+
+    updateChart();
+
+    const tbody = document.getElementById('swapTable');
+    if (swaps.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No swaps in recent blocks</td></tr>';
+      return;
+    }
+
+    const recent = swaps.slice(-10).reverse();
+    tbody.innerHTML = recent.map(s => {
+      const ethVal = s.ethAmt;
+      const usdVal = ethVal * ethUsd;
+      return `
+      <tr>
+        <td class="mono">${new Date(s.time * 1000).toLocaleTimeString()}</td>
+        <td class="${s.isBuy ? 'type-buy' : 'type-sell'}">${s.isBuy ? '● BUY' : '● SELL'}</td>
+        <td class="mono">${fmtEthAmt(s.ethAmt * 1e18)} Ξ<br><span class="usd">${fmtUsd(usdVal)}</span></td>
+        <td class="mono">${fmtWoodAmt(s.woodAmt * 1e18)}<br><span class="usd">${fmtUsd(s.woodAmt * s.usdPerWood)}</span></td>
+        <td class="mono">${fmtUsd(s.usdPerWood)}<br><span class="usd">${fmtEth(s.ethPerWood)}</span></td>
+        <td><a href="https://sepolia.basescan.org/tx/${s.txHash}" target="_blank"><span class="truncate mono">${s.txHash.slice(0,10)}…</span></a></td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    console.error('Swap fetch error:', e);
+    document.getElementById('swapTable').innerHTML =
+      '<tr><td colspan="6" class="empty-state">Error: ' + (e.message || e) + '</td></tr>';
+  }
+}
+
+// ── Main ──
+async function init() {
+  initChart();
+  await fetchEthUsd();
+  try {
+    await fetchPoolState();
+    await fetchSwaps();
+    fetchBotPosition();
+  } catch (e) {
+    console.error('Init error:', e);
+    setStatus('err', 'Failed');
+    showError('RPC error: ' + (e.message || e));
+    setTimeout(init, 5000);
+    return;
+  }
+
+  // Poll pool state every 30s
+  setInterval(async () => {
+    try { await fetchPoolState(); } catch (e) { setStatus('err', 'Error'); }
+  }, POLL_MS);
+
+  // Refresh swaps every 2min
+  setInterval(async () => {
+    try { await fetchSwaps(); } catch(e) { console.error(e); }
+  }, POLL_MS * 4);
+
+  // Refresh ETH/USD every 5min
+  setInterval(fetchEthUsd, 300000);
+
+  // Refresh bot position every 5min
+  setInterval(fetchBotPosition, 300000);
+}
+
+init();
+</script>
+</body>
+</html>

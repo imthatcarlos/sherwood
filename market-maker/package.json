@@ -1,0 +1,23 @@
+{
+  "name": "@sherwood/market-maker",
+  "version": "1.0.0",
+  "description": "Avellaneda-Stoikov market maker for WOOD/WETH on Aerodrome Slipstream (Base)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "pino": "^9.6.0",
+    "viem": "^2.23.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}
