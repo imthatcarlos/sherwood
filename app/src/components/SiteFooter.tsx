@@ -48,9 +48,9 @@ function GitHubIcon() {
 
 export default function SiteFooter() {
   return (
-    <footer className="border-t border-[rgba(255,255,255,0.08)] mt-24 font-[family-name:var(--font-plus-jakarta)]">
-      <div className="max-w-[1400px] mx-auto px-8 md:px-16 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8">
+    <footer className="border-t border-[var(--color-border)] mt-20 font-[family-name:var(--font-plus-jakarta)] bg-[var(--color-bg)]">
+      <div className="max-w-[1400px] mx-auto px-8 md:px-16 py-14">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 md:gap-8">
           {/* Logo + tagline */}
           <div className="space-y-4">
             <LogoWordmark height={24} />
@@ -62,7 +62,7 @@ export default function SiteFooter() {
                 href="https://x.com/sherwoodagent"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-9 h-9 rounded-full border border-[rgba(255,255,255,0.12)] flex items-center justify-center text-[var(--color-fg-secondary)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)] transition-colors"
+                className="w-9 h-9 rounded-full border border-[var(--color-border)] flex items-center justify-center text-[var(--color-fg-secondary)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)] transition-colors duration-150"
               >
                 <XIcon />
               </a>
@@ -70,7 +70,7 @@ export default function SiteFooter() {
                 href="https://github.com/imthatcarlos/sherwood"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-9 h-9 rounded-full border border-[rgba(255,255,255,0.12)] flex items-center justify-center text-[var(--color-fg-secondary)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)] transition-colors"
+                className="w-9 h-9 rounded-full border border-[var(--color-border)] flex items-center justify-center text-[var(--color-fg-secondary)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)] transition-colors duration-150"
               >
                 <GitHubIcon />
               </a>
@@ -80,7 +80,7 @@ export default function SiteFooter() {
           {/* Link columns */}
           {Object.entries(FOOTER_LINKS).map(([heading, links]) => (
             <div key={heading}>
-              <h4 className="text-xs uppercase tracking-[0.1em] text-[var(--color-fg-secondary)] mb-4 font-semibold">
+              <h4 className="text-xs text-[var(--color-fg-secondary)] mb-4 font-semibold">
                 {heading}
               </h4>
               <ul className="space-y-3">
@@ -89,7 +89,7 @@ export default function SiteFooter() {
                     <a
                       href={link.href}
                       {...(link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                      className="text-sm text-[var(--color-fg)] hover:text-[var(--color-accent)] transition-colors"
+                      className="text-sm text-[var(--color-fg)] hover:text-[var(--color-accent)] transition-colors duration-150"
                     >
                       {link.label}
                       {link.external && <ExternalIcon />}
@@ -102,11 +102,11 @@ export default function SiteFooter() {
         </div>
 
         {/* Bottom bar */}
-        <div className="border-t border-[rgba(255,255,255,0.06)] mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-xs text-[rgba(255,255,255,0.3)]">
+        <div className="border-t border-[var(--color-border)] mt-10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+          <p className="text-xs text-[var(--color-fg-secondary)]">
             &copy; {new Date().getFullYear()} Sherwood Protocol. All rights reserved.
           </p>
-          <p className="text-xs text-[rgba(255,255,255,0.25)]">
+          <p className="text-xs text-[var(--color-fg-secondary)] opacity-60">
             Unaudited software. Not financial advice. Use at your own risk.
           </p>
         </div>

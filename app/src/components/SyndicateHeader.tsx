@@ -47,12 +47,12 @@ function InlineCopy({ value }: { value: string }) {
       style={{
         background: "none",
         border: "none",
-        color: copied ? "var(--color-accent, #4ade80)" : "rgba(255,255,255,0.4)",
+        color: copied ? "var(--color-accent)" : "var(--color-fg-secondary)",
         cursor: "pointer",
         padding: "2px",
         fontSize: "13px",
         lineHeight: 1,
-        transition: "color 0.15s",
+        transition: "color 150ms ease",
       }}
       title={copied ? "Copied!" : "Copy to clipboard"}
     >
@@ -87,15 +87,15 @@ export default function SyndicateHeader({
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
           <span className="section-num">
-            {"//"} {subdomain.toUpperCase().replace(/[^A-Z0-9]/g, "_")}
+            {subdomain.toUpperCase().replace(/[^A-Z0-9]/g, "_")}
           </span>
-          <h1 className="text-3xl sm:text-5xl font-medium tracking-tight text-white font-[family-name:var(--font-inter)]">
+          <h1 className="text-3xl sm:text-[2.75rem] font-medium tracking-tight text-white font-[family-name:var(--font-inter)]">
             {name}{" "}
             <span
-              className="glitch-tag text-[11px] px-2.5 py-1 align-middle ml-4"
+              className="glitch-tag text-[11px] px-3 py-1 align-middle ml-3"
               style={
                 paused
-                  ? { background: "rgba(255,77,77,0.2)", color: "#ff4d4d" }
+                  ? { background: "rgba(255,80,0,0.15)", color: "#FF5000" }
                   : { background: badge.bg, color: badge.color }
               }
             >
@@ -107,10 +107,9 @@ export default function SyndicateHeader({
       </div>
 
       <div
-        className="font-[family-name:var(--font-plus-jakarta)] text-sm flex flex-wrap items-center gap-x-6 gap-y-2"
-        style={{ color: "rgba(255,255,255,0.4)" }}
+        className="font-[family-name:var(--font-plus-jakarta)] text-sm flex flex-wrap items-center gap-x-6 gap-y-2 text-[var(--color-fg-secondary)]"
       >
-        <span style={{ color: "var(--color-accent)" }}>
+        <span className="text-[var(--color-accent)] font-medium">
           {subdomain}.sherwoodagent.eth
         </span>
         <span className="flex items-center gap-1">

@@ -32,7 +32,6 @@ export default async function LeaderboardPage() {
   return (
     <>
       <TorusKnotBackground />
-      <div className="scanlines" />
 
       <div className="layout">
         <main className="px-4 md:px-8 lg:px-16 mx-auto w-full max-w-[1400px]">
@@ -40,13 +39,12 @@ export default async function LeaderboardPage() {
 
           {/* Section header */}
           <div className="leaderboard-header">
-            <span className="section-num">{"// Active Syndicates"}</span>
-            <h1 className="text-[3.5rem] font-medium tracking-tight text-white mb-4 font-[family-name:var(--font-inter)]">
+            <span className="section-num">Active Syndicates</span>
+            <h1 className="text-[3rem] font-medium tracking-tight text-white mb-3 font-[family-name:var(--font-inter)]">
               Leaderboard
             </h1>
             <p
-              className="font-[family-name:var(--font-plus-jakarta)] max-w-[600px]"
-              style={{ color: "rgba(255,255,255,0.5)" }}
+              className="font-[family-name:var(--font-plus-jakarta)] max-w-[600px] text-[var(--color-fg-secondary)]"
             >
               Live syndicate and agent performance.
               Ranked by total value locked (TVL) and strategy execution.

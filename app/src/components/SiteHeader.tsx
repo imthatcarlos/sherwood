@@ -31,18 +31,18 @@ export default function SiteHeader() {
         <LogoWordmark height={28} className="hidden md:block" />
         <LogoMark height={32} className="block md:hidden" />
       </Link>
-      <nav className="flex items-center">
+      <nav className="flex items-center gap-1">
         {/* Desktop nav links */}
         <Link
           href="/#roadmap"
-          className="hidden md:inline-flex !bg-transparent !text-white/80 px-4 py-2 text-sm font-semibold no-underline hover:!border-white/40 hover:!text-white transition-all"
+          className="hidden md:inline-flex !bg-transparent !text-[var(--color-fg-secondary)] px-4 py-2 text-sm font-medium no-underline hover:!text-white transition-colors duration-150 rounded-lg"
         >
           Roadmap
         </Link>
         <Link
           href="https://docs.sherwood.sh"
           target="_blank"
-          className="hidden md:inline-flex !bg-transparent !text-white/80 px-4 py-2 text-sm font-semibold no-underline hover:!border-white/40 hover:!text-white transition-all"
+          className="hidden md:inline-flex !bg-transparent !text-[var(--color-fg-secondary)] px-4 py-2 text-sm font-medium no-underline hover:!text-white transition-colors duration-150 rounded-lg"
         >
           Docs
         </Link>
@@ -50,7 +50,7 @@ export default function SiteHeader() {
         {/* Syndicates button — always visible */}
         <Link
           href="/leaderboard"
-          className="!bg-[var(--color-accent)] !text-black px-4 py-2 text-sm font-semibold no-underline hover:!opacity-90 transition-opacity"
+          className="!bg-[var(--color-accent)] !text-black px-5 py-2 text-sm font-semibold no-underline hover:!opacity-90 transition-opacity duration-150 rounded-full"
         >
           Syndicates
         </Link>
@@ -58,7 +58,7 @@ export default function SiteHeader() {
         {/* Mobile hamburger */}
         <button
           onClick={() => setMenuOpen((prev) => !prev)}
-          className="md:hidden ml-3 p-2 text-white/80 hover:text-white transition-colors cursor-pointer"
+          className="md:hidden ml-2 p-2 text-[var(--color-fg-secondary)] hover:text-white transition-colors duration-150 cursor-pointer"
           aria-label="Toggle menu"
         >
           <svg
@@ -92,7 +92,7 @@ export default function SiteHeader() {
           <Link
             href="/#roadmap"
             onClick={() => setMenuOpen(false)}
-            className="block px-4 py-3 text-sm font-semibold text-white/80 no-underline hover:text-white hover:bg-white/5 transition-all"
+            className="block px-4 py-3 text-sm font-medium text-[var(--color-fg-secondary)] no-underline hover:text-white hover:bg-[var(--color-elevated)] transition-all duration-150 rounded-lg"
           >
             Roadmap
           </Link>
@@ -100,7 +100,7 @@ export default function SiteHeader() {
             href="https://docs.sherwood.sh"
             target="_blank"
             onClick={() => setMenuOpen(false)}
-            className="block px-4 py-3 text-sm font-semibold text-white/80 no-underline hover:text-white hover:bg-white/5 transition-all"
+            className="block px-4 py-3 text-sm font-medium text-[var(--color-fg-secondary)] no-underline hover:text-white hover:bg-[var(--color-elevated)] transition-all duration-150 rounded-lg"
           >
             Docs
           </Link>

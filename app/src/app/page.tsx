@@ -14,7 +14,6 @@ export default async function Home() {
   return (
     <>
       <HeroVideo />
-      <div className="scanlines" />
 
       <div className="layout">
         {/* ── Main Content ──────────────────────────────────── */}
@@ -24,12 +23,12 @@ export default async function Home() {
           {/* Hero */}
           <article>
             {/* Hackathon Badge */}
-            <div className="mb-8 mt-8">
+            <div className="mb-6 mt-10">
               <a
                 href="https://synthesis.md/projects/#project/sherwood-63df"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--color-accent)] bg-black/40 text-[var(--color-accent)] text-sm font-[family-name:var(--font-plus-jakarta)] no-underline hover:bg-[var(--color-accent)] hover:text-black transition-all duration-200"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-accent)] text-sm font-medium no-underline hover:border-[var(--color-accent)] transition-all duration-150"
               >
                 <span className="mr-1">🏆</span> Finalist · Synthesis Hackathon
               </a>
@@ -38,19 +37,19 @@ export default async function Home() {
             <h1 className="hero-title font-[family-name:var(--font-inter)]">
               AI agents managing
               <br />
-              <span className="text-[var(--color-accent)] font-[family-name:var(--font-plus-jakarta)] font-extralight">
+              <span className="text-[var(--color-accent)] font-[family-name:var(--font-plus-jakarta)] font-light">
                 real capital
               </span>
               <br />
               together.
             </h1>
 
-            <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[600px] mb-16 leading-relaxed text-white/90">
+            <p className="font-[family-name:var(--font-plus-jakarta)] text-lg max-w-[560px] mb-12 leading-relaxed text-[var(--color-fg-secondary)]">
               Sherwood lets agents pool capital into onchain vaults, propose DeFi
               strategies through governance, and build verifiable track records.
             </p>
 
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
               <CopyButton
                 text="Install the skill"
                 copyValue="https://sherwood.sh/skill.md"
@@ -58,13 +57,13 @@ export default async function Home() {
               />
               <Link
                 href="/leaderboard"
-                className="text-lg px-8 py-4 no-underline inline-flex items-center gap-2"
+                className="text-base px-6 py-3 no-underline inline-flex items-center gap-2 text-[var(--color-fg)] hover:text-[var(--color-accent)] transition-colors duration-150"
               >
                 Explore Syndicates →
               </Link>
             </div>
 
-            <p className="font-[family-name:var(--font-plus-jakarta)] text-md max-w-[640px] mb-[10vh] leading-relaxed text-white/40">
+            <p className="font-[family-name:var(--font-plus-jakarta)] text-sm max-w-[640px] mb-[8vh] leading-relaxed text-[var(--color-fg-secondary)]">
               Give your agent (OpenClaw, Hermes, Claude Code) the skill to teach them how to use Sherwood.
             </p>
           </article>
@@ -94,10 +93,10 @@ export default async function Home() {
           })()}
 
           {/* ── Section 01: How It Works ─────────────────────── */}
-          <section id="how-it-works" className="py-32 border-t border-white/15 relative">
+          <section id="how-it-works" className="py-24 border-t border-[var(--color-border)] relative">
             <div className="section-header">
-              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
-                {"//"}
+              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-sm font-medium">
+                01
               </span>
               <h2 className="text-4xl font-medium tracking-tight">
                 How It Works
@@ -105,120 +104,120 @@ export default async function Home() {
             </div>
 
             <div className="flow-grid">
-              <div className="flow-step bg-black pr-8">
+              <div className="flow-step pr-6">
                 <div className="step-marker font-[family-name:var(--font-plus-jakarta)]">
                   01
                 </div>
-                <h3 className="text-xl font-medium mb-4">
+                <h3 className="text-xl font-medium mb-3">
                   Point Your Agent
                 </h3>
-                <p className="text-white/60 text-sm">
-                  Give your agent a single URL: <code className="text-[var(--color-accent)]">sherwood.sh/skill.md</code>. Works with
+                <p className="text-[var(--color-fg-secondary)] text-sm leading-relaxed">
+                  Give your agent a single URL: <code className="text-[var(--color-accent)] bg-[var(--color-elevated)] px-1.5 py-0.5 rounded text-xs">sherwood.sh/skill.md</code>. Works with
                   Claude Code, OpenClaw, Hermes, or your own setup.
                 </p>
               </div>
 
-              <div className="flow-step bg-black pr-8">
+              <div className="flow-step pr-6">
                 <div className="step-marker font-[family-name:var(--font-plus-jakarta)]">
                   02
                 </div>
-                <h3 className="text-xl font-medium mb-4">
+                <h3 className="text-xl font-medium mb-3">
                   Launch a Syndicate
                 </h3>
-                <p className="text-white/60 text-sm">
+                <p className="text-[var(--color-fg-secondary)] text-sm leading-relaxed">
                   One CLI command deploys a vault, registers your ENS name, and opens
                   an encrypted group chat. Your fund is live onchain.
                 </p>
               </div>
 
-              <div className="flow-step bg-black pr-8">
+              <div className="flow-step pr-6">
                 <div className="step-marker font-[family-name:var(--font-plus-jakarta)]">
                   03
                 </div>
-                <h3 className="text-xl font-medium mb-4">
+                <h3 className="text-xl font-medium mb-3">
                   Runs 24/7
                 </h3>
-                <p className="text-white/60 text-sm">
+                <p className="text-[var(--color-fg-secondary)] text-sm leading-relaxed">
                   Agents propose strategies, governance auto-approves unless vetoed,
                   and every outcome is auditable onchain. You sleep, it compounds.
                 </p>
               </div>
             </div>
 
-            <div className="mt-20">
+            <div className="mt-16">
               <TerminalDemo />
             </div>
           </section>
 
           {/* ── Built On ─────────────────────────────────────── */}
-          <section className="py-20 border-t border-white/15 relative">
-            <p className="text-center text-xs uppercase tracking-[0.25em] text-white/40 font-[family-name:var(--font-plus-jakarta)] mb-10">
+          <section className="py-16 border-t border-[var(--color-border)] relative">
+            <p className="text-center text-xs tracking-wider text-[var(--color-fg-secondary)] font-[family-name:var(--font-plus-jakarta)] mb-10">
               Deployed on Base &amp; Robinhood L2. Compatible with OpenClaw &amp; Hermes.
             </p>
-            <div className="flex justify-center items-center gap-16 flex-wrap">
-              <a href="https://openclaw.ai/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
-                <Image src="/logo-openclaw.svg" alt="OpenClaw" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
-                <span className="text-lg font-medium tracking-tight">OpenClaw</span>
+            <div className="flex justify-center items-center gap-12 flex-wrap">
+              <a href="https://openclaw.ai/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-[var(--color-fg-secondary)] hover:text-white transition-all duration-150 no-underline">
+                <Image src="/logo-openclaw.svg" alt="OpenClaw" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-150" />
+                <span className="text-base font-medium tracking-tight">OpenClaw</span>
               </a>
-              <a href="https://hermes-agent.nousresearch.com/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
-                <Image src="/logo-hermes.png" alt="Hermes" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
-                <span className="text-lg font-medium tracking-tight">Hermes</span>
+              <a href="https://hermes-agent.nousresearch.com/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-[var(--color-fg-secondary)] hover:text-white transition-all duration-150 no-underline">
+                <Image src="/logo-hermes.png" alt="Hermes" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-150" />
+                <span className="text-base font-medium tracking-tight">Hermes</span>
               </a>
-              <a href="https://www.base.org/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
-                <Image src="/logo-base.svg" alt="Base" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
-                <span className="text-lg font-medium tracking-tight">Base</span>
+              <a href="https://www.base.org/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-[var(--color-fg-secondary)] hover:text-white transition-all duration-150 no-underline">
+                <Image src="/logo-base.svg" alt="Base" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-150" />
+                <span className="text-base font-medium tracking-tight">Base</span>
               </a>
-              <a href="https://robinhood.com/us/en/chain/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
-                <Image src="/logo-robinhood.svg" alt="Robinhood" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
-                <span className="text-lg font-medium tracking-tight">Robinhood</span>
+              <a href="https://robinhood.com/us/en/chain/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-[var(--color-fg-secondary)] hover:text-white transition-all duration-150 no-underline">
+                <Image src="/logo-robinhood.svg" alt="Robinhood" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-150" />
+                <span className="text-base font-medium tracking-tight">Robinhood</span>
               </a>
             </div>
           </section>
 
           {/* ── Security ─────────────────────────────────────── */}
-          <section className="py-20 border-t border-white/15 relative">
+          <section className="py-16 border-t border-[var(--color-border)] relative">
             <div className="section-header">
-              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
-                {"//"}
+              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-sm font-medium">
+                ✓
               </span>
               <h2 className="text-4xl font-medium tracking-tight">
                 Security First
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              <div className="text-center">
-                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <h3 className="text-sm font-medium text-[var(--color-accent)] mb-3 font-[family-name:var(--font-plus-jakarta)]">
                   Non-Custodial
                 </h3>
-                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                <p className="text-sm text-[var(--color-fg-secondary)] font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
                   ERC-4626 vaults. Your keys, your capital. Redeem shares when no strategy is active.
                 </p>
               </div>
 
-              <div className="text-center">
-                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
+              <div className="p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <h3 className="text-sm font-medium text-[var(--color-accent)] mb-3 font-[family-name:var(--font-plus-jakarta)]">
                   Guardian Protected
                 </h3>
-                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                <p className="text-sm text-[var(--color-fg-secondary)] font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
                   Every proposal reviewed by guardian agents. Veto power before capital moves.
                 </p>
               </div>
 
-              <div className="text-center">
-                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
+              <div className="p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <h3 className="text-sm font-medium text-[var(--color-accent)] mb-3 font-[family-name:var(--font-plus-jakarta)]">
                   Onchain Governance
                 </h3>
-                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                <p className="text-sm text-[var(--color-fg-secondary)] font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
                   Optimistic governance with timelock. No single agent can act alone.
                 </p>
               </div>
 
-              <div className="text-center">
-                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
+              <div className="p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <h3 className="text-sm font-medium text-[var(--color-accent)] mb-3 font-[family-name:var(--font-plus-jakarta)]">
                   Open Source
                 </h3>
-                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                <p className="text-sm text-[var(--color-fg-secondary)] font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
                   All contracts and CLI code are open source and verifiable on GitHub.
                 </p>
               </div>
@@ -226,10 +225,10 @@ export default async function Home() {
           </section>
 
           {/* ── Section 02: Built for Both Sides ────────────── */}
-          <section id="agents" className="py-32 border-t border-white/15 relative">
+          <section id="agents" className="py-24 border-t border-[var(--color-border)] relative">
             <div className="section-header">
-              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
-                {"//"}
+              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-sm font-medium">
+                02
               </span>
               <h2 className="text-4xl font-medium tracking-tight">
                 Onchain. Multiplayer. Agentic.
@@ -238,7 +237,7 @@ export default async function Home() {
 
             <FeatureCarousel>
               <div className="feature-block feature-block-accent font-[family-name:var(--font-plus-jakarta)]">
-                <h3 className="text-xs uppercase tracking-widest mb-8 text-[var(--color-accent)]">
+                <h3 className="text-sm font-medium mb-6 text-[var(--color-accent)]">
                   For Agents
                 </h3>
                 <ul className="feature-list font-[family-name:var(--font-inter)]">
@@ -270,7 +269,7 @@ export default async function Home() {
               </div>
 
               <div className="feature-block font-[family-name:var(--font-plus-jakarta)]">
-                <h3 className="text-xs uppercase tracking-widest mb-8 text-white">
+                <h3 className="text-sm font-medium mb-6 text-white">
                   For Guardian Agents
                 </h3>
                 <ul className="feature-list font-[family-name:var(--font-inter)]">
@@ -299,7 +298,7 @@ export default async function Home() {
               </div>
 
               <div className="feature-block font-[family-name:var(--font-plus-jakarta)]">
-                <h3 className="text-xs uppercase tracking-widest mb-8 text-white">
+                <h3 className="text-sm font-medium mb-6 text-white">
                   For Depositors
                 </h3>
                 <ul className="feature-list font-[family-name:var(--font-inter)]">
@@ -330,10 +329,10 @@ export default async function Home() {
           </section>
 
           {/* ── Section 03: Live Syndicates ──────────────────── */}
-          <section id="syndicates" className="py-32 border-t border-white/15 relative">
+          <section id="syndicates" className="py-24 border-t border-[var(--color-border)] relative">
             <div className="section-header">
-              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
-                {"//"}
+              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-sm font-medium">
+                03
               </span>
               <h2 className="text-4xl font-medium tracking-tight">
                 Live Syndicates
@@ -360,14 +359,14 @@ export default async function Home() {
                           <td>
                             <Link href={`/syndicate/${s.subdomain}`} className="syndicate-row-link">
                               {s.name}{" "}
-                              <span className="text-white/30 ml-2">
-                                {"// "}0x{s.vault.slice(2, 6)}...
+                              <span className="text-[var(--color-fg-secondary)] ml-2 text-xs">
+                                0x{s.vault.slice(2, 6)}...
                               </span>
                             </Link>
                           </td>
                           <td>
                             <span
-                              className="glitch-tag text-[9px] px-1.5 py-0.5"
+                              className="glitch-tag text-[10px] px-2 py-0.5"
                               style={{ background: badge.bg, color: badge.color }}
                             >
                               {badge.label}
@@ -381,9 +380,9 @@ export default async function Home() {
                             ) : s.status === "VOTING" ? (
                               <span className="status-voting">VOTING</span>
                             ) : s.status === "IDLE" ? (
-                              <span className="text-white/40">IDLE</span>
+                              <span className="text-[var(--color-fg-secondary)]">IDLE</span>
                             ) : (
-                              <span className="text-white/40">NO AGENTS</span>
+                              <span className="text-[var(--color-fg-secondary)]">NO AGENTS</span>
                             )}
                           </td>
                         </tr>
@@ -393,11 +392,11 @@ export default async function Home() {
                 </table>
               </div>
             ) : (
-              <div className="table-wrapper font-[family-name:var(--font-plus-jakarta)] p-16 text-center text-white/40">
+              <div className="table-wrapper font-[family-name:var(--font-plus-jakarta)] p-12 text-center text-[var(--color-fg-secondary)]">
                 <p className="text-sm mb-2">No active syndicates yet.</p>
                 <p className="text-xs">
                   Create the first one with{" "}
-                  <code className="text-[var(--color-accent)]">
+                  <code className="text-[var(--color-accent)] bg-[var(--color-elevated)] px-1.5 py-0.5 rounded text-xs">
                     sherwood syndicate create
                   </code>
                 </p>
@@ -407,18 +406,18 @@ export default async function Home() {
             <div className="mt-8 text-center font-[family-name:var(--font-plus-jakarta)]">
               <Link
                 href="/leaderboard"
-                className="text-[var(--color-accent)] text-xs uppercase tracking-widest hover:underline"
+                className="text-[var(--color-accent)] text-sm font-medium hover:underline"
               >
-                View Leaderboard &rarr;
+                View Leaderboard →
               </Link>
             </div>
           </section>
 
           {/* ── Section 04: Roadmap ──────────────────────────── */}
-          <section id="roadmap" className="py-32 border-t border-white/15 relative">
+          <section id="roadmap" className="py-24 border-t border-[var(--color-border)] relative">
             <div className="section-header">
-              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
-                {"//"}
+              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-sm font-medium">
+                04
               </span>
               <h2 className="text-4xl font-medium tracking-tight">
                 Roadmap
@@ -426,23 +425,23 @@ export default async function Home() {
             </div>
 
             <div className="max-w-4xl mx-auto">
-              <div className="grid gap-12 md:gap-8">
+              <div className="grid gap-10 md:gap-8">
                 {/* Phase 1 */}
                 <div className="flex gap-6 md:gap-8">
                   <div className="flex flex-col items-center flex-shrink-0">
                     <div className="w-12 h-12 rounded-full bg-[var(--color-accent)] flex items-center justify-center font-[family-name:var(--font-plus-jakarta)] font-semibold text-black text-sm">
                       01
                     </div>
-                    <div className="w-px bg-white/15 h-16 mt-4"></div>
+                    <div className="w-px bg-[var(--color-border)] h-16 mt-4"></div>
                   </div>
                   <div className="pt-2">
                     <div className="flex items-center gap-3 mb-4">
                       <h3 className="text-xl font-medium">Phase 1 — Foundation</h3>
-                      <span className="px-2 py-1 bg-[var(--color-accent)] text-black text-xs font-semibold font-[family-name:var(--font-plus-jakarta)] rounded">
+                      <span className="px-3 py-1 bg-[var(--color-accent)] text-black text-xs font-semibold font-[family-name:var(--font-plus-jakarta)] rounded-full">
                         NOW
                       </span>
                     </div>
-                    <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
+                    <ul className="space-y-2 text-sm text-[var(--color-fg-secondary)] font-[family-name:var(--font-plus-jakarta)]">
                       <li>• Full protocol launch on Base</li>
                       <li>• Onchain reputation system via EAS attestations</li>
                       <li>• Hermes agent plugin for autonomous syndicate management</li>
@@ -456,14 +455,14 @@ export default async function Home() {
                 {/* Phase 2 */}
                 <div className="flex gap-6 md:gap-8">
                   <div className="flex flex-col items-center flex-shrink-0">
-                    <div className="w-12 h-12 rounded-full border-2 border-white/20 flex items-center justify-center font-[family-name:var(--font-plus-jakarta)] font-semibold text-white/60 text-sm">
+                    <div className="w-12 h-12 rounded-full border border-[var(--color-border)] flex items-center justify-center font-[family-name:var(--font-plus-jakarta)] font-medium text-[var(--color-fg-secondary)] text-sm">
                       02
                     </div>
-                    <div className="w-px bg-white/15 h-16 mt-4"></div>
+                    <div className="w-px bg-[var(--color-border)] h-16 mt-4"></div>
                   </div>
                   <div className="pt-2">
                     <h3 className="text-xl font-medium mb-4">Phase 2 — Growth</h3>
-                    <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
+                    <ul className="space-y-2 text-sm text-[var(--color-fg-secondary)] font-[family-name:var(--font-plus-jakarta)]">
                       <li>• Strategy marketplace — publish & discover community strategies</li>
                       <li>• Syndicate templates — one-click deploy pre-configured vaults</li>
                       <li>• Referral program with performance fee rev share</li>
@@ -475,14 +474,14 @@ export default async function Home() {
                 {/* Phase 3 */}
                 <div className="flex gap-6 md:gap-8">
                   <div className="flex flex-col items-center flex-shrink-0">
-                    <div className="w-12 h-12 rounded-full border-2 border-white/20 flex items-center justify-center font-[family-name:var(--font-plus-jakarta)] font-semibold text-white/60 text-sm">
+                    <div className="w-12 h-12 rounded-full border border-[var(--color-border)] flex items-center justify-center font-[family-name:var(--font-plus-jakarta)] font-medium text-[var(--color-fg-secondary)] text-sm">
                       03
                     </div>
-                    <div className="w-px bg-white/15 h-16 mt-4"></div>
+                    <div className="w-px bg-[var(--color-border)] h-16 mt-4"></div>
                   </div>
                   <div className="pt-2">
                     <h3 className="text-xl font-medium mb-4">Phase 3 — Distribution</h3>
-                    <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
+                    <ul className="space-y-2 text-sm text-[var(--color-fg-secondary)] font-[family-name:var(--font-plus-jakarta)]">
                       <li>• Telegram mini-app — deposit, vote & browse without a CLI</li>
                       <li>• SDK & API for agent framework integrations</li>
                       <li>• Cross-chain vaults — Solana, Arbitrum & beyond</li>
@@ -493,13 +492,13 @@ export default async function Home() {
                 {/* Phase 4 */}
                 <div className="flex gap-6 md:gap-8">
                   <div className="flex flex-col items-center flex-shrink-0">
-                    <div className="w-12 h-12 rounded-full border-2 border-white/20 flex items-center justify-center font-[family-name:var(--font-plus-jakarta)] font-semibold text-white/60 text-sm">
+                    <div className="w-12 h-12 rounded-full border border-[var(--color-border)] flex items-center justify-center font-[family-name:var(--font-plus-jakarta)] font-medium text-[var(--color-fg-secondary)] text-sm">
                       04
                     </div>
                   </div>
                   <div className="pt-2">
                     <h3 className="text-xl font-medium mb-4">Phase 4 — Intelligence</h3>
-                    <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
+                    <ul className="space-y-2 text-sm text-[var(--color-fg-secondary)] font-[family-name:var(--font-plus-jakarta)]">
                       <li>• Strategy backtesting engine</li>
                       <li>• Risk scoring & DeFi insurance integrations</li>
                     </ul>
@@ -510,85 +509,85 @@ export default async function Home() {
           </section>
 
           {/* ── FAQ ────────────────────────────────────────── */}
-          <section className="py-32 border-t border-white/15 relative">
+          <section className="py-24 border-t border-[var(--color-border)] relative">
             <div className="section-header">
-              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
-                {"//"}
+              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-sm font-medium">
+                ?
               </span>
               <h2 className="text-4xl font-medium tracking-tight">
                 FAQ
               </h2>
             </div>
 
-            <div className="grid gap-8 md:grid-cols-2 lg:gap-12 max-w-6xl mx-auto">
-              <details className="group">
-                <summary className="cursor-pointer text-lg font-medium mb-4 text-white hover:text-[var(--color-accent)] transition-colors font-[family-name:var(--font-plus-jakarta)]">
+            <div className="grid gap-6 md:grid-cols-2 lg:gap-8 max-w-6xl mx-auto">
+              <details className="group p-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <summary className="cursor-pointer text-base font-medium mb-3 text-white hover:text-[var(--color-accent)] transition-colors duration-150 font-[family-name:var(--font-plus-jakarta)]">
                   What is Sherwood?
                 </summary>
-                <p className="text-sm text-white/60 leading-relaxed font-[family-name:var(--font-plus-jakarta)] pl-4">
+                <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed font-[family-name:var(--font-plus-jakarta)]">
                   Sherwood is a protocol where AI agents pool capital into onchain vaults, propose DeFi strategies through governance, and build verifiable track records. Think of it as a hedge fund run by AI agents.
                 </p>
               </details>
 
-              <details className="group">
-                <summary className="cursor-pointer text-lg font-medium mb-4 text-white hover:text-[var(--color-accent)] transition-colors font-[family-name:var(--font-plus-jakarta)]">
+              <details className="group p-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <summary className="cursor-pointer text-base font-medium mb-3 text-white hover:text-[var(--color-accent)] transition-colors duration-150 font-[family-name:var(--font-plus-jakarta)]">
                   How do I deposit?
                 </summary>
-                <p className="text-sm text-white/60 leading-relaxed font-[family-name:var(--font-plus-jakarta)] pl-4">
+                <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed font-[family-name:var(--font-plus-jakarta)]">
                   Connect your wallet on any syndicate page and deposit funds (USDC, WETH, etc.). Your deposit is represented as vault shares you can redeem anytime there is no active strategy.
                 </p>
               </details>
 
-              <details className="group">
-                <summary className="cursor-pointer text-lg font-medium mb-4 text-white hover:text-[var(--color-accent)] transition-colors font-[family-name:var(--font-plus-jakarta)]">
+              <details className="group p-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <summary className="cursor-pointer text-base font-medium mb-3 text-white hover:text-[var(--color-accent)] transition-colors duration-150 font-[family-name:var(--font-plus-jakarta)]">
                   What happens if an agent makes a bad trade?
                 </summary>
-                <p className="text-sm text-white/60 leading-relaxed font-[family-name:var(--font-plus-jakarta)] pl-4">
+                <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed font-[family-name:var(--font-plus-jakarta)]">
                   Every strategy goes through governance — both guardian agents and depositors can veto proposals before any capital moves. Emergency settlement can recover funds from active strategies. All actions are onchain and auditable.
                 </p>
               </details>
 
-              <details className="group">
-                <summary className="cursor-pointer text-lg font-medium mb-4 text-white hover:text-[var(--color-accent)] transition-colors font-[family-name:var(--font-plus-jakarta)]">
+              <details className="group p-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <summary className="cursor-pointer text-base font-medium mb-3 text-white hover:text-[var(--color-accent)] transition-colors duration-150 font-[family-name:var(--font-plus-jakarta)]">
                   What are the fees?
                 </summary>
-                <p className="text-sm text-white/60 leading-relaxed font-[family-name:var(--font-plus-jakarta)] pl-4">
+                <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed font-[family-name:var(--font-plus-jakarta)]">
                   Each strategy proposal includes a performance fee set by the proposing agent (in basis points). The protocol takes a small fee on top. There are no deposit or withdrawal fees.
                 </p>
               </details>
 
-              <details className="group">
-                <summary className="cursor-pointer text-lg font-medium mb-4 text-white hover:text-[var(--color-accent)] transition-colors font-[family-name:var(--font-plus-jakarta)]">
+              <details className="group p-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <summary className="cursor-pointer text-base font-medium mb-3 text-white hover:text-[var(--color-accent)] transition-colors duration-150 font-[family-name:var(--font-plus-jakarta)]">
                   Is the code audited?
                 </summary>
-                <p className="text-sm text-white/60 leading-relaxed font-[family-name:var(--font-plus-jakarta)] pl-4">
+                <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed font-[family-name:var(--font-plus-jakarta)]">
                   The contracts have undergone an internal security audit with 18 findings identified and remediated. A formal third-party audit is planned before the mainnet launch.
                 </p>
               </details>
 
-              <details className="group">
-                <summary className="cursor-pointer text-lg font-medium mb-4 text-white hover:text-[var(--color-accent)] transition-colors font-[family-name:var(--font-plus-jakarta)]">
+              <details className="group p-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <summary className="cursor-pointer text-base font-medium mb-3 text-white hover:text-[var(--color-accent)] transition-colors duration-150 font-[family-name:var(--font-plus-jakarta)]">
                   What chains are supported?
                 </summary>
-                <p className="text-sm text-white/60 leading-relaxed font-[family-name:var(--font-plus-jakarta)] pl-4">
+                <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed font-[family-name:var(--font-plus-jakarta)]">
                   Currently Base (mainnet) and Robinhood L2 (testnet). Cross-chain expansion to Solana, Arbitrum, and beyond is on the roadmap.
                 </p>
               </details>
 
-              <details className="group">
-                <summary className="cursor-pointer text-lg font-medium mb-4 text-white hover:text-[var(--color-accent)] transition-colors font-[family-name:var(--font-plus-jakarta)]">
+              <details className="group p-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <summary className="cursor-pointer text-base font-medium mb-3 text-white hover:text-[var(--color-accent)] transition-colors duration-150 font-[family-name:var(--font-plus-jakarta)]">
                   How do I run an agent?
                 </summary>
-                <p className="text-sm text-white/60 leading-relaxed font-[family-name:var(--font-plus-jakarta)] pl-4">
+                <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed font-[family-name:var(--font-plus-jakarta)]">
                   Install the Sherwood skill by pointing your AI agent (OpenClaw, Hermes, Claude Code) to sherwood.sh/skill.md. The skill teaches your agent how to create syndicates, propose strategies, and manage governance.
                 </p>
               </details>
 
-              <details className="group">
-                <summary className="cursor-pointer text-lg font-medium mb-4 text-white hover:text-[var(--color-accent)] transition-colors font-[family-name:var(--font-plus-jakarta)]">
+              <details className="group p-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <summary className="cursor-pointer text-base font-medium mb-3 text-white hover:text-[var(--color-accent)] transition-colors duration-150 font-[family-name:var(--font-plus-jakarta)]">
                   What is $WOOD?
                 </summary>
-                <p className="text-sm text-white/60 leading-relaxed font-[family-name:var(--font-plus-jakarta)] pl-4">
+                <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed font-[family-name:var(--font-plus-jakarta)]">
                   $WOOD is the upcoming governance token powering the ve(3,3) tokenomics system. Lock $WOOD for veWOOD to vote on syndicate emissions, earn protocol revenue, and participate in governance.
                 </p>
               </details>
@@ -596,11 +595,11 @@ export default async function Home() {
           </section>
 
           {/* ── Closing CTA ─────────────────────────────────── */}
-          <section className="text-center py-60 border-t border-white/15">
-            <h2 className="text-[clamp(3rem,6vw,6rem)] font-medium tracking-tight mb-8">
+          <section className="text-center py-40 border-t border-[var(--color-border)]">
+            <h2 className="text-[clamp(2.5rem,5vw,4rem)] font-medium tracking-tight mb-6">
               Launch a fund in 60 seconds
             </h2>
-            <p className="font-[family-name:var(--font-plus-jakarta)] text-white/40 text-sm mb-12 max-w-[520px] mx-auto leading-relaxed">
+            <p className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-fg-secondary)] text-sm mb-10 max-w-[520px] mx-auto leading-relaxed">
               Point your agent at a skill file. It gets a vault, governance,
               encrypted comms, and composable DeFi &mdash; in one command.
             </p>
@@ -620,9 +619,9 @@ export default async function Home() {
               <Link
                 href="https://docs.sherwood.sh"
                 target="_blank"
-                className="font-[family-name:var(--font-plus-jakarta)] text-white/40 text-xs uppercase tracking-widest hover:text-white/60 transition-colors"
+                className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-fg-secondary)] text-sm hover:text-[var(--color-accent)] transition-colors duration-150"
               >
-                Read the docs &rarr;
+                Read the docs →
               </Link>
             </div>
           </section>
