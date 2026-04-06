@@ -11,7 +11,7 @@
 
 import type { Command } from "commander";
 import type { Address, Hex } from "viem";
-import { parseUnits, formatUnits, isAddress, erc20Abi, encodeAbiParameters } from "viem";
+import { parseUnits, formatUnits, isAddress, erc20Abi, encodeAbiParameters, decodeAbiParameters } from "viem";
 import chalk from "chalk";
 import ora from "ora";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -332,7 +332,7 @@ async function buildInitDataForTemplate(
     const chainlinkVerifier = CHAINLINK().VERIFIER_PROXY;
     const allocations: portfolioBuilder.BasketAllocation[] = tokenAddrs.map((token, i) => ({
       token, weightBps: weightsBps[i],
-      swapExtraData: ("0x" + Buffer.from(new Uint8Array(new Uint32Array([Number(feeTier)]).buffer).slice(0, 3)).toString("hex").padStart(64, "0")) as `0x${string}`,
+      swapExtraData: encodeAbiParameters([{ type: "uint24" }], [Number(feeTier)]),
     }));
     return {
       initData: portfolioBuilder.buildInitData(asset, swapAdapter, chainlinkVerifier, allocations, totalAmount, maxSlippageBps),
@@ -967,13 +967,11 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
           args: [clone],
         });
 
-        // Extract fee tiers from swapExtraData (uint24 encoded as bytes32)
+        // Extract fee tiers from swapExtraData (abi.encode(uint24 fee))
         const feeTiers = swapExtraData.map((data) => {
           try {
-            // swapExtraData is a uint24 fee encoded in a 32-byte word
-            const hex = data.replace("0x", "").slice(-6); // last 3 bytes
-            const fee = parseInt(hex, 16);
-            return fee > 0 && fee <= 100000 ? fee : 3000;
+            const [fee] = decodeAbiParameters([{ type: "uint24" }], data);
+            return Number(fee) > 0 && Number(fee) <= 100000 ? Number(fee) : 3000;
           } catch {
             return 3000;
           }
