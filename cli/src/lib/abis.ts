@@ -1401,3 +1401,23 @@ export const PORTFOLIO_STRATEGY_ABI = [
     outputs: [{ name: "", type: "bytes[]" }],
   },
 ] as const;
+
+// ── Synthra QuoterV2 (Robinhood testnet — different ABI from Uniswap) ──
+// Flat params (not struct), returns only amountOut (not 4-tuple).
+// Confirmed by ISynthraQuoter in contracts/src/adapters/SynthraSwapAdapter.sol:33-41.
+
+export const SYNTHRA_QUOTER_ABI = [
+  {
+    name: "quoteExactInputSingle",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenIn", type: "address" },
+      { name: "tokenOut", type: "address" },
+      { name: "fee", type: "uint24" },
+      { name: "amountIn", type: "uint256" },
+      { name: "sqrtPriceLimitX96", type: "uint160" },
+    ],
+    outputs: [{ name: "amountOut", type: "uint256" }],
+  },
+] as const;

@@ -915,9 +915,10 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
 
   strategy
     .command("status")
-    .description("Show portfolio strategy status — allocations, balances, drift (Portfolio only)")
+    .description("Show portfolio strategy status — allocations, balances, drift, PnL (Portfolio only)")
     .argument("<clone>", "Strategy clone address")
-    .action(async (cloneArg: string) => {
+    .option("--json", "Output machine-readable JSON for agent consumption")
+    .action(async (cloneArg: string, opts) => {
       if (!isAddress(cloneArg)) {
         console.error(chalk.red("Invalid clone address"));
         process.exit(1);
@@ -925,11 +926,12 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
       const clone = cloneArg as Address;
       const publicClient = getPublicClient();
       const network = getNetwork();
+      const jsonMode = !!opts.json;
 
-      const spinner = ora("Reading strategy state...").start();
+      const spinner = jsonMode ? null : ora("Reading strategy state...").start();
       try {
-        // Read strategy state
-        const [stateRaw, vault, proposer, assetAddr, totalAmount, maxSlippage, allocations] = await Promise.all([
+        // Read strategy state + swap extra data (for fee tiers)
+        const [stateRaw, vault, proposer, assetAddr, totalAmount, maxSlippage, allocations, swapExtraData] = await Promise.all([
           publicClient.readContract({ address: clone, abi: PORTFOLIO_STRATEGY_ABI, functionName: "state" }),
           publicClient.readContract({ address: clone, abi: PORTFOLIO_STRATEGY_ABI, functionName: "vault" }) as Promise<Address>,
           publicClient.readContract({ address: clone, abi: PORTFOLIO_STRATEGY_ABI, functionName: "proposer" }) as Promise<Address>,
@@ -937,6 +939,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
           publicClient.readContract({ address: clone, abi: PORTFOLIO_STRATEGY_ABI, functionName: "totalAmount" }) as Promise<bigint>,
           publicClient.readContract({ address: clone, abi: PORTFOLIO_STRATEGY_ABI, functionName: "maxSlippageBps" }) as Promise<bigint>,
           publicClient.readContract({ address: clone, abi: PORTFOLIO_STRATEGY_ABI, functionName: "getAllocations" }) as Promise<readonly { token: Address; targetWeightBps: bigint; tokenAmount: bigint; investedAmount: bigint }[]>,
+          publicClient.readContract({ address: clone, abi: PORTFOLIO_STRATEGY_ABI, functionName: "getSwapExtraData" }) as Promise<readonly `0x${string}`[]>,
         ]);
 
         const stateNames = ["Pending", "Executed", "Settled"];
@@ -956,7 +959,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
         ]));
         const tokenData = await Promise.all(tokenReads);
 
-        // Also read asset balance held by strategy
+        // Read asset balance held by strategy
         const assetBalance = await publicClient.readContract({
           address: assetAddr,
           abi: erc20Abi,
@@ -964,14 +967,152 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
           args: [clone],
         });
 
-        spinner.succeed("Strategy state loaded");
+        // Extract fee tiers from swapExtraData (uint24 encoded as bytes32)
+        const feeTiers = swapExtraData.map((data) => {
+          try {
+            // swapExtraData is a uint24 fee encoded in a 32-byte word
+            const hex = data.replace("0x", "").slice(-6); // last 3 bytes
+            const fee = parseInt(hex, 16);
+            return fee > 0 && fee <= 100000 ? fee : 3000;
+          } catch {
+            return 3000;
+          }
+        });
 
-        // Display
+        // Fetch prices (graceful — continues without if unavailable)
+        let prices: (import("../lib/price.js").TokenPrice | null)[] = [];
+        let priceSource: "uniswap" | "synthra" | null = null;
+        try {
+          const { getTokenPricesInAsset } = await import("../lib/price.js");
+          prices = await getTokenPricesInAsset({
+            tokens: allocations.map((a, i) => ({
+              token: a.token,
+              tokenDecimals: tokenData[i][2] as number,
+              feeTier: feeTiers[i],
+            })),
+            asset: assetAddr,
+            assetDecimals,
+          });
+          priceSource = prices.find((p) => p !== null)?.source ?? null;
+        } catch {
+          // Prices unavailable — continue with balance-only
+        }
+
+        const pricesAvailable = prices.some((p) => p !== null);
+
+        // Compute enriched allocation data
+        const assetBalanceNum = Number(formatUnits(assetBalance as bigint, assetDecimals));
+        let totalPortfolioValue = assetBalanceNum;
+        let totalInvested = 0n;
+
+        interface AllocStatus {
+          token: Address;
+          symbol: string;
+          decimals: number;
+          targetWeightBps: number;
+          balance: string;
+          balanceRaw: string;
+          investedAmount: string;
+          currentPrice: number | null;
+          currentValue: number | null;
+          actualWeightBps: number | null;
+          driftBps: number | null;
+          pnl: number | null;
+          pnlPct: number | null;
+        }
+
+        const allocStatuses: AllocStatus[] = allocations.map((alloc, i) => {
+          const [balance, symbol, decimals] = tokenData[i];
+          const balanceNum = Number(formatUnits(balance as bigint, decimals));
+          const investedNum = Number(formatUnits(alloc.investedAmount, assetDecimals));
+          totalInvested += alloc.investedAmount;
+
+          const price = prices[i];
+          let currentValue: number | null = null;
+
+          if (price) {
+            currentValue = balanceNum * price.price;
+            totalPortfolioValue += currentValue;
+          }
+
+          return {
+            token: alloc.token,
+            symbol: symbol as string,
+            decimals: decimals as number,
+            targetWeightBps: Number(alloc.targetWeightBps),
+            balance: formatUnits(balance as bigint, decimals),
+            balanceRaw: (balance as bigint).toString(),
+            investedAmount: formatUnits(alloc.investedAmount, assetDecimals),
+            currentPrice: price?.price ?? null,
+            currentValue,
+            actualWeightBps: null, // computed after totals
+            driftBps: null,
+            pnl: currentValue !== null ? currentValue - investedNum : null,
+            pnlPct: currentValue !== null && investedNum > 0
+              ? ((currentValue - investedNum) / investedNum) * 100
+              : null,
+          };
+        });
+
+        // Second pass: compute actual weights and drift (needs totalPortfolioValue)
+        let maxDriftBps = 0;
+        let maxDriftToken = "";
+        if (pricesAvailable && totalPortfolioValue > 0) {
+          for (const a of allocStatuses) {
+            if (a.currentValue !== null) {
+              a.actualWeightBps = Math.round((a.currentValue / totalPortfolioValue) * 10000);
+              a.driftBps = a.actualWeightBps - a.targetWeightBps;
+              if (Math.abs(a.driftBps) > Math.abs(maxDriftBps)) {
+                maxDriftBps = a.driftBps;
+                maxDriftToken = a.symbol;
+              }
+            }
+          }
+        }
+
+        // Total PnL
+        const totalInvestedNum = Number(formatUnits(totalInvested, assetDecimals));
+        const totalPnl = pricesAvailable ? totalPortfolioValue - totalInvestedNum : null;
+        const totalPnlPct = totalPnl !== null && totalInvestedNum > 0
+          ? (totalPnl / totalInvestedNum) * 100
+          : null;
+
+        spinner?.succeed("Strategy state loaded");
+
+        // ── JSON output ──
+        if (jsonMode) {
+          const result = {
+            clone,
+            vault,
+            proposer,
+            state: stateStr,
+            network,
+            asset: { address: assetAddr, symbol: assetSymbol as string, decimals: assetDecimals as number },
+            totalDeployed: formatUnits(totalAmount, assetDecimals),
+            maxSlippageBps: Number(maxSlippage),
+            assetBalance: formatUnits(assetBalance as bigint, assetDecimals),
+            pricesAvailable,
+            priceSource,
+            portfolio: {
+              totalValue: pricesAvailable ? totalPortfolioValue : null,
+              totalPnl,
+              totalPnlPct,
+            },
+            allocations: allocStatuses,
+            maxDriftBps: pricesAvailable ? maxDriftBps : null,
+            maxDriftToken: pricesAvailable ? maxDriftToken : null,
+            timestamp: new Date().toISOString(),
+          };
+          process.stdout.write(JSON.stringify(result) + "\n");
+          return;
+        }
+
+        // ── Human-friendly output ──
         const stateColor = stateStr === "Executed" ? chalk.green : stateStr === "Settled" ? chalk.blue : chalk.yellow;
 
         console.log();
         console.log(chalk.bold("Portfolio Strategy Status"));
-        console.log(chalk.dim("─".repeat(60)));
+        console.log(chalk.dim("─".repeat(70)));
         console.log(`  Clone:       ${chalk.cyan(clone)}`);
         console.log(`  Vault:       ${chalk.cyan(vault)}`);
         console.log(`  Proposer:    ${chalk.cyan(proposer)}`);
@@ -981,39 +1122,86 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
         console.log(`  Max Slip:    ${Number(maxSlippage) / 100}%`);
         console.log(`  Asset held:  ${formatUnits(assetBalance as bigint, assetDecimals)} ${assetSymbol}`);
 
-        console.log();
-        console.log(chalk.bold("Allocations"));
-        console.log(chalk.dim("─".repeat(60)));
-        console.log(
-          chalk.dim("  Token".padEnd(12)) +
-          chalk.dim("Weight".padEnd(10)) +
-          chalk.dim("Invested".padEnd(18)) +
-          chalk.dim("Balance".padEnd(18)) +
-          chalk.dim("Address"),
-        );
-
-        let totalInvested = 0n;
-
-        for (let i = 0; i < allocations.length; i++) {
-          const alloc = allocations[i];
-          const [balance, symbol, decimals] = tokenData[i];
-          const weightPct = (Number(alloc.targetWeightBps) / 100).toFixed(1) + "%";
-          const investedStr = formatUnits(alloc.investedAmount, assetDecimals);
-          const balanceStr = formatUnits(balance as bigint, decimals);
-
-          totalInvested += alloc.investedAmount;
-
-          console.log(
-            `  ${chalk.bold((symbol as string).padEnd(10))}` +
-            `${weightPct.padEnd(10)}` +
-            `${investedStr.padEnd(18)}` +
-            `${balanceStr.padEnd(18)}` +
-            `${chalk.dim(alloc.token)}`,
-          );
+        if (pricesAvailable) {
+          const pvStr = totalPortfolioValue.toFixed(6);
+          const pnlStr = totalPnl !== null ? (totalPnl >= 0 ? "+" : "") + totalPnl.toFixed(6) : "n/a";
+          const pnlPctStr = totalPnlPct !== null ? (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(1) + "%" : "";
+          const pnlColor = totalPnl !== null && totalPnl >= 0 ? chalk.green : chalk.red;
+          console.log(`  Value:       ${pvStr} ${assetSymbol}  |  PnL: ${pnlColor(`${pnlStr} (${pnlPctStr})`)}`);
+          console.log(`  Price src:   ${priceSource}`);
         }
 
-        console.log(chalk.dim("─".repeat(60)));
+        console.log();
+        console.log(chalk.bold("Allocations"));
+        console.log(chalk.dim("─".repeat(70)));
+
+        if (pricesAvailable) {
+          // Price-enriched table
+          console.log(
+            chalk.dim("  Token".padEnd(10)) +
+            chalk.dim("Target".padEnd(9)) +
+            chalk.dim("Actual".padEnd(9)) +
+            chalk.dim("Drift".padEnd(8)) +
+            chalk.dim("Value".padEnd(16)) +
+            chalk.dim("PnL".padEnd(16)) +
+            chalk.dim("Balance"),
+          );
+
+          for (const a of allocStatuses) {
+            const targetStr = (a.targetWeightBps / 100).toFixed(1) + "%";
+            const actualStr = a.actualWeightBps !== null ? (a.actualWeightBps / 100).toFixed(1) + "%" : "—";
+            const driftStr = a.driftBps !== null
+              ? (a.driftBps >= 0 ? "+" : "") + a.driftBps
+              : "—";
+            const driftColor = a.driftBps !== null
+              ? (Math.abs(a.driftBps) > 500 ? chalk.red : Math.abs(a.driftBps) > 200 ? chalk.yellow : chalk.dim)
+              : chalk.dim;
+            const valueStr = a.currentValue !== null ? a.currentValue.toFixed(6) : "—";
+            const pnlPctStr = a.pnlPct !== null ? (a.pnlPct >= 0 ? "+" : "") + a.pnlPct.toFixed(1) + "%" : "—";
+            const pnlColor = a.pnlPct !== null ? (a.pnlPct >= 0 ? chalk.green : chalk.red) : chalk.dim;
+
+            console.log(
+              `  ${chalk.bold(a.symbol.padEnd(8))}` +
+              `${targetStr.padEnd(9)}` +
+              `${actualStr.padEnd(9)}` +
+              `${driftColor(driftStr.toString().padEnd(8))}` +
+              `${valueStr.padEnd(16)}` +
+              `${pnlColor(pnlPctStr.padEnd(16))}` +
+              `${a.balance}`,
+            );
+          }
+        } else {
+          // Balance-only table (no prices available)
+          console.log(chalk.dim("  Prices unavailable — showing raw balances only."));
+          console.log();
+          console.log(
+            chalk.dim("  Token".padEnd(12)) +
+            chalk.dim("Weight".padEnd(10)) +
+            chalk.dim("Invested".padEnd(18)) +
+            chalk.dim("Balance".padEnd(18)) +
+            chalk.dim("Address"),
+          );
+
+          for (const a of allocStatuses) {
+            const weightPct = (a.targetWeightBps / 100).toFixed(1) + "%";
+            console.log(
+              `  ${chalk.bold(a.symbol.padEnd(10))}` +
+              `${weightPct.padEnd(10)}` +
+              `${a.investedAmount.padEnd(18)}` +
+              `${a.balance.padEnd(18)}` +
+              `${chalk.dim(a.token)}`,
+            );
+          }
+        }
+
+        console.log(chalk.dim("─".repeat(70)));
         console.log(`  Total invested: ${formatUnits(totalInvested, assetDecimals)} ${assetSymbol}`);
+
+        if (pricesAvailable && maxDriftToken) {
+          const absMaxDrift = Math.abs(maxDriftBps);
+          const driftColor = absMaxDrift > 500 ? chalk.red : absMaxDrift > 200 ? chalk.yellow : chalk.green;
+          console.log(`  Max drift:      ${driftColor(`${maxDriftBps > 0 ? "+" : ""}${maxDriftBps} bps`)} (${maxDriftToken})`);
+        }
 
         if (stateStr === "Executed") {
           console.log();
@@ -1023,7 +1211,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
 
         console.log();
       } catch (err) {
-        spinner.fail("Failed to read strategy state");
+        spinner?.fail("Failed to read strategy state");
         console.error(chalk.red(formatContractError(err)));
         process.exit(1);
       }
