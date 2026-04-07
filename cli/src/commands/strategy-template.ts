@@ -28,6 +28,7 @@ import * as veniceBuilder from "../strategies/venice-inference-template.js";
 import * as aerodromeBuilder from "../strategies/aerodrome-lp-template.js";
 import * as wstethBuilder from "../strategies/wsteth-moonwell-template.js";
 import * as mamoBuilder from "../strategies/mamo-yield-template.js";
+import * as hyperliquidPerpBuilder from "../strategies/hyperliquid-perp-template.js";
 
 const ZERO: Address = "0x0000000000000000000000000000000000000000";
 
@@ -70,6 +71,12 @@ const TEMPLATES: TemplateDef[] = [
     key: "mamo-yield",
     description: "Deposit into Mamo for optimized yield across Moonwell + Morpho vaults",
     addressKey: "MAMO_YIELD",
+  },
+  {
+    name: "Hyperliquid Perp",
+    key: "hyperliquid-perp",
+    description: "Leveraged BTC perpetual futures on Hyperliquid",
+    addressKey: "HYPERLIQUID_PERP",
   },
 ];
 
@@ -292,6 +299,32 @@ async function buildInitDataForTemplate(
     };
   }
 
+  if (templateKey === "hyperliquid-perp") {
+    if (!opts.amount) {
+      console.error(chalk.red("--amount is required for hyperliquid-perp template"));
+      process.exit(1);
+    }
+    if (!opts.keeper) {
+      console.error(chalk.red("--keeper is required for hyperliquid-perp template"));
+      process.exit(1);
+    }
+    if (!isAddress(opts.keeper as string)) {
+      console.error(chalk.red("Invalid --keeper address"));
+      process.exit(1);
+    }
+    const token = (opts.token as string) || "USDC";
+    const asset = resolveToken(token);
+    const decimals = token.toUpperCase() === "USDC" ? 6 : 18;
+    const depositAmount = parseUnits(opts.amount as string, decimals);
+    const minReturn = parseUnits((opts.minReturn as string) || opts.amount as string, decimals);
+
+    return {
+      initData: hyperliquidPerpBuilder.buildInitData(opts.keeper as Address, asset, depositAmount, minReturn),
+      asset,
+      assetAmount: depositAmount,
+    };
+  }
+
   throw new Error(`No init builder for template: ${templateKey}`);
 }
 
@@ -336,6 +369,13 @@ function buildCallsForTemplate(
     return {
       executeCalls: mamoBuilder.buildExecuteCalls(clone, asset, assetAmount),
       settleCalls: mamoBuilder.buildSettleCalls(clone),
+    };
+  }
+
+  if (templateKey === "hyperliquid-perp") {
+    return {
+      executeCalls: hyperliquidPerpBuilder.buildExecuteCalls(clone, asset, assetAmount),
+      settleCalls: hyperliquidPerpBuilder.buildSettleCalls(clone),
     };
   }
 
@@ -425,7 +465,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
   strategy
     .command("clone")
     .description("Clone a strategy template and initialize it")
-    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference, wsteth-moonwell, mamo-yield")
+    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference, wsteth-moonwell, mamo-yield, hyperliquid-perp")
     .requiredOption("--vault <address>", "Vault address")
     // moonwell-supply / wsteth-moonwell
     .option("--amount <n>", "Asset amount to deploy")
@@ -450,6 +490,9 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
     .option("--slippage <bps>", "Slippage tolerance in bps (wstETH, default: 500 = 5%)")
     // mamo-yield
     .option("--mamo-factory <address>", "Mamo StrategyFactory address (Mamo)")
+    // hyperliquid-perp
+    .option("--keeper <address>", "Keeper address (Hyperliquid Perp)")
+    .option("--min-return <n>", "Min return amount on settlement (Hyperliquid Perp)")
     .action(async (templateKey: string, opts) => {
       const vault = opts.vault as Address;
       if (!isAddress(vault)) {
@@ -512,7 +555,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
   strategy
     .command("init")
     .description("Initialize an already-deployed but uninitialized strategy clone")
-    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference, wsteth-moonwell, mamo-yield")
+    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference, wsteth-moonwell, mamo-yield, hyperliquid-perp")
     .requiredOption("--clone <address>", "Clone address to initialize")
     .requiredOption("--vault <address>", "Vault address")
     // moonwell-supply / wsteth-moonwell
@@ -538,6 +581,9 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
     .option("--slippage <bps>", "Slippage tolerance in bps (wstETH, default: 500 = 5%)")
     // mamo-yield
     .option("--mamo-factory <address>", "Mamo StrategyFactory address (Mamo)")
+    // hyperliquid-perp
+    .option("--keeper <address>", "Keeper address (Hyperliquid Perp)")
+    .option("--min-return <n>", "Min return amount on settlement (Hyperliquid Perp)")
     .action(async (templateKey: string, opts) => {
       const clone = opts.clone as Address;
       const vault = opts.vault as Address;
@@ -610,7 +656,7 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
   strategy
     .command("propose")
     .description("Clone + init + build calls + submit governance proposal (all-in-one)")
-    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference, wsteth-moonwell, mamo-yield")
+    .argument("<template>", "Template: moonwell-supply, aerodrome-lp, venice-inference, wsteth-moonwell, mamo-yield, hyperliquid-perp")
     .requiredOption("--vault <address>", "Vault address")
     .option("--write-calls <dir>", "Write execute/settle JSON to directory (skip proposal submission)")
     // proposal metadata (required unless --write-calls)
@@ -639,6 +685,9 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
     .option("--slippage <bps>", "Slippage tolerance in bps (wstETH, default: 500 = 5%)")
     // mamo-yield
     .option("--mamo-factory <address>", "Mamo StrategyFactory address (Mamo)")
+    // hyperliquid-perp
+    .option("--keeper <address>", "Keeper address (Hyperliquid Perp)")
+    .option("--min-return <n>", "Min return amount on settlement (Hyperliquid Perp)")
     .action(async (templateKey: string, opts) => {
       const vault = opts.vault as Address;
       if (!isAddress(vault)) {
