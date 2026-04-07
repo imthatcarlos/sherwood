@@ -255,7 +255,8 @@ export class PositionManager {
       }
     }
 
-    // 1. Decrease liquidity to zero (C3: 95% slippage protection)
+    // 1. Decrease liquidity to zero (FIX 4: configurable slippage protection)
+    const slippageMultiplier = 10000n - BigInt(config.slippageBps);
     if (position.liquidity > 0n) {
       try {
         const hash1 = await this.walletClient.writeContract({
@@ -266,8 +267,8 @@ export class PositionManager {
             {
               tokenId,
               liquidity: position.liquidity,
-              amount0Min: expectedAmount0 * 95n / 100n,
-              amount1Min: expectedAmount1 * 95n / 100n,
+              amount0Min: expectedAmount0 * slippageMultiplier / 10000n,
+              amount1Min: expectedAmount1 * slippageMultiplier / 10000n,
               deadline,
             },
           ],
@@ -455,7 +456,8 @@ export class PositionManager {
     // Encode the individual calls
     const calls: `0x${string}`[] = [];
 
-    // 1. Decrease liquidity with 95% slippage protection
+    // 1. Decrease liquidity with configurable slippage protection (FIX 4)
+    const slippageMultiplier = 10000n - BigInt(config.slippageBps);
     if (oldLiquidity > 0n) {
       // Compute expected amounts from the old position's tick range
       const oldPosition = await this.getPosition(oldTokenId);
@@ -472,8 +474,8 @@ export class PositionManager {
             {
               tokenId: oldTokenId,
               liquidity: oldLiquidity,
-              amount0Min: expectedAmount0 * 95n / 100n,
-              amount1Min: expectedAmount1 * 95n / 100n,
+              amount0Min: expectedAmount0 * slippageMultiplier / 10000n,
+              amount1Min: expectedAmount1 * slippageMultiplier / 10000n,
               deadline,
             },
           ],

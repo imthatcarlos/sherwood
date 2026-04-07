@@ -56,15 +56,11 @@ export function computeVolatility(priceHistory: PricePoint[], lookbackCount: num
  *   q < 0 means excess ETH (comfortable)
  */
 export function computeEffectiveGamma(gammaBase: number, inventorySkew: number): number {
-  if (inventorySkew > 0) {
-    // Excess WOOD: increase gamma to widen spread and push reservation price down
-    // This makes us eager to sell WOOD for ETH
-    return gammaBase * 1.5;
-  } else if (inventorySkew < 0) {
-    // Excess ETH: decrease gamma, tighter spreads, less urgency
-    return gammaBase * 0.5;
-  }
-  return gammaBase;
+  // Smooth asymmetry: alpha=0.5 gives continuous scaling instead of step-function
+  // skew > 0 (excess WOOD) -> gammaEff > gammaBase (widen spread, push reservation down)
+  // skew < 0 (excess ETH)  -> gammaEff < gammaBase (tighter spreads, less urgency)
+  const alpha = 0.5;
+  return gammaBase * (1 + alpha * inventorySkew);
 }
 
 /**
@@ -85,7 +81,6 @@ export function computeASPricing(
   tickSpacing: number,
 ): PricingResult {
   const { gammaBase, kOrderIntensity, tHorizonSeconds } = config;
-  const k = kOrderIntensity;
 
   // Effective gamma with asymmetric adjustment
   const gammaEff = computeEffectiveGamma(gammaBase, inventorySkew);
@@ -98,21 +93,29 @@ export function computeASPricing(
   const safeSigma = Math.max(sigma, 1e-10);
   const safeGamma = Math.max(gammaEff, 1e-6);
 
-  // Reservation price: r = s - q * gamma * sigma^2 * tau
-  const reservationPrice = midPrice - inventorySkew * safeGamma * safeSigma * safeSigma * safeTau;
+  // --- Percentage-space AS model ---
+  // All computations in log/percentage space, then map back to prices.
+  // k_effective scales with midPrice so the order-intensity parameter is unitless.
+  const k = kOrderIntensity * midPrice;
 
-  // Optimal spread: delta = gamma * sigma^2 * tau + (2/gamma) * ln(1 + gamma/k)
-  const spread =
+  // Reservation price offset (percentage of mid):
+  //   r_pct = -q * gamma * sigma^2 * tau
+  const reservationOffset = -inventorySkew * safeGamma * safeSigma * safeSigma * safeTau;
+  const reservationPrice = midPrice * (1 + reservationOffset);
+
+  // Optimal spread in percentage terms:
+  //   spread_pct = gamma * sigma^2 * tau + (2/gamma) * ln(1 + gamma/k)
+  const spreadPct =
     safeGamma * safeSigma * safeSigma * safeTau +
     (2 / safeGamma) * Math.log(1 + safeGamma / k);
 
   // Ensure minimum spread of 2 tick spacings
-  const minSpreadPrice = tickToPrice(tickSpacing * 2) - 1; // Approximate minimum spread in price terms
-  const effectiveSpread = Math.max(spread, midPrice * minSpreadPrice);
+  const minSpreadPct = tickToPrice(tickSpacing * 2) - 1; // Approximate minimum spread as fraction
+  const effectiveSpreadPct = Math.max(spreadPct, minSpreadPct);
 
-  // Bid and ask
-  const bidPrice = reservationPrice - effectiveSpread / 2;
-  const askPrice = reservationPrice + effectiveSpread / 2;
+  // Bid and ask in price space: apply percentage spread around reservation price
+  const bidPrice = reservationPrice * (1 - effectiveSpreadPct / 2);
+  const askPrice = reservationPrice * (1 + effectiveSpreadPct / 2);
 
   // Convert to ticks and snap to tick spacing
   const bidTick = snapToTickSpacing(priceToTick(Math.max(bidPrice, 1e-18)), tickSpacing);
@@ -124,7 +127,7 @@ export function computeASPricing(
   const result: PricingResult = {
     midPrice,
     reservationPrice,
-    spread: effectiveSpread,
+    spread: effectiveSpreadPct,
     bidPrice,
     askPrice,
     bidTick,
@@ -138,7 +141,7 @@ export function computeASPricing(
     {
       midPrice: midPrice.toFixed(12),
       reservation: reservationPrice.toFixed(12),
-      spread: effectiveSpread.toFixed(12),
+      spreadPct: effectiveSpreadPct.toFixed(8),
       bidTick,
       askTick: finalAskTick,
       gammaEff: gammaEff.toFixed(4),

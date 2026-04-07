@@ -23,7 +23,10 @@ import {
   sqrtPriceX96ToPrice,
   formatEth,
 } from '../pool/math.js';
-import type { BotState, Position, MintParams } from '../types.js';
+import type { BotState, Position, MintParams, PnLData } from '../types.js';
+import { loadState, saveState, defaultBotState } from './state.js';
+import { updatePnL, computeFeesEth, computeGasCostEth, defaultPnL, type CyclePnL } from './pnl.js';
+import { parseGwei } from 'viem';
 
 /** Adjust tick range for single-sided deposits when one token amount is zero */
 function adjustTicksForSingleSided(
@@ -89,14 +92,8 @@ export class MarketMakerBot {
       this.botAddress,
     );
 
-    this.state = {
-      activeTokenId: null,
-      lastRebalanceTime: 0,
-      peakPortfolioValue: 0,
-      priceHistory: [],
-      cycleCount: 0,
-      halted: false,
-    };
+    // FIX 6: Load persisted state from disk (or start fresh)
+    this.state = loadState();
   }
 
   /** Initialize: detect token ordering, find existing positions */
@@ -295,8 +292,11 @@ export class MarketMakerBot {
     let twapTick: number;
     try {
       twapTick = await this.pool.getTWAPTick(300); // 5 min TWAP
-    } catch {
-      twapTick = poolState.tick;
+    } catch (error) {
+      logger.error({ error }, 'TWAP oracle unavailable — halting bot to prevent unsafe pricing');
+      this.state.halted = true;
+      this.state.haltReason = 'TWAP oracle unavailable';
+      return;
     }
 
     // 11. Check if rebalance is needed
@@ -315,6 +315,9 @@ export class MarketMakerBot {
         this.feeCollectCounter = 0;
       }
 
+      // FIX 6: Save state even on no-rebalance cycles
+      saveState(this.state);
+
       logger.info(
         { elapsed: Date.now() - cycleStart },
         '--- Cycle end (no rebalance) ---',
@@ -331,6 +334,24 @@ export class MarketMakerBot {
         '--- Cycle end (risk blocked) ---',
       );
       return;
+    }
+
+    // FIX 5: Gas price check - skip cycle if gas too high
+    try {
+      const gasPrice = await this.publicClient.getGasPrice();
+      const maxGasWei = parseGwei(String(config.maxGasPriceGwei));
+      if (gasPrice > maxGasWei) {
+        const gasPriceGwei = Number(gasPrice) / 1e9;
+        logger.warn(
+          { currentGwei: gasPriceGwei.toFixed(2), maxGwei: config.maxGasPriceGwei },
+          'Gas price too high, skipping rebalance this cycle',
+        );
+        // FIX 6: Save state even when skipping
+        saveState(this.state);
+        return;
+      }
+    } catch (error) {
+      logger.warn({ error }, 'Failed to check gas price, proceeding with caution');
     }
 
     // 13. Execute rebalance
@@ -385,7 +406,8 @@ export class MarketMakerBot {
 
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
 
-      // C3: 95% slippage protection on mint
+      // FIX 4: Configurable slippage protection on mint
+      const slippageMultiplier = 10000n - BigInt(config.slippageBps);
       const mintParams: MintParams = {
         token0: freshPoolState.token0,
         token1: freshPoolState.token1,
@@ -394,8 +416,8 @@ export class MarketMakerBot {
         tickUpper: finalAskTick,
         amount0Desired: amount0,
         amount1Desired: amount1,
-        amount0Min: amount0 * 95n / 100n,
-        amount1Min: amount1 * 95n / 100n,
+        amount0Min: amount0 * slippageMultiplier / 10000n,
+        amount1Min: amount1 * slippageMultiplier / 10000n,
         recipient: this.botAddress,
         deadline,
         sqrtPriceX96: 0n,
@@ -458,7 +480,8 @@ export class MarketMakerBot {
 
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
 
-      // C3: 95% slippage protection on mint
+      // FIX 4: Configurable slippage protection on mint
+      const slippageMultiplier2 = 10000n - BigInt(config.slippageBps);
       const mintParams: MintParams = {
         token0: freshPoolState.token0,
         token1: freshPoolState.token1,
@@ -467,8 +490,8 @@ export class MarketMakerBot {
         tickUpper: finalAskTick,
         amount0Desired: amount0,
         amount1Desired: amount1,
-        amount0Min: amount0 * 95n / 100n,
-        amount1Min: amount1 * 95n / 100n,
+        amount0Min: amount0 * slippageMultiplier2 / 10000n,
+        amount1Min: amount1 * slippageMultiplier2 / 10000n,
         recipient: this.botAddress,
         deadline,
         sqrtPriceX96: 0n,
@@ -488,6 +511,19 @@ export class MarketMakerBot {
     this.state.lastRebalanceTime = Date.now();
     this.lastRebalanceTimestamp = Date.now() / 1000; // W7: track for time fraction
     this.feeCollectCounter = 0; // reset fee counter after rebalance
+
+    // FIX 7: Track PnL for this cycle
+    const cyclePnl: CyclePnL = {
+      portfolioValueEth: totalValue,
+      feesCollectedEth: 0, // TODO: integrate with fee collection receipts
+      gasSpentEth: 0, // TODO: integrate with tx receipt gas tracking
+      netPnlEth: 0,
+    };
+    cyclePnl.netPnlEth = cyclePnl.feesCollectedEth - cyclePnl.gasSpentEth;
+    updatePnL(this.state, cyclePnl);
+
+    // FIX 6: Persist state after each cycle
+    saveState(this.state);
 
     logger.info(
       {

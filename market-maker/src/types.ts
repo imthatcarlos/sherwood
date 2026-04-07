@@ -79,6 +79,16 @@ export interface RebalanceAction {
   amount1Desired?: bigint;
 }
 
+/** Cumulative PnL tracking data */
+export interface PnLData {
+  totalFeesEth: number;       // cumulative fees collected in ETH terms
+  totalGasEth: number;        // cumulative gas spent in ETH
+  netPnlEth: number;          // totalFeesEth - totalGasEth
+  cyclesTracked: number;      // number of cycles with PnL data
+  firstCycleTime: number;     // timestamp of first tracked cycle
+  lastCycleTime: number;      // timestamp of last tracked cycle
+}
+
 /** Bot state persisted across loops */
 export interface BotState {
   activeTokenId: bigint | null;
@@ -88,6 +98,7 @@ export interface BotState {
   cycleCount: number;
   halted: boolean;
   haltReason?: string;
+  pnl: PnLData;
 }
 
 /** Price observation for volatility computation */

@@ -79,6 +79,13 @@ export const config = {
   maxWoodRatio: validateRange(envNum('MAX_WOOD_RATIO', 0.8), 0.01, 0.99, 'MAX_WOOD_RATIO'),
   maxDrawdownPct: validateRange(envNum('MAX_DRAWDOWN_PCT', 20), 0.1, 100, 'MAX_DRAWDOWN_PCT'),
   twapDeviationPct: validateRange(envNum('TWAP_DEVIATION_PCT', 10), 0.1, 100, 'TWAP_DEVIATION_PCT'),
+  targetEthRatio: validateRange(envNum('TARGET_ETH_RATIO', 0.5), 0.01, 0.99, 'TARGET_ETH_RATIO'),
+
+  // Slippage protection (FIX 4) - basis points, 200 = 2%
+  slippageBps: validateRange(envNum('SLIPPAGE_BPS', 200), 10, 1000, 'SLIPPAGE_BPS'),
+
+  // Gas price limit (FIX 5) - max gas price in gwei, skip cycle if exceeded
+  maxGasPriceGwei: validatePositive(envNum('MAX_GAS_PRICE_GWEI', 50), 'MAX_GAS_PRICE_GWEI'),
 
   // Mode
   dryRun: envBool('DRY_RUN', true),

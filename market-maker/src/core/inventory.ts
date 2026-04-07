@@ -143,8 +143,8 @@ export async function computeInventory(
  * The target is configurable but defaults to keeping ~50% in ETH.
  */
 export function computeInventorySkew(inventory: InventoryState): number {
-  // Target ETH ratio is between MIN_ETH and (1 - MAX_WOOD)
-  const targetEthRatio = (1 - config.maxWoodRatio + 0.2) / 2; // ~0.2 to 0.5, center
+  // Target ETH ratio: use config param (default 0.5)
+  const targetEthRatio = config.targetEthRatio;
 
   // Skew: how far we are from target
   // If ethRatio < target: we have too much WOOD -> q > 0
