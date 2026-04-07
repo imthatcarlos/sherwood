@@ -6,32 +6,38 @@ import {IStrategy} from "./IStrategy.sol";
 /**
  * @title IHyperliquidPerpStrategy
  * @notice Interface for the Hyperliquid perpetual trading strategy.
- *         A custodial/bridge strategy where USDC is sent to a keeper
- *         who trades on Hyperliquid off-chain, then returns funds.
+ *         Uses HyperEVM precompiles for on-chain perp trading — no keeper.
  */
 interface IHyperliquidPerpStrategy is IStrategy {
-    /// @notice Emitted when the strategy funds the keeper
-    event StrategyFunded(address indexed keeper, uint256 amount);
+    // ── Events ──
+    event PositionOpened(uint32 asset, bool isBuy, uint64 limitPx, uint64 sz, uint32 leverage);
+    event PositionClosed(uint32 asset, uint64 limitPx, uint64 sz);
+    event StopLossUpdated(uint64 triggerPx);
+    event FundsParked(uint256 amount);
 
-    /// @notice Emitted when the keeper returns funds after trading
-    event KeeperSettled(uint256 returnAmount);
-
-    /// @notice Called by the keeper to deposit USDC back after trading
-    /// @param amount The amount of USDC being returned
-    function keeperDeposit(uint256 amount) external;
-
-    /// @notice The keeper address authorized to trade on Hyperliquid
-    function keeper() external view returns (address);
+    // ── Views ──
 
     /// @notice The asset (USDC) used for trading
     function asset() external view returns (address);
 
-    /// @notice The amount deposited to the keeper
+    /// @notice The amount deposited to perp margin
     function depositAmount() external view returns (uint256);
 
     /// @notice The minimum amount that must be returned on settlement
     function minReturnAmount() external view returns (uint256);
 
-    /// @notice Whether the keeper has deposited funds back
-    function keeperSettled() external view returns (bool);
+    /// @notice The perp asset index on Hyperliquid (e.g. 0 for BTC)
+    function perpAssetIndex() external view returns (uint32);
+
+    /// @notice The leverage multiplier
+    function leverage() external view returns (uint32);
+
+    /// @notice Whether a perp position is currently open
+    function positionOpen() external view returns (bool);
+
+    /// @notice The order ID of the current stop loss order
+    function stopLossOrderId() external view returns (uint64);
+
+    /// @notice The order ID of the entry order
+    function entryOrderId() external view returns (uint64);
 }

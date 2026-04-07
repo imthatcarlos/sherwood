@@ -1,7 +1,7 @@
 /**
  * HyperliquidPerpStrategy call builder.
  *
- * InitParams (Solidity): (address keeper, address asset, uint256 depositAmount, uint256 minReturnAmount)
+ * InitParams (Solidity): (address asset, uint256 depositAmount, uint256 minReturnAmount, uint32 perpAssetIndex, uint32 leverage)
  */
 
 import type { Address, Hex } from "viem";
@@ -10,19 +10,21 @@ import { ERC20_ABI, BASE_STRATEGY_ABI } from "../lib/abis.js";
 import type { BatchCall } from "../lib/batch.js";
 
 export function buildInitData(
-  keeper: Address,
   asset: Address,
   depositAmount: bigint,
   minReturnAmount: bigint,
+  perpAssetIndex: number,
+  leverage: number,
 ): Hex {
   return encodeAbiParameters(
     [
       { type: "address" },
-      { type: "address" },
       { type: "uint256" },
       { type: "uint256" },
+      { type: "uint32" },
+      { type: "uint32" },
     ],
-    [keeper, asset, depositAmount, minReturnAmount],
+    [asset, depositAmount, minReturnAmount, perpAssetIndex, leverage],
   );
 }
 

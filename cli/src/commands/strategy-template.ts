@@ -75,7 +75,7 @@ const TEMPLATES: TemplateDef[] = [
   {
     name: "Hyperliquid Perp",
     key: "hyperliquid-perp",
-    description: "Leveraged BTC perpetual futures on Hyperliquid",
+    description: "Leveraged perp trading on Hyperliquid via HyperEVM precompiles",
     addressKey: "HYPERLIQUID_PERP",
   },
 ];
@@ -304,22 +304,16 @@ async function buildInitDataForTemplate(
       console.error(chalk.red("--amount is required for hyperliquid-perp template"));
       process.exit(1);
     }
-    if (!opts.keeper) {
-      console.error(chalk.red("--keeper is required for hyperliquid-perp template"));
-      process.exit(1);
-    }
-    if (!isAddress(opts.keeper as string)) {
-      console.error(chalk.red("Invalid --keeper address"));
-      process.exit(1);
-    }
-    const token = (opts.token as string) || "USDC";
+    const token=(opts.token as string) || "USDC";
     const asset = resolveToken(token);
     const decimals = token.toUpperCase() === "USDC" ? 6 : 18;
     const depositAmount = parseUnits(opts.amount as string, decimals);
     const minReturn = parseUnits((opts.minReturn as string) || opts.amount as string, decimals);
+    const leverage = Number((opts.leverage as string) || "10");
+    const assetIndex = Number((opts.assetIndex as string) || "0");
 
     return {
-      initData: hyperliquidPerpBuilder.buildInitData(opts.keeper as Address, asset, depositAmount, minReturn),
+      initData: hyperliquidPerpBuilder.buildInitData(asset, depositAmount, minReturn, assetIndex, leverage),
       asset,
       assetAmount: depositAmount,
     };
@@ -491,7 +485,8 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
     // mamo-yield
     .option("--mamo-factory <address>", "Mamo StrategyFactory address (Mamo)")
     // hyperliquid-perp
-    .option("--keeper <address>", "Keeper address (Hyperliquid Perp)")
+    .option("--leverage <number>", "Leverage multiplier (Hyperliquid Perp, default: 10)")
+    .option("--asset-index <number>", "Perp asset index (Hyperliquid Perp, default: 0 for BTC)")
     .option("--min-return <n>", "Min return amount on settlement (Hyperliquid Perp)")
     .action(async (templateKey: string, opts) => {
       const vault = opts.vault as Address;
@@ -582,7 +577,8 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
     // mamo-yield
     .option("--mamo-factory <address>", "Mamo StrategyFactory address (Mamo)")
     // hyperliquid-perp
-    .option("--keeper <address>", "Keeper address (Hyperliquid Perp)")
+    .option("--leverage <number>", "Leverage multiplier (Hyperliquid Perp, default: 10)")
+    .option("--asset-index <number>", "Perp asset index (Hyperliquid Perp, default: 0 for BTC)")
     .option("--min-return <n>", "Min return amount on settlement (Hyperliquid Perp)")
     .action(async (templateKey: string, opts) => {
       const clone = opts.clone as Address;
@@ -686,7 +682,8 @@ export function registerStrategyTemplateCommands(strategy: Command): void {
     // mamo-yield
     .option("--mamo-factory <address>", "Mamo StrategyFactory address (Mamo)")
     // hyperliquid-perp
-    .option("--keeper <address>", "Keeper address (Hyperliquid Perp)")
+    .option("--leverage <number>", "Leverage multiplier (Hyperliquid Perp, default: 10)")
+    .option("--asset-index <number>", "Perp asset index (Hyperliquid Perp, default: 0 for BTC)")
     .option("--min-return <n>", "Min return amount on settlement (Hyperliquid Perp)")
     .action(async (templateKey: string, opts) => {
       const vault = opts.vault as Address;

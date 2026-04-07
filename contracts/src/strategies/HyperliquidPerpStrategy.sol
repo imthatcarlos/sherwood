@@ -6,108 +6,212 @@ import {IStrategy} from "../interfaces/IStrategy.sol";
 import {IHyperliquidPerpStrategy} from "../interfaces/IHyperliquidPerpStrategy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {L1Write, TimeInForce, NO_CLOID} from "../hyperliquid/L1Write.sol";
 
 /**
  * @title HyperliquidPerpStrategy
- * @notice Custodial/bridge strategy for Hyperliquid perpetual trading.
+ * @notice On-chain perpetual trading strategy using HyperEVM precompiles.
  *
- *   USDC is pulled from the vault and approved for a keeper. The keeper
- *   transfers the USDC, trades on Hyperliquid off-chain, then returns
- *   funds via keeperDeposit(). On settlement the USDC is pushed back
+ *   USDC is pulled from the vault and transferred to perp margin via
+ *   L1Write.sendUsdClassTransfer(). The proposer then triggers trades
+ *   (open long, close position, update stop loss) via updateParams().
+ *   On settlement, any open position is closed and funds are returned
  *   to the vault.
  *
- *   Batch calls from governor:
- *     Execute: [USDC.approve(strategy, depositAmount), strategy.execute()]
- *     Settle:  [strategy.settle()]
- *
- *   Tunable params (updatable by proposer between execution and settlement):
- *     - minReturnAmount: minimum USDC to accept on settlement (slippage)
+ *   NO off-chain keeper — all actions go through HyperCore precompiles.
  */
 contract HyperliquidPerpStrategy is BaseStrategy {
     using SafeERC20 for IERC20;
 
     // ── Events ──
-    event StrategyFunded(address indexed keeper, uint256 amount);
-    event KeeperSettled(uint256 returnAmount);
+    event PositionOpened(uint32 asset, bool isBuy, uint64 limitPx, uint64 sz, uint32 leverage);
+    event PositionClosed(uint32 asset, uint64 limitPx, uint64 sz);
+    event StopLossUpdated(uint64 triggerPx);
+    event FundsParked(uint256 amount);
 
     // ── Errors ──
     error InvalidAmount();
-    error NotKeeper();
+    error InvalidAction();
+    error NoOpenPosition();
 
+    // ── Action types ──
+    uint8 constant ACTION_UPDATE_MIN_RETURN = 0;
+    uint8 constant ACTION_OPEN_LONG = 1;
+    uint8 constant ACTION_CLOSE_POSITION = 2;
+    uint8 constant ACTION_UPDATE_STOP_LOSS = 3;
 
     // ── Storage (per-clone) ──
-    address public keeper;
-    address public asset;
+    IERC20 public asset;
     uint256 public depositAmount;
     uint256 public minReturnAmount;
-    bool public keeperDeposited;
-    bool public keeperSettled;
+    uint32 public perpAssetIndex;
+    uint32 public leverage;
+    bool public positionOpen;
+    uint64 public stopLossOrderId;
+    uint64 public entryOrderId;
 
     /// @inheritdoc IStrategy
     function name() external pure returns (string memory) {
         return "Hyperliquid Perp";
     }
 
-    /// @notice Decode: (address keeper, address asset, uint256 depositAmount, uint256 minReturnAmount)
+    /// @notice Decode: (address asset, uint256 depositAmount, uint256 minReturnAmount, uint32 perpAssetIndex, uint32 leverage)
     function _initialize(bytes calldata data) internal override {
-        (address keeper_, address asset_, uint256 depositAmount_, uint256 minReturnAmount_) =
-            abi.decode(data, (address, address, uint256, uint256));
-        if (keeper_ == address(0) || asset_ == address(0)) revert ZeroAddress();
+        (
+            address asset_,
+            uint256 depositAmount_,
+            uint256 minReturnAmount_,
+            uint32 perpAssetIndex_,
+            uint32 leverage_
+        ) = abi.decode(data, (address, uint256, uint256, uint32, uint32));
+
+        if (asset_ == address(0)) revert ZeroAddress();
         if (depositAmount_ == 0) revert InvalidAmount();
 
-        keeper = keeper_;
-        asset = asset_;
+        asset = IERC20(asset_);
         depositAmount = depositAmount_;
         minReturnAmount = minReturnAmount_;
+        perpAssetIndex = perpAssetIndex_;
+        leverage = leverage_;
     }
 
-    /// @notice Pull USDC from vault, approve keeper to transferFrom
+    /// @notice Pull USDC from vault, transfer to perp margin via precompile
     function _execute() internal override {
-        // Pull tokens from vault (vault must have approved us first via batch call)
-        _pullFromVault(asset, depositAmount);
+        _pullFromVault(address(asset), depositAmount);
 
-        // Approve keeper to transferFrom the USDC
-        IERC20(asset).forceApprove(keeper, depositAmount);
+        // Transfer USDC to perp margin via HyperCore precompile
+        // Amount is in raw HyperCore units (6 decimals for USDC)
+        uint64 ntl = uint64(depositAmount);
+        L1Write.sendUsdClassTransfer(ntl, true);
 
-        emit StrategyFunded(keeper, depositAmount);
+        emit FundsParked(depositAmount);
     }
 
-    /// @notice Settle: verify funds returned, push all back to vault
-    /// @dev The vault owner can trigger emergency settlement even if keeper hasn't
-    ///      returned funds. In that case the minReturnAmount check is skipped.
-    ///      Normal settlement (keeperSettled == true) enforces minReturnAmount.
-    function _settle() internal override {
-        if (keeperSettled) {
-            // Normal path: keeper has returned funds, enforce minimum
-            uint256 balance = IERC20(asset).balanceOf(address(this));
-            if (balance < minReturnAmount) revert InvalidAmount();
-        }
-        // Emergency path: vault owner calls settle() through the vault even though
-        // keeper hasn't returned funds. We skip minReturnAmount check and return
-        // whatever balance remains (could be zero if keeper took all funds).
-
-        // Push everything back to the vault
-        _pushAllToVault(asset);
-    }
-
-    /// @notice Called by the keeper to deposit USDC back after trading on Hyperliquid
-    /// @param amount The amount of USDC being returned
-    function keeperDeposit(uint256 amount) external {
-        if (msg.sender != keeper) revert NotKeeper();
-        if (amount == 0) revert InvalidAmount();
-
-        IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
-
-        keeperDeposited = true;
-        keeperSettled = true;
-
-        emit KeeperSettled(amount);
-    }
-
-    /// @notice Update params: (uint256 newMinReturnAmount)
-    /// @dev Pass 0 to keep current value. Only proposer, only while Executed.
+    /// @notice Proposer-driven trading actions via precompiles
+    /// @dev Decode format depends on action type:
+    ///   action=0: (uint8 action, uint256 newMinReturn)
+    ///   action=1: (uint8 action, uint64 limitPx, uint64 sz, uint64 stopLossPx, uint64 stopLossSz)
+    ///   action=2: (uint8 action, uint64 limitPx, uint64 sz)
+    ///   action=3: (uint8 action, uint64 triggerPx, uint64 sz)
     function _updateParams(bytes calldata data) internal override {
-        uint256 newMinReturnAmount = abi.decode(data, (uint256));
-        if (newMinReturnAmount > 0) minReturnAmount = newMinReturnAmount;
+        uint8 action = uint8(bytes1(data[:1]));
+
+        if (action == ACTION_UPDATE_MIN_RETURN) {
+            (, uint256 newMinReturn) = abi.decode(data, (uint8, uint256));
+            minReturnAmount = newMinReturn;
+        } else if (action == ACTION_OPEN_LONG) {
+            (, uint64 limitPx, uint64 sz, uint64 stopLossPx, uint64 stopLossSz) =
+                abi.decode(data, (uint8, uint64, uint64, uint64, uint64));
+
+            // Place IOC buy order (market-like)
+            L1Write.sendLimitOrder(
+                perpAssetIndex,
+                true, // isBuy
+                limitPx,
+                sz,
+                false, // not reduceOnly
+                TimeInForce.Ioc,
+                NO_CLOID
+            );
+
+            // Place GTC stop loss order (reduce-only sell)
+            L1Write.sendLimitOrder(
+                perpAssetIndex,
+                false, // isSell
+                stopLossPx,
+                stopLossSz,
+                true, // reduceOnly
+                TimeInForce.Gtc,
+                NO_CLOID
+            );
+
+            positionOpen = true;
+
+            emit PositionOpened(perpAssetIndex, true, limitPx, sz, leverage);
+            emit StopLossUpdated(stopLossPx);
+        } else if (action == ACTION_CLOSE_POSITION) {
+            if (!positionOpen) revert NoOpenPosition();
+
+            (, uint64 limitPx, uint64 sz) = abi.decode(data, (uint8, uint64, uint64));
+
+            // Cancel existing stop loss if we have one
+            if (stopLossOrderId != 0) {
+                L1Write.sendCancelOrderByOid(perpAssetIndex, stopLossOrderId);
+                stopLossOrderId = 0;
+            }
+
+            // Place reduce-only IOC sell to close position
+            L1Write.sendLimitOrder(
+                perpAssetIndex,
+                false, // isSell
+                limitPx,
+                sz,
+                true, // reduceOnly
+                TimeInForce.Ioc,
+                NO_CLOID
+            );
+
+            positionOpen = false;
+
+            emit PositionClosed(perpAssetIndex, limitPx, sz);
+        } else if (action == ACTION_UPDATE_STOP_LOSS) {
+            if (!positionOpen) revert NoOpenPosition();
+
+            (, uint64 triggerPx, uint64 sz) = abi.decode(data, (uint8, uint64, uint64));
+
+            // Cancel old stop loss
+            if (stopLossOrderId != 0) {
+                L1Write.sendCancelOrderByOid(perpAssetIndex, stopLossOrderId);
+            }
+
+            // Place new GTC stop loss (reduce-only sell)
+            L1Write.sendLimitOrder(
+                perpAssetIndex,
+                false, // isSell
+                triggerPx,
+                sz,
+                true, // reduceOnly
+                TimeInForce.Gtc,
+                NO_CLOID
+            );
+
+            emit StopLossUpdated(triggerPx);
+        } else {
+            revert InvalidAction();
+        }
+    }
+
+    /// @notice Close any open position and return funds to vault
+    function _settle() internal override {
+        // If position is still open, force close with IOC sell
+        if (positionOpen) {
+            // Use max uint64 price for sell (will fill at market)
+            // The caller should close the position before settling ideally,
+            // but this is a safety net using a very low sell price to ensure fill
+            L1Write.sendLimitOrder(
+                perpAssetIndex,
+                false, // isSell
+                1, // minimum price to ensure fill as IOC
+                type(uint64).max, // max size to close full position
+                true, // reduceOnly
+                TimeInForce.Ioc,
+                NO_CLOID
+            );
+
+            // Cancel stop loss if present
+            if (stopLossOrderId != 0) {
+                L1Write.sendCancelOrderByOid(perpAssetIndex, stopLossOrderId);
+                stopLossOrderId = 0;
+            }
+
+            positionOpen = false;
+        }
+
+        // Transfer USD from perp margin back to spot
+        // Use max uint64 to sweep all available margin
+        L1Write.sendUsdClassTransfer(type(uint64).max, false);
+
+        // Push all USDC back to the vault
+        _pushAllToVault(address(asset));
     }
 }
