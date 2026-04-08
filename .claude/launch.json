@@ -3,14 +3,9 @@
   "configurations": [
     {
       "name": "app",
-      "runtimeExecutable": "/opt/homebrew/bin/npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000,
-      "cwd": "app",
-      "env": {
-        "NEXT_PUBLIC_TESTNET": "true",
-        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-      }
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "source ~/.nvm/nvm.sh && nvm use 20 && cd /Users/carlos/Desktop/github/sherwood/app && npx next dev"],
+      "port": 3000
     }
   ]
 }

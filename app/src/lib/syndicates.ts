@@ -51,11 +51,36 @@ export interface SyndicateDisplay {
   name: string;
   strategy: string;
   tvl: string;
+  tvlRaw: number;
+  assetSymbol: string;
   agentCount: number;
   agents: AgentDisplay[];
   proposalCount: number;
   status: "ACTIVE_STRATEGY" | "VOTING" | "IDLE" | "NO_AGENTS";
   chainId: number;
+}
+
+/** Compute aggregate protocol stats from a list of syndicates. */
+export function computeProtocolStats(syndicates: SyndicateDisplay[]) {
+  const totalAgents = syndicates.reduce((sum, s) => sum + s.agentCount, 0);
+  const totalProposals = syndicates.reduce((sum, s) => sum + s.proposalCount, 0);
+  // Sum TVL — only USD-denominated assets (USDC/USDT) for now
+  const totalTVL = syndicates.reduce((sum, s) => {
+    if (s.assetSymbol === "USDC" || s.assetSymbol === "USDT") return sum + s.tvlRaw;
+    return sum;
+  }, 0);
+  const totalTVLFormatted = totalTVL.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+  return {
+    syndicateCount: syndicates.length,
+    totalAgents,
+    totalProposals,
+    totalTVL: totalTVLFormatted,
+  };
 }
 
 // ── Subgraph ───────────────────────────────────────────────
@@ -361,6 +386,8 @@ async function fetchViaSubgraph(
         name: metadata?.name || `Syndicate #${s.id}`,
         strategy,
         tvl: `${tvlFormatted} ${info.symbol}`,
+        tvlRaw: Number(totalAssets) / 10 ** info.decimals,
+        assetSymbol: info.symbol,
         agentCount,
         proposalCount: (s.proposals || []).length,
         agents: (s.agents || []).map((a) => {
@@ -586,6 +613,8 @@ async function fetchViaOnChain(
         name: metadata?.name || `Syndicate #${s.id.toString()}`,
         strategy,
         tvl: `${tvlFormatted} ${info.symbol}`,
+        tvlRaw: Number(totalAssets) / 10 ** info.decimals,
+        assetSymbol: info.symbol,
         agentCount,
         proposalCount: 0, // not available without extra calls in onchain fallback
         agents: agentsByVault[s.vault.toLowerCase()] ?? [],
