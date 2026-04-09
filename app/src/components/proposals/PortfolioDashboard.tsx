@@ -121,6 +121,7 @@ interface TickerItemData {
   delta: number;
   hasPrices: boolean;
   color: string;
+  value: number;
 }
 
 interface TickerStripProps {
@@ -199,9 +200,8 @@ export default function PortfolioDashboard({
     return () => { cancelled = true; clearInterval(interval); };
   }, [allocations, chainId, assetAddress, assetDecimals]);
 
-  // Compute portfolio value
+  // Compute portfolio value (no mutable reassignment — use reduce)
   const totalInvestedNum = parseFloat(totalInvested.replace(/,/g, ""));
-  let portfolioValue = 0;
 
   const tickerItems: TickerItemData[] = allocations.map((a, i) => {
     const tp = prices.get(a.token.toLowerCase());
@@ -209,7 +209,6 @@ export default function PortfolioDashboard({
     const invested = parseFloat(a.investedAmount);
     const price = tp?.price ?? 0;
     const value = tokenAmt * price;
-    portfolioValue += value;
     const delta = invested > 0 ? ((value - invested) / invested) * 100 : 0;
     return {
       token: a.token,
@@ -219,9 +218,11 @@ export default function PortfolioDashboard({
       delta,
       hasPrices: !loading && price > 0,
       color: PALETTE[i % PALETTE.length],
+      value,
     };
   });
 
+  const portfolioValue = tickerItems.reduce((sum, t) => sum + t.value, 0);
   const overallDelta = totalInvestedNum > 0
     ? ((portfolioValue - totalInvestedNum) / totalInvestedNum) * 100
     : 0;
