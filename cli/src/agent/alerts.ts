@@ -21,6 +21,7 @@ export interface Alert {
   tokenId: string;
   timestamp: number;
   acknowledged: boolean;
+  sent: boolean;           // whether alert was sent via Telegram
 }
 
 export interface AlertConfig {
@@ -133,6 +134,35 @@ export class AlertSystem {
       alert.acknowledged = true;
     }
     await this.saveState(state);
+  }
+
+  /**
+   * Get unsent CRITICAL/HIGH alerts from last 30min and mark them as sent.
+   */
+  async getUrgentAlerts(): Promise<Alert[]> {
+    const state = await this.loadState();
+    const now = Date.now();
+    const thirtyMinutes = 30 * 60 * 1000;
+
+    // Find unsent critical/high alerts from last 30min
+    const urgentAlerts = state.alerts.filter(alert =>
+      !alert.sent &&
+      !alert.acknowledged &&
+      (alert.priority === "critical" || alert.priority === "high") &&
+      (now - alert.timestamp) <= thirtyMinutes
+    );
+
+    if (urgentAlerts.length === 0) {
+      return [];
+    }
+
+    // Mark alerts as sent
+    for (const alert of urgentAlerts) {
+      alert.sent = true;
+    }
+
+    await this.saveState(state);
+    return urgentAlerts.sort((a, b) => b.timestamp - a.timestamp);
   }
 
   /**
@@ -310,7 +340,7 @@ export class AlertSystem {
   /**
    * Create an alert with unique ID and timestamp.
    */
-  private createAlert(params: Omit<Alert, 'id' | 'timestamp' | 'acknowledged'>): Alert {
+  private createAlert(params: Omit<Alert, 'id' | 'timestamp' | 'acknowledged' | 'sent'>): Alert {
     const content = `${params.type}-${params.tokenId}-${params.title}`;
     const id = createHash('sha256').update(content).digest('hex').substring(0, 12);
 
@@ -318,6 +348,7 @@ export class AlertSystem {
       id,
       timestamp: Date.now(),
       acknowledged: false,
+      sent: false,
       ...params,
     };
   }

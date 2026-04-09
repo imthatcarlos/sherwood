@@ -34,7 +34,7 @@ import type { CorrelationCheck } from "./correlation.js";
 import { AlertSystem } from "./alerts.js";
 import type { Alert } from "./alerts.js";
 
-export type { Signal, ScoringWeights, TradeDecision, Alert };
+export type { Signal, ScoringWeights, TradeDecision, Alert, TechnicalSignals };
 
 export interface AgentConfig {
   tokens: string[];
@@ -457,6 +457,11 @@ export class TradingAgent {
   /** Clear all alerts. */
   async clearAlerts(): Promise<void> {
     return this.alertSystem.clearAlerts();
+  }
+
+  /** Get urgent alerts (CRITICAL/HIGH from last 30min) and mark as sent. */
+  async getUrgentAlerts(): Promise<Alert[]> {
+    return this.alertSystem.getUrgentAlerts();
   }
 
   /** Format alerts for display. */

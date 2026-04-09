@@ -32,11 +32,15 @@ export class TwitterSentimentStrategy implements Strategy {
       engagementWeightedSentiment,
       volumeSpike,
       tweetCount,
+      llmSentiment,
+      llmConfidence,
+      llmBullishPercent,
+      llmBearishPercent,
     } = twitterData;
 
     let value = 0;
     const details: string[] = [];
-    let confidence = this.calculateConfidence(tweetCount, volumeSpike);
+    let confidence = this.calculateConfidence(tweetCount, volumeSpike, llmConfidence);
 
     // 1. Volume spike detection (weight 40%)
     const volumeSignal = this.analyzeVolumeSpike(volumeSpike, sentimentScore);
@@ -44,7 +48,7 @@ export class TwitterSentimentStrategy implements Strategy {
     if (volumeSignal.details) details.push(volumeSignal.details);
 
     // 2. Engagement-weighted sentiment (weight 40%)
-    const sentimentSignal = this.analyzeSentiment(engagementWeightedSentiment);
+    const sentimentSignal = this.analyzeSentiment(engagementWeightedSentiment, llmSentiment, llmBullishPercent, llmBearishPercent);
     value += sentimentSignal.value * 0.4;
     details.push(sentimentSignal.details);
 
@@ -94,27 +98,52 @@ export class TwitterSentimentStrategy implements Strategy {
   }
 
   /** Analyze engagement-weighted sentiment. */
-  private analyzeSentiment(engagementWeightedSentiment: number): { value: number; details: string } {
-    const sentimentValue = engagementWeightedSentiment * 0.4; // Scale to max ±0.4
+  private analyzeSentiment(
+    engagementWeightedSentiment: number,
+    llmSentiment?: number,
+    llmBullishPercent?: number,
+    llmBearishPercent?: number
+  ): { value: number; details: string } {
+    let finalSentiment: number;
+    let analysisMethod: string;
+
+    if (llmSentiment !== undefined) {
+      // Use LLM sentiment (60%) combined with keyword sentiment (40%)
+      finalSentiment = (llmSentiment * 0.6) + (engagementWeightedSentiment * 0.4);
+      analysisMethod = '[LLM]';
+    } else {
+      // Fallback to keyword-only sentiment
+      finalSentiment = engagementWeightedSentiment;
+      analysisMethod = '';
+    }
+
+    const sentimentValue = finalSentiment * 0.4; // Scale to max ±0.4
 
     let description: string;
-    if (Math.abs(engagementWeightedSentiment) < 0.1) {
+    if (Math.abs(finalSentiment) < 0.1) {
       description = 'neutral sentiment';
-    } else if (engagementWeightedSentiment > 0.7) {
+    } else if (finalSentiment > 0.7) {
       description = 'very bullish sentiment';
-    } else if (engagementWeightedSentiment > 0.3) {
+    } else if (finalSentiment > 0.3) {
       description = 'bullish sentiment';
-    } else if (engagementWeightedSentiment < -0.7) {
+    } else if (finalSentiment < -0.7) {
       description = 'very bearish sentiment';
-    } else if (engagementWeightedSentiment < -0.3) {
+    } else if (finalSentiment < -0.3) {
       description = 'bearish sentiment';
     } else {
-      description = engagementWeightedSentiment > 0 ? 'mildly bullish' : 'mildly bearish';
+      description = finalSentiment > 0 ? 'mildly bullish' : 'mildly bearish';
+    }
+
+    let details = `${analysisMethod} Engagement-weighted ${description} (${(finalSentiment > 0 ? '+' : '')}${finalSentiment.toFixed(2)})`;
+
+    // Add LLM breakdown if available
+    if (llmBullishPercent !== undefined && llmBearishPercent !== undefined) {
+      details += ` — ${llmBullishPercent.toFixed(0)}% bullish, ${llmBearishPercent.toFixed(0)}% bearish`;
     }
 
     return {
       value: sentimentValue,
-      details: `Engagement-weighted ${description} (${(engagementWeightedSentiment > 0 ? '+' : '')}${engagementWeightedSentiment.toFixed(2)})`,
+      details,
     };
   }
 
@@ -140,7 +169,7 @@ export class TwitterSentimentStrategy implements Strategy {
   }
 
   /** Calculate confidence based on tweet count and volume spike. */
-  private calculateConfidence(tweetCount: number, volumeSpike: number): number {
+  private calculateConfidence(tweetCount: number, volumeSpike: number, llmConfidence?: number): number {
     let confidence = 0.3; // Base confidence
 
     if (tweetCount >= 100 && volumeSpike > 2) {
@@ -149,6 +178,11 @@ export class TwitterSentimentStrategy implements Strategy {
       confidence = 0.7;
     } else if (tweetCount >= 20) {
       confidence = 0.5;
+    }
+
+    // Boost confidence if we have high-confidence LLM analysis
+    if (llmConfidence !== undefined && llmConfidence > 70) {
+      confidence = Math.min(0.9, confidence + 0.2); // Boost by 0.2, cap at 0.9
     }
 
     return confidence;

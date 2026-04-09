@@ -31,6 +31,8 @@ import type { RiskConfig } from "../agent/risk.js";
 import { Reporter } from "../agent/reporter.js";
 import { Backtester } from "../agent/backtest.js";
 import type { BacktestConfig, WalkForwardConfig } from "../agent/backtest.js";
+import { AlertFormatter } from "../agent/alert-formatter.js";
+import { ExecutionPipeline } from "../agent/execution-pipeline.js";
 
 const DEFAULT_TOKENS = ["ethereum", "bitcoin", "solana", "aave", "uniswap"];
 
@@ -57,7 +59,9 @@ export function registerAgentCommands(program: Command): void {
     .option("--auto", "Use dynamic token selection from Hyperliquid market data")
     .option("--json", "Output as JSON")
     .option("--x402", "Include paid x402 data (Nansen smart-money, Messari fundamentals)")
-    .action(async (tokens: string[], options: { all?: boolean; auto?: boolean; json?: boolean; x402?: boolean }) => {
+    .option("--telegram", "Output formatted summary for Telegram")
+    .option("--proposals", "Generate trade proposals for high-confidence opportunities")
+    .action(async (tokens: string[], options: { all?: boolean; auto?: boolean; json?: boolean; x402?: boolean; telegram?: boolean; proposals?: boolean }) => {
       let tokenList: string[];
       let selectionSummary: string | undefined;
 
@@ -91,6 +95,22 @@ export function registerAgentCommands(program: Command): void {
         spinner.text = "Analyzing tokens and checking for alerts...";
         const { analyses: results, alerts } = await tradingAgent.analyzeAllWithAlerts();
         spinner.stop();
+
+        if (options.telegram) {
+          // Output Telegram-formatted summary
+          const regime = results[0]?.regime?.regime;
+          const summary = AlertFormatter.formatScanSummary(results, alerts, regime);
+          console.log(summary);
+          return;
+        }
+
+        if (options.proposals) {
+          // Output trade proposals
+          const proposals = ExecutionPipeline.generateProposals(results);
+          const formatted = ExecutionPipeline.formatProposals(proposals);
+          console.log(formatted);
+          return;
+        }
 
         if (options.json) {
           console.log(JSON.stringify(results.map((r) => ({ token: r.token, decision: r.decision })), null, 2));

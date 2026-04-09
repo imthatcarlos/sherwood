@@ -15,6 +15,10 @@ export interface TwitterSentimentData {
   engagementWeightedSentiment: number; // Sentiment weighted by engagement
   volumeSpike: number;             // Ratio of last-hour volume to 24h hourly average
   tweetCount: number;              // Total tweets analyzed
+  llmSentiment?: number;           // LLM-analyzed sentiment (-1 to +1)
+  llmConfidence?: number;          // average LLM confidence
+  llmBullishPercent?: number;      // % of tweets classified bullish
+  llmBearishPercent?: number;      // % classified bearish
 }
 
 interface TwitterTweet {
@@ -35,6 +39,16 @@ interface TwitterApiResponse {
     result_count: number;
     next_token?: string;
   };
+}
+
+interface OpenAISentimentResponse {
+  sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  confidence: number;
+}
+
+interface TweetWithEngagement {
+  text: string;
+  engagement: number;
 }
 
 const TWITTER_BASE = 'https://api.twitter.com/2';
@@ -105,7 +119,7 @@ export class TwitterSentimentProvider {
       if (!tweets || tweets.length === 0) return null;
 
       // Calculate metrics
-      const data = this.analyzeTweets(tweets);
+      const data = await this.analyzeTweets(tweets);
 
       // Cache results
       await this.writeCache(tokenId, data);
@@ -183,8 +197,147 @@ export class TwitterSentimentProvider {
     return data.data || [];
   }
 
+  /** Analyze sentiment using OpenAI GPT-4o-mini. */
+  private async analyzeSentimentWithLLM(tweets: TwitterTweet[]): Promise<{
+    llmSentiment: number;
+    llmConfidence: number;
+    llmBullishPercent: number;
+    llmBearishPercent: number;
+  } | null> {
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!openaiKey) {
+      return null;
+    }
+
+    try {
+      // Prepare tweets with engagement data
+      const tweetsWithEngagement: TweetWithEngagement[] = tweets.map(tweet => ({
+        text: tweet.text,
+        engagement: tweet.public_metrics.like_count +
+                   tweet.public_metrics.retweet_count +
+                   tweet.public_metrics.reply_count,
+      }));
+
+      // Batch tweets into groups of 20
+      const batchSize = 20;
+      const batches: TweetWithEngagement[][] = [];
+      for (let i = 0; i < tweetsWithEngagement.length; i += batchSize) {
+        batches.push(tweetsWithEngagement.slice(i, i + batchSize));
+      }
+
+      const allResults: (OpenAISentimentResponse & { engagement: number })[] = [];
+
+      // Process each batch
+      for (const batch of batches) {
+        const tweetTexts = batch.map((tweet, idx) => `${idx + 1}. "${tweet.text}"`).join('\n');
+
+        const prompt = `You are a crypto market sentiment analyzer. For each tweet below, classify sentiment as:
+- BULLISH (positive price expectation)
+- BEARISH (negative price expectation)
+- NEUTRAL (no clear directional sentiment)
+
+Also rate confidence 0-100.
+
+Consider: sarcasm, irony, CT slang, context. "Number go up" is bullish. "This is fine" during a dump is bearish sarcasm.
+
+Tweets:
+${tweetTexts}
+
+Respond as JSON array: [{"sentiment": "BULLISH", "confidence": 85}, ...]`;
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0,
+          }),
+        });
+
+        if (!response.ok) {
+          console.warn(`OpenAI API error: ${response.status} ${response.statusText}`);
+          return null;
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) {
+          console.warn('OpenAI API returned no content');
+          return null;
+        }
+
+        // Parse JSON response
+        let batchResults: OpenAISentimentResponse[];
+        try {
+          batchResults = JSON.parse(content);
+          if (!Array.isArray(batchResults) || batchResults.length !== batch.length) {
+            console.warn('OpenAI response format mismatch');
+            return null;
+          }
+        } catch (parseErr) {
+          console.warn(`Failed to parse OpenAI response: ${parseErr}`);
+          return null;
+        }
+
+        // Combine with engagement data
+        for (let i = 0; i < batchResults.length; i++) {
+          allResults.push({
+            ...batchResults[i],
+            engagement: batch[i].engagement,
+          });
+        }
+      }
+
+      // Calculate weighted sentiment metrics
+      const bullishTweets = allResults.filter(r => r.sentiment === 'BULLISH');
+      const bearishTweets = allResults.filter(r => r.sentiment === 'BEARISH');
+      const neutralTweets = allResults.filter(r => r.sentiment === 'NEUTRAL');
+
+      const totalTweets = allResults.length;
+      const llmBullishPercent = (bullishTweets.length / totalTweets) * 100;
+      const llmBearishPercent = (bearishTweets.length / totalTweets) * 100;
+
+      // Calculate engagement-weighted sentiment score
+      let totalWeightedScore = 0;
+      let totalWeight = 0;
+      let totalConfidence = 0;
+
+      for (const result of allResults) {
+        let sentimentMultiplier = 0;
+        if (result.sentiment === 'BULLISH') {
+          sentimentMultiplier = 1;
+        } else if (result.sentiment === 'BEARISH') {
+          sentimentMultiplier = -1;
+        }
+
+        const weight = (result.confidence / 100) * (1 + Math.log10(result.engagement + 1));
+        totalWeightedScore += sentimentMultiplier * weight;
+        totalWeight += weight;
+        totalConfidence += result.confidence;
+      }
+
+      const llmSentiment = totalWeight > 0 ? Math.max(-1, Math.min(1, totalWeightedScore / totalWeight)) : 0;
+      const llmConfidence = totalTweets > 0 ? totalConfidence / totalTweets : 0;
+
+      return {
+        llmSentiment,
+        llmConfidence,
+        llmBullishPercent,
+        llmBearishPercent,
+      };
+
+    } catch (error) {
+      console.warn(`LLM sentiment analysis failed: ${error}`);
+      return null;
+    }
+  }
+
   /** Analyze tweets to calculate sentiment metrics. */
-  private analyzeTweets(tweets: TwitterTweet[]): TwitterSentimentData {
+  private async analyzeTweets(tweets: TwitterTweet[]): Promise<TwitterSentimentData> {
     const now = Date.now();
     const oneHourAgo = now - 60 * 60 * 1000;
 
@@ -197,7 +350,7 @@ export class TwitterSentimentProvider {
     const avgHourlyVolume = allTweets.length / 24; // 24 hours of data
     const volumeSpike = avgHourlyVolume > 0 ? recentVolume / avgHourlyVolume : 1;
 
-    // Analyze sentiment for all tweets
+    // Analyze sentiment for all tweets (keyword-based)
     let bullishCount = 0;
     let bearishCount = 0;
     let totalEngagement = 0;
@@ -232,7 +385,7 @@ export class TwitterSentimentProvider {
       totalEngagement += engagement;
     }
 
-    // Calculate sentiment scores
+    // Calculate keyword-based sentiment scores
     const totalAnalyzed = bullishCount + bearishCount;
     const sentimentScore = totalAnalyzed > 0
       ? Math.max(-1, Math.min(1, (bullishCount - bearishCount) / totalAnalyzed))
@@ -242,13 +395,29 @@ export class TwitterSentimentProvider {
       ? Math.max(-1, Math.min(1, (engagementWeightedBullish - engagementWeightedBearish) / totalEngagement))
       : sentimentScore;
 
-    return {
+    // Try LLM sentiment analysis
+    const llmResult = await this.analyzeSentimentWithLLM(allTweets);
+
+    const baseData: TwitterSentimentData = {
       mentionVolume: recentVolume,
       sentimentScore,
       engagementWeightedSentiment,
       volumeSpike,
       tweetCount: allTweets.length,
     };
+
+    // Add LLM results if available
+    if (llmResult) {
+      return {
+        ...baseData,
+        llmSentiment: llmResult.llmSentiment,
+        llmConfidence: llmResult.llmConfidence,
+        llmBullishPercent: llmResult.llmBullishPercent,
+        llmBearishPercent: llmResult.llmBearishPercent,
+      };
+    }
+
+    return baseData;
   }
 
   /** Read cached sentiment data. */
@@ -289,7 +458,7 @@ export class TwitterSentimentProvider {
       try {
         const tweets = await this.fetchTweets(symbolQuery, new Date(Date.now() - 24 * 60 * 60 * 1000));
         if (tweets && tweets.length > 0) {
-          result = this.analyzeTweets(tweets);
+          result = await this.analyzeTweets(tweets);
           await this.writeCache(tokenId, result);
         }
       } catch {
