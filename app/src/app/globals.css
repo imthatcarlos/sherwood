@@ -929,11 +929,11 @@ body {
 
 .ticker-strip-horizontal {
   display: flex;
-  gap: 1rem;
+  gap: 2rem;
   flex-wrap: wrap;
   border-left: 1px solid var(--color-border);
-  padding-left: 1rem;
-  margin-left: 0.75rem;
+  padding-left: 1.5rem;
+  margin-left: 1.5rem;
 }
 
 .ticker-logo-ring {
@@ -943,7 +943,7 @@ body {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 2px solid;
+  border: 1.5px solid;
   padding: 1px;
   flex-shrink: 0;
 }

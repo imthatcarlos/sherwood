@@ -49,7 +49,6 @@ export async function fetchPortfolioData(
   chainId: number,
   assetDecimals: number,
   assetSymbol: string,
-  executedAt?: number,
 ): Promise<PortfolioData | null> {
   const client = getPublicClient(chainId);
 
@@ -199,9 +198,6 @@ export async function fetchPortfolioData(
         marketCap: meta?.marketCap ?? null,
       };
     });
-
-    // Note: price history (Codex getBars) disabled for now — re-enable when chart is ready
-    // const priceHistory = await fetchPortfolioPriceHistory(tokens, chainId, executedAt);
 
     return {
       strategyAddress,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Chart as ChartJS,
   ArcElement,
@@ -8,6 +8,7 @@ import {
 } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
 import { quoteAllTokenPrices, type TokenPrice } from "@/lib/price-quote";
+import Image from "next/image";
 import type { Address } from "viem";
 
 ChartJS.register(ArcElement, Tooltip);
@@ -71,23 +72,25 @@ export default function PortfolioDashboard({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const chartRef = useRef<ChartJS<"doughnut">>(null);
 
-  // Fetch prices
-  const fetchPrices = useCallback(async () => {
-    const tokens = allocations.map((a) => ({
-      token: a.token,
-      decimals: a.decimals,
-      feeTier: a.feeTier,
-    }));
-    const result = await quoteAllTokenPrices(chainId, tokens, assetAddress, assetDecimals);
-    setPrices(result);
-    setLoading(false);
-  }, [allocations, chainId, assetAddress, assetDecimals]);
-
+  // Fetch prices on mount + poll every 30s
   useEffect(() => {
-    fetchPrices();
-    const interval = setInterval(fetchPrices, 30_000);
-    return () => clearInterval(interval);
-  }, [fetchPrices]);
+    let cancelled = false;
+    const run = async () => {
+      const tokens = allocations.map((a) => ({
+        token: a.token,
+        decimals: a.decimals,
+        feeTier: a.feeTier,
+      }));
+      const result = await quoteAllTokenPrices(chainId, tokens, assetAddress, assetDecimals);
+      if (!cancelled) {
+        setPrices(result);
+        setLoading(false);
+      }
+    };
+    run();
+    const interval = setInterval(run, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [allocations, chainId, assetAddress, assetDecimals]);
 
   // Compute portfolio value
   const totalInvestedNum = parseFloat(totalInvested.replace(/,/g, ""));
@@ -172,18 +175,20 @@ export default function PortfolioDashboard({
           const hasPrices = !loading && tv?.price > 0;
           const color = PALETTE[i % PALETTE.length];
 
+          const dimmed = hoveredIndex !== null && hoveredIndex !== i;
+
           return (
-            <div key={a.token} className="ticker-item">
+            <div key={a.token} className="ticker-item" style={{ opacity: dimmed ? 0.25 : 1, transition: "opacity 0.15s ease" }}>
               <div className="ticker-header">
                 <span className="ticker-logo-ring" style={{ borderColor: color }}>
                   {a.logo ? (
-                    <img src={a.logo} alt={a.symbol} width={14} height={14} style={{ borderRadius: "50%", display: "block" }} />
+                    <Image src={a.logo} alt={a.symbol} width={14} height={14} unoptimized style={{ borderRadius: "50%", display: "block" }} />
                   ) : (
                     <span style={{ width: 14, height: 14, borderRadius: "50%", background: color, display: "block" }} />
                   )}
                 </span>
                 <span className="ticker-symbol">{a.symbol}</span>
-                <span className="ticker-weight">{a.weightPct.toFixed(0)}%</span>
+                {/* <span className="ticker-weight">{a.weightPct.toFixed(0)}%</span> */}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <span className="ticker-mcap">

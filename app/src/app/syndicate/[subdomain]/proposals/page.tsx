@@ -322,7 +322,6 @@ export default async function ProposalsPage({
       data.chainId,
       data.assetDecimals,
       data.assetSymbol,
-      activeProposal.executedAt > 0n ? Number(activeProposal.executedAt) : undefined,
     );
     if (portfolioData) {
       portfolioAllocations = {
