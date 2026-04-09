@@ -42,6 +42,11 @@ interface Allocation {
   marketCap: number | null;
 }
 
+interface PriceBar {
+  timestamp: number;
+  value: number;
+}
+
 interface PortfolioDashboardProps {
   allocations: Allocation[];
   totalInvested: string;
@@ -49,7 +54,7 @@ interface PortfolioDashboardProps {
   assetAddress: Address;
   assetDecimals: number;
   chainId: number;
-  equityCurve: number[];
+  priceHistory: PriceBar[];
 }
 
 function formatMarketCap(mcap: number): string {
@@ -65,18 +70,39 @@ function formatDelta(delta: number): string {
 }
 
 /**
- * Subsample an equity curve array to fit the selected timeframe granularity.
- * Since the source data is 7 daily points, shorter timeframes show fewer points.
+ * Filter price history bars by timeframe.
+ * Source data is 15-minute bars for 24h. Timeframes select a window + downsample.
  */
-function sampleCurve(data: number[], timeframe: typeof TIMEFRAMES[number]): number[] {
-  if (data.length <= 1) return data;
-  switch (timeframe) {
-    case "15m": return data.slice(-2); // last 2 points
-    case "1h": return data.slice(-3);
-    case "4h": return data.slice(-5);
-    case "1d":
-    default: return data;
+function filterBars(bars: PriceBar[], timeframe: typeof TIMEFRAMES[number]): PriceBar[] {
+  if (bars.length === 0) return bars;
+  const now = bars[bars.length - 1].timestamp;
+  const windowSeconds: Record<string, number> = {
+    "15m": 15 * 60,
+    "1h": 3600,
+    "4h": 4 * 3600,
+    "1d": 24 * 3600,
+  };
+  const cutoff = now - windowSeconds[timeframe];
+  const filtered = bars.filter((b) => b.timestamp >= cutoff);
+
+  // For 1h and 4h, downsample by taking every Nth bar to reduce noise
+  if (timeframe === "4h") {
+    // Every 4th bar (1h intervals)
+    return filtered.filter((_, i) => i % 4 === 0 || i === filtered.length - 1);
   }
+  if (timeframe === "1d") {
+    // Every 4th bar (1h intervals from 15m data)
+    return filtered.filter((_, i) => i % 4 === 0 || i === filtered.length - 1);
+  }
+  return filtered;
+}
+
+function formatTime(ts: number): string {
+  return new Date(ts * 1000).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 export default function PortfolioDashboard({
@@ -86,7 +112,7 @@ export default function PortfolioDashboard({
   assetAddress,
   assetDecimals,
   chainId,
-  equityCurve,
+  priceHistory,
 }: PortfolioDashboardProps) {
   const chartRef = useRef<ChartJS<"line">>(null);
   const [gradient, setGradient] = useState<CanvasGradient | string>(
@@ -144,9 +170,10 @@ export default function PortfolioDashboard({
     ? ((portfolioValue - totalInvestedNum) / totalInvestedNum) * 100
     : 0;
 
-  // Subsample curve for selected timeframe
-  const chartData = useMemo(() => sampleCurve(equityCurve, selectedTf), [equityCurve, selectedTf]);
-  const labels = Array.from({ length: chartData.length }, (_, i) => i + 1);
+  // Filter bars for selected timeframe
+  const chartBars = useMemo(() => filterBars(priceHistory, selectedTf), [priceHistory, selectedTf]);
+  const chartData = chartBars.map((b) => b.value);
+  const labels = chartBars.map((b) => formatTime(b.timestamp));
 
   return (
     <div className="portfolio-dashboard">
@@ -214,7 +241,16 @@ export default function PortfolioDashboard({
                 },
               },
               scales: {
-                x: { display: false },
+                x: {
+                  display: true,
+                  grid: { display: false },
+                  ticks: {
+                    color: "rgba(255,255,255,0.3)",
+                    font: { size: 9, family: "Plus Jakarta Sans" },
+                    maxTicksLimit: 6,
+                    maxRotation: 0,
+                  },
+                },
                 y: {
                   grid: { color: "rgba(255,255,255,0.05)" },
                   ticks: {

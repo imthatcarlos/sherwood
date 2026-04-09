@@ -31,7 +31,7 @@ interface EnrichedPortfolioProps {
   assetAddress: Address;
   assetDecimals: number;
   chainId: number;
-  equityCurve: number[];
+  priceHistory: { timestamp: number; value: number }[];
 }
 
 interface ActiveProposalProps {
@@ -134,7 +134,7 @@ export default function ActiveProposal({
         )}
       </div>
 
-      <div className="metrics-grid">
+      <div className="metrics-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
         <div className="metric-card">
           <div className="metric-label">Agent</div>
           <div className="metric-val" style={{ fontSize: "1rem" }}>
@@ -179,7 +179,7 @@ export default function ActiveProposal({
           assetAddress={enrichedPortfolio.assetAddress}
           assetDecimals={enrichedPortfolio.assetDecimals}
           chainId={enrichedPortfolio.chainId}
-          equityCurve={enrichedPortfolio.equityCurve}
+          priceHistory={enrichedPortfolio.priceHistory}
         />
       ) : portfolioAllocations ? (
         <PortfolioAllocation

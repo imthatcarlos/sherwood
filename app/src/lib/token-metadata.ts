@@ -47,8 +47,9 @@ const FILTER_TOKENS_QUERY = `
           info {
             imageSmallUrl
           }
-          marketCap
         }
+        marketCap
+        liquidity
       }
     }
   }
@@ -86,10 +87,9 @@ async function fetchTokenFromCodex(
 
     const data = await res.json();
     const result = data?.data?.filterTokens?.results?.[0];
-    const token = result?.token;
     return {
-      logo: token?.info?.imageSmallUrl || null,
-      marketCap: token?.marketCap ? Number(token.marketCap) : null,
+      logo: result?.token?.info?.imageSmallUrl || null,
+      marketCap: result?.marketCap ? Number(result.marketCap) : null,
     };
   } catch {
     return { logo: null, marketCap: null };
@@ -160,6 +160,69 @@ export async function fetchTokenMetadata(
     };
   } catch {
     return null;
+  }
+}
+
+// ── Price History (Codex getBars) ──
+
+export interface PriceBar {
+  timestamp: number;
+  value: number; // portfolio value in USD at this point
+}
+
+/**
+ * Fetch portfolio value time-series using Codex getBars.
+ * Fetches 15-minute candles for the last 24h for each token,
+ * multiplies close price by held amount, sums across tokens.
+ *
+ * Returns an array of { timestamp, value } sorted by time.
+ */
+export async function fetchPortfolioPriceHistory(
+  tokens: { address: string; amount: number }[],
+  chainId: number,
+): Promise<PriceBar[]> {
+  const codexKey = process.env.CODEX_API_KEY;
+  if (!codexKey || tokens.length === 0) return [];
+
+  const now = Math.floor(Date.now() / 1000);
+  const from = now - 86400; // 24h
+
+  try {
+    const barResults = await Promise.all(
+      tokens.map(async (t) => {
+        const res = await fetch(CODEX_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: codexKey,
+          },
+          body: JSON.stringify({
+            query: `{ getBars(symbol: "${t.address}:${chainId}", from: ${from}, to: ${now}, resolution: "15") { t c } }`,
+          }),
+        });
+        const data = await res.json();
+        return {
+          amount: t.amount,
+          timestamps: (data.data?.getBars?.t as number[]) || [],
+          closes: (data.data?.getBars?.c as number[]) || [],
+        };
+      }),
+    );
+
+    // Use timestamps from the first token (all should align)
+    const timestamps = barResults[0]?.timestamps || [];
+    if (timestamps.length === 0) return [];
+
+    return timestamps.map((ts, i) => {
+      let value = 0;
+      for (const r of barResults) {
+        const price = r.closes[i] ?? 0;
+        value += r.amount * price;
+      }
+      return { timestamp: ts, value };
+    });
+  } catch {
+    return [];
   }
 }
 
