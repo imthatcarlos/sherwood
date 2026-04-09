@@ -305,6 +305,7 @@ export default async function ProposalsPage({
       tokenAmount: string;
       investedAmount: string;
       feeTier: number;
+      logo: string | null;
     }[];
     totalAmount: string;
     assetSymbol: string;
@@ -342,6 +343,7 @@ export default async function ProposalsPage({
           tokenAmount: a.tokenAmount,
           investedAmount: a.investedAmount,
           feeTier: a.feeTier,
+          logo: a.logo,
         })),
         totalAmount: portfolioData.totalAmount,
         assetSymbol: portfolioData.assetSymbol,

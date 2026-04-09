@@ -38,6 +38,7 @@ interface Allocation {
   tokenAmount: string;
   investedAmount: string;
   feeTier: number;
+  logo: string | null;
 }
 
 interface PortfolioDashboardProps {
@@ -242,7 +243,17 @@ export default function PortfolioDashboard({
           return (
             <div key={a.token} className="ticker-item">
               <div className="ticker-header">
-                <span className="dot" style={{ width: 6, height: 6, borderRadius: "50%", background: PALETTE[i % PALETTE.length], display: "inline-block" }} />
+                {a.logo ? (
+                  <img
+                    src={a.logo}
+                    alt={a.symbol}
+                    width={16}
+                    height={16}
+                    style={{ borderRadius: "50%", flexShrink: 0 }}
+                  />
+                ) : (
+                  <span className="dot" style={{ width: 10, height: 10, borderRadius: "50%", background: PALETTE[i % PALETTE.length], display: "inline-block", flexShrink: 0 }} />
+                )}
                 <span className="ticker-symbol">{a.symbol}</span>
                 <span className="ticker-weight">{a.weightPct.toFixed(0)}%</span>
               </div>

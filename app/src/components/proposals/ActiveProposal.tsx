@@ -23,6 +23,7 @@ interface EnrichedPortfolioProps {
     tokenAmount: string;
     investedAmount: string;
     feeTier: number;
+    logo: string | null;
   }[];
   totalAmount: string;
   assetSymbol: string;

@@ -12,6 +12,7 @@ import {
   PORTFOLIO_STRATEGY_ABI,
   ERC20_ABI,
 } from "./contracts";
+import { fetchAllTokenMetadata } from "./token-metadata";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ export interface TokenAllocation {
   tokenAmount: string;
   investedAmount: string;
   feeTier: number;
+  logo: string | null;
 }
 
 export interface PortfolioData {
@@ -152,19 +154,20 @@ export async function fetchPortfolioData(
 
     const metaResults = await client.multicall({ contracts: tokenMetaCalls });
 
-    // Step 5: Assemble allocation data
+    // Step 5: Fetch token metadata (logos) via Alchemy + Codex
+    const tokenAddresses = rawAllocations.map((a) => a.token);
+    const metadataMap = await fetchAllTokenMetadata(tokenAddresses, chainId);
+
+    // Step 6: Assemble allocation data
     const allocations: TokenAllocation[] = rawAllocations.map((a, i) => {
       const symbolResult = metaResults[i * 2];
       const decimalsResult = metaResults[i * 2 + 1];
 
-      const symbol =
-        symbolResult.status === "success"
-          ? (symbolResult.result as string)
-          : `0x${a.token.slice(2, 8)}`;
-      const decimals =
-        decimalsResult.status === "success"
-          ? Number(decimalsResult.result)
-          : 18;
+      const meta = metadataMap.get(a.token.toLowerCase());
+      const symbol = meta?.symbol
+        ?? (symbolResult.status === "success" ? (symbolResult.result as string) : `0x${a.token.slice(2, 8)}`);
+      const decimals = meta?.decimals
+        ?? (decimalsResult.status === "success" ? Number(decimalsResult.result) : 18);
 
       // Parse fee tier from swapExtraData
       let feeTier = 3000; // default
@@ -190,6 +193,7 @@ export async function fetchPortfolioData(
         tokenAmount: formatUnits(a.tokenAmount, decimals),
         investedAmount: formatUnits(a.investedAmount, assetDecimals),
         feeTier,
+        logo: meta?.logo ?? null,
       };
     });
 
