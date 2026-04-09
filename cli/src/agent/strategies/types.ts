@@ -19,12 +19,21 @@ export interface StrategyContext {
   technicals?: TechnicalSignals;
   fearAndGreed?: { value: number; classification: string };
   sentimentZScore?: number;
-  tvlData?: any;       // from DefiLlama
-  marketData?: any;     // from CoinGecko
-  nansenData?: any;     // from x402 research (Nansen)
-  messariData?: any;    // from x402 research (Messari)
-  dexData?: any;        // from DEXScreener
-  tokenSymbol?: string; // resolved symbol (e.g. "ETH" for "ethereum")
+  tvlData?: any;              // from DefiLlama
+  marketData?: any;           // from CoinGecko
+  nansenData?: any;           // from x402 research (Nansen)
+  messariData?: any;          // from x402 research (Messari)
+  dexData?: any;              // from DEXScreener
+  fundingRateData?: {         // from Binance (free)
+    rate8h: number;
+    annualizedRate: number;
+    exchange: string;
+  };
+  unlockData?: {              // from DefiLlama FDV analysis (free)
+    upcomingUnlocks: Array<{ percentOfSupply: number; daysUntil: number; description: string }>;
+    totalUpcomingPercent: number;
+  };
+  tokenSymbol?: string;       // resolved symbol (e.g. "ETH" for "ethereum")
 }
 
 export interface Strategy {

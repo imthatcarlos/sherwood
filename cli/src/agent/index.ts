@@ -22,6 +22,8 @@ import {
 import type { Signal, ScoringWeights, TradeDecision } from "./scoring.js";
 import { runStrategies } from "./strategies/index.js";
 import { DexScreenerProvider } from "../providers/data/dexscreener.js";
+import { FundingRateProvider } from "../providers/data/funding-rate.js";
+import { TokenUnlocksProvider } from "../providers/data/token-unlocks.js";
 import type { StrategyContext, StrategyConfig } from "./strategies/index.js";
 
 export type { Signal, ScoringWeights, TradeDecision };
@@ -55,6 +57,8 @@ export class TradingAgent {
   private coingecko: CoinGeckoProvider;
   private sentiment: SentimentProvider;
   private dexscreener: DexScreenerProvider;
+  private fundingRate: FundingRateProvider;
+  private tokenUnlocks: TokenUnlocksProvider;
 
   constructor(config: AgentConfig) {
     this.config = config;
@@ -62,6 +66,8 @@ export class TradingAgent {
     this.coingecko = new CoinGeckoProvider();
     this.sentiment = new SentimentProvider();
     this.dexscreener = new DexScreenerProvider();
+    this.fundingRate = new FundingRateProvider();
+    this.tokenUnlocks = new TokenUnlocksProvider();
   }
 
   /** Analyze a single token — gather all data and score. */
@@ -242,6 +248,28 @@ export class TradingAgent {
         // Reuse research data already fetched in steps 4 & 5 above — no duplicate x402 calls
       }
 
+      // Fetch funding rate data (free, from Binance)
+      let fundingRateData: StrategyContext['fundingRateData'] = undefined;
+      try {
+        const fr = await this.fundingRate.getFundingRate(tokenId);
+        if (fr) {
+          fundingRateData = { rate8h: fr.rate8h, annualizedRate: fr.annualizedRate, exchange: fr.exchange };
+        }
+      } catch {
+        // Funding rate fetch failed — strategies will handle gracefully
+      }
+
+      // Fetch token unlock estimates (free, from DefiLlama FDV)
+      let unlockData: StrategyContext['unlockData'] = undefined;
+      try {
+        const unlocks = await this.tokenUnlocks.getUnlocks(tokenId);
+        if (unlocks) {
+          unlockData = unlocks;
+        }
+      } catch {
+        // Unlock data fetch failed — strategies will handle gracefully
+      }
+
       const stratCtx: StrategyContext = {
         tokenId,
         candles, // reuse from step 1
@@ -255,6 +283,8 @@ export class TradingAgent {
         nansenData,
         messariData,
         dexData: undefined, // DexFlowStrategy fetches this internally
+        fundingRateData,
+        unlockData,
         tokenSymbol,
       };
 

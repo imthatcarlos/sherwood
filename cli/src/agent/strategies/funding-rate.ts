@@ -37,9 +37,7 @@ export class FundingRateStrategy implements Strategy {
   async analyze(ctx: StrategyContext): Promise<Signal> {
     // Check if funding rate data is available in the context
     // For now, this is a placeholder — funding rate data isn't provided by current providers
-    const fundingData = (ctx as any).fundingRateData as
-      | { rate8h: number; exchange: string }
-      | undefined;
+    const fundingData = ctx.fundingRateData;
 
     if (!fundingData) {
       return {

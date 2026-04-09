@@ -56,14 +56,20 @@ export class TokenUnlockStrategy implements Strategy {
   requiredData = ['messariData'];
 
   async analyze(ctx: StrategyContext): Promise<Signal> {
-    if (!ctx.messariData) {
+    // Try Messari data first (x402), then fall back to DefiLlama unlock estimates
+    if (!ctx.messariData && !ctx.unlockData) {
       return {
         name: this.name,
         value: 0.0,
         confidence: 0.1,
         source: 'Token Unlock Frontrun',
-        details: 'No Messari data available for unlock analysis',
+        details: 'No unlock data available',
       };
+    }
+
+    // If we have DefiLlama-based unlock estimates but no Messari data, use those
+    if (!ctx.messariData && ctx.unlockData) {
+      return this.analyzeFromUnlockData(ctx.unlockData);
     }
 
     const unlocks = parseUnlocks(ctx.messariData as Record<string, unknown>);
@@ -122,6 +128,36 @@ export class TokenUnlockStrategy implements Strategy {
       confidence: Math.min(confidence, 1.0),
       source: 'Token Unlock Frontrun',
       details: details.join('; '),
+    };
+  }
+
+  /** Analyze from DefiLlama FDV-based unlock estimates (free fallback) */
+  private analyzeFromUnlockData(data: NonNullable<StrategyContext['unlockData']>): Signal {
+    if (data.upcomingUnlocks.length === 0 || data.totalUpcomingPercent < 0.5) {
+      return {
+        name: this.name,
+        value: 0.0,
+        confidence: 0.2,
+        source: 'Token Unlock Frontrun',
+        details: 'No significant upcoming unlocks detected',
+      };
+    }
+
+    // Score based on weekly unlock pressure
+    let value = 0;
+    const pct = data.totalUpcomingPercent;
+    if (pct > 5) value = -0.6;
+    else if (pct > 2) value = -0.4;
+    else if (pct > 1) value = -0.2;
+
+    const details = data.upcomingUnlocks.map((u) => u.description).join('; ');
+
+    return {
+      name: this.name,
+      value: clamp(value),
+      confidence: 0.4, // lower confidence since these are estimates
+      source: 'Token Unlock Frontrun',
+      details: details || `~${pct.toFixed(1)}% estimated weekly vesting`,
     };
   }
 }
