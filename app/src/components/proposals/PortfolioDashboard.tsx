@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Chart as ChartJS,
   ArcElement,
@@ -50,6 +50,14 @@ function formatDelta(delta: number): string {
   return `${sign}${delta.toFixed(2)}%`;
 }
 
+/** Dim a hex color to a given opacity. */
+function dimColor(hex: string, opacity: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${opacity})`;
+}
+
 export default function PortfolioDashboard({
   allocations,
   totalInvested,
@@ -60,6 +68,8 @@ export default function PortfolioDashboard({
 }: PortfolioDashboardProps) {
   const [prices, setPrices] = useState<Map<string, TokenPrice>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const chartRef = useRef<ChartJS<"doughnut">>(null);
 
   // Fetch prices
   const fetchPrices = useCallback(async () => {
@@ -98,15 +108,21 @@ export default function PortfolioDashboard({
     ? ((portfolioValue - totalInvestedNum) / totalInvestedNum) * 100
     : 0;
 
-  // Doughnut chart — simple ring with accent border, no fill
+  // Doughnut — on hover, dim non-hovered segments
+  const borderColors = allocations.map((_, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    if (hoveredIndex === null) return color;
+    return i === hoveredIndex ? color : dimColor(color, 0.2);
+  });
+
   const doughnutData = {
     labels: allocations.map((a) => a.symbol),
     datasets: [{
       data: allocations.map((a) => a.weightPct),
       backgroundColor: "transparent",
-      borderColor: allocations.map((_, i) => PALETTE[i % PALETTE.length]),
+      borderColor: borderColors,
       borderWidth: 3,
-      hoverOffset: 4,
+      hoverOffset: 0,
     }],
   };
 
@@ -114,45 +130,39 @@ export default function PortfolioDashboard({
     responsive: true,
     maintainAspectRatio: true,
     cutout: "72%",
+    animation: { duration: 0 },
     plugins: {
       legend: { display: false },
-      tooltip: {
-        backgroundColor: "rgba(0,0,0,0.9)",
-        bodyFont: { size: 11, family: "Plus Jakarta Sans" },
-        padding: 6,
-        caretSize: 4,
-        position: "nearest" as const,
-        callbacks: {
-          label: (ctx: { label: string; parsed: number }) =>
-            ` ${ctx.label}: ${ctx.parsed.toFixed(1)}%`,
-        },
-      },
+      tooltip: { enabled: false },
+    },
+    onHover: (_event: unknown, elements: { index: number }[]) => {
+      setHoveredIndex(elements.length > 0 ? elements[0].index : null);
     },
   };
 
   return (
     <div className="portfolio-dashboard-compact">
-      {/* Left: doughnut + value */}
-      <div className="portfolio-left">
-        <div style={{ width: "64px", height: "64px", flexShrink: 0 }}>
-          <Doughnut data={doughnutData} options={doughnutOptions} />
-        </div>
-        <div className="portfolio-value-block">
-          <span className="portfolio-value-amount">
-            {loading ? "—" : `${portfolioValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${assetSymbol}`}
-          </span>
-          {!loading && (
-            <span className={`portfolio-value-delta ${overallDelta >= 0 ? "delta-positive" : "delta-negative"}`}>
-              {formatDelta(overallDelta)}
-            </span>
-          )}
-          <span className="portfolio-invested">
-            {totalInvested} {assetSymbol} deployed
-          </span>
-        </div>
+      {/* Doughnut */}
+      <div
+        style={{ width: "56px", height: "56px", flexShrink: 0 }}
+        onMouseLeave={() => setHoveredIndex(null)}
+      >
+        <Doughnut ref={chartRef} data={doughnutData} options={doughnutOptions} />
       </div>
 
-      {/* Right: horizontal ticker strip */}
+      {/* Portfolio value + delta (same row) */}
+      <div className="portfolio-value-inline">
+        <span className="portfolio-value-amount">
+          {loading ? "—" : `${portfolioValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${assetSymbol}`}
+        </span>
+        {!loading && (
+          <span className={`portfolio-value-delta ${overallDelta >= 0 ? "delta-positive" : "delta-negative"}`}>
+            {formatDelta(overallDelta)}
+          </span>
+        )}
+      </div>
+
+      {/* Ticker strip */}
       <div className="ticker-strip-horizontal">
         {allocations.map((a, i) => {
           const tv = tokenValues[i];
@@ -160,25 +170,22 @@ export default function PortfolioDashboard({
             ? ((tv.value - tv.invested) / tv.invested) * 100
             : 0;
           const hasPrices = !loading && tv?.price > 0;
+          const color = PALETTE[i % PALETTE.length];
 
           return (
             <div key={a.token} className="ticker-item">
               <div className="ticker-header">
-                {a.logo ? (
-                  <img
-                    src={a.logo}
-                    alt={a.symbol}
-                    width={18}
-                    height={18}
-                    style={{ borderRadius: "50%", flexShrink: 0 }}
-                  />
-                ) : (
-                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: PALETTE[i % PALETTE.length], display: "inline-block", flexShrink: 0 }} />
-                )}
+                <span className="ticker-logo-ring" style={{ borderColor: color }}>
+                  {a.logo ? (
+                    <img src={a.logo} alt={a.symbol} width={14} height={14} style={{ borderRadius: "50%", display: "block" }} />
+                  ) : (
+                    <span style={{ width: 14, height: 14, borderRadius: "50%", background: color, display: "block" }} />
+                  )}
+                </span>
                 <span className="ticker-symbol">{a.symbol}</span>
                 <span className="ticker-weight">{a.weightPct.toFixed(0)}%</span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <span className="ticker-mcap">
                   {a.marketCap ? formatMarketCap(a.marketCap) : "—"}
                 </span>
