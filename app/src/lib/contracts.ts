@@ -870,4 +870,5 @@ export const CHAIN_BADGES: Record<
   8453: { label: "BASE", bg: "rgba(59,130,246,0.2)", color: "#3b82f6" },
   84532: { label: "BASE SEPOLIA", bg: "rgba(59,130,246,0.2)", color: "#3b82f6" },
   46630: { label: "ROBINHOOD TESTNET", bg: "rgba(234,179,8,0.2)", color: "#eab308" },
+  999: { label: "HYPEREVM", bg: "rgba(46,230,166,0.2)", color: "#2EE6A6" },
 };
