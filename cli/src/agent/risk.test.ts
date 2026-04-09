@@ -98,14 +98,16 @@ describe("RiskManager", () => {
 
   describe("calculatePositionSize", () => {
     it("calculates correct quantity and size from risk formula", () => {
-      // riskPerTrade default = 0.02 (2%)
+      // riskPerTrade default = 0.02 (2%), maxSinglePosition = 0.10 (10%)
       // portfolioValue = 10000, riskUsd = 200
       // entry = 100, stop = 90, riskPerUnit = 10
       // quantity = 200 / 10 = 20, sizeUsd = 20 * 100 = 2000
+      // BUT maxSinglePosition = 10% of 10000 = 1000, so capped:
+      // cappedQuantity = 1000 / 100 = 10, sizeUsd = 1000, riskUsd = 10 * 10 = 100
       const result = rm.calculatePositionSize(100, 90, 10000);
-      expect(result.quantity).toBeCloseTo(20, 6);
-      expect(result.sizeUsd).toBeCloseTo(2000, 6);
-      expect(result.riskUsd).toBeCloseTo(200, 6);
+      expect(result.quantity).toBeCloseTo(10, 6);
+      expect(result.sizeUsd).toBeCloseTo(1000, 6);
+      expect(result.riskUsd).toBeCloseTo(100, 6);
     });
 
     it("caps position size at maxSinglePosition", () => {
