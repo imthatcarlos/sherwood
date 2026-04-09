@@ -107,8 +107,12 @@ contract UniswapSwapAdapter is ISwapAdapter {
                 })
             );
         } else if (mode == 1) {
-            // V3 multi-hop
+            // V3 multi-hop — reverse path if stored direction doesn't match tokenIn
             bytes memory path = abi.decode(routeData, (bytes));
+            address pathStart = _extractFirstAddress(path);
+            if (pathStart != tokenIn) {
+                path = _reversePath(path);
+            }
             amountOut = v3Router.exactInput(
                 ISwapRouter.ExactInputParams({
                     path: path, recipient: msg.sender, amountIn: amountIn, amountOutMinimum: amountOutMin
@@ -116,6 +120,46 @@ contract UniswapSwapAdapter is ISwapAdapter {
             );
         } else {
             revert UnsupportedMode();
+        }
+    }
+
+    /// @dev Extract the first 20-byte address from a packed V3 path.
+    function _extractFirstAddress(bytes memory path) internal pure returns (address addr) {
+        require(path.length >= 20, "path too short");
+        assembly {
+            addr := shr(96, mload(add(path, 32)))
+        }
+    }
+
+    /// @dev Reverse a packed Uniswap V3 path (addr + fee + addr + fee + ...).
+    ///      Each segment is 20 bytes (address) + 3 bytes (fee). Last element is 20 bytes.
+    function _reversePath(bytes memory path) internal pure returns (bytes memory reversed) {
+        uint256 len = path.length;
+        // path layout: addr(20) [+ fee(3) + addr(20)]* — total = 20 + 23*n
+        require(len >= 20 && (len - 20) % 23 == 0, "invalid path length");
+        uint256 numHops = (len - 20) / 23;
+
+        reversed = new bytes(len);
+        uint256 writePos;
+
+        // Write last address first
+        uint256 lastAddrPos = 20 + numHops * 23;
+        for (uint256 j; j < 20; ++j) {
+            reversed[writePos++] = path[lastAddrPos - 20 + j];
+        }
+
+        // Walk backwards through hops
+        for (uint256 i = numHops; i > 0; --i) {
+            uint256 hopStart = (i - 1) * 23 + 20; // fee starts here
+            // Copy fee (3 bytes)
+            reversed[writePos++] = path[hopStart];
+            reversed[writePos++] = path[hopStart + 1];
+            reversed[writePos++] = path[hopStart + 2];
+            // Copy address before this fee (20 bytes at hopStart - 20)
+            uint256 addrStart = hopStart - 20;
+            for (uint256 j; j < 20; ++j) {
+                reversed[writePos++] = path[addrStart + j];
+            }
         }
     }
 
