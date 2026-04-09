@@ -42,12 +42,12 @@ import {ScriptBase} from "./ScriptBase.sol";
  */
 contract DeploySherwood is ScriptBase {
     // ── CREATE3 salts ──
-    bytes32 constant SALT_EXECUTOR = keccak256("sherwood.executor.mainnet");
-    bytes32 constant SALT_VAULT_IMPL = keccak256("sherwood.vault-impl.mainnet");
-    bytes32 constant SALT_GOVERNOR_IMPL = keccak256("sherwood.governor-impl.mainnet");
-    bytes32 constant SALT_GOVERNOR_PROXY = keccak256("sherwood.governor-proxy.mainnet");
-    bytes32 constant SALT_FACTORY_IMPL = keccak256("sherwood.factory-impl.mainnet");
-    bytes32 constant SALT_FACTORY_PROXY = keccak256("sherwood.factory-proxy.mainnet");
+    bytes32 constant SALT_EXECUTOR = keccak256("sherwood.protocol.executor");
+    bytes32 constant SALT_VAULT_IMPL = keccak256("sherwood.protocol.vault-impl");
+    bytes32 constant SALT_GOVERNOR_IMPL = keccak256("sherwood.protocol.governor-impl");
+    bytes32 constant SALT_GOVERNOR_PROXY = keccak256("sherwood.protocol.governor-proxy");
+    bytes32 constant SALT_FACTORY_IMPL = keccak256("sherwood.protocol.factory-impl");
+    bytes32 constant SALT_FACTORY_PROXY = keccak256("sherwood.protocol.factory-proxy");
 
     struct Config {
         address ensRegistrar;
