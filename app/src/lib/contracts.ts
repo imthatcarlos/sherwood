@@ -130,7 +130,7 @@ const BASE_SEPOLIA_ADDRESSES: ChainAddresses = {
 };
 
 const ROBINHOOD_TESTNET_ADDRESSES: ChainAddresses = {
-  factory: "0xd5C4eE2E4c5B606b9401E69A3B3FeE169037C284",
+  factory: "0x6d026e2f5Ff0C34A01690EC46Cb601B8fF391985",
   usdc: ZERO,
   l2Registry: ZERO,
   identityRegistry: ZERO,
@@ -577,6 +577,72 @@ export const SYNDICATE_GOVERNOR_ABI = [
     stateMutability: "view",
     inputs: [{ name: "vault", type: "address" }],
     outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "getExecuteCalls",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple[]",
+        components: [
+          { name: "target", type: "address" },
+          { name: "data", type: "bytes" },
+          { name: "value", type: "uint256" },
+        ],
+      },
+    ],
+  },
+] as const;
+
+export const PORTFOLIO_STRATEGY_ABI = [
+  {
+    name: "name",
+    type: "function",
+    stateMutability: "pure",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    name: "getAllocations",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "tuple[]",
+        components: [
+          { name: "token", type: "address" },
+          { name: "targetWeightBps", type: "uint256" },
+          { name: "tokenAmount", type: "uint256" },
+          { name: "investedAmount", type: "uint256" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "totalAmount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "asset",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    name: "maxSlippageBps",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
 

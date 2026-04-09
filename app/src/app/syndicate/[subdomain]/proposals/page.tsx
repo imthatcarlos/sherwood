@@ -16,6 +16,7 @@ import {
 } from "@/lib/governor-data";
 import { formatBps } from "@/lib/contracts";
 import { formatDuration } from "@/lib/governor-data";
+import { fetchPortfolioData } from "@/lib/portfolio-data";
 import type { Address } from "viem";
 
 // ── Mock badge ──────────────────────────────────────────────────────────────
@@ -266,9 +267,6 @@ export default async function ProposalsPage({
     addressNames[agent.agentAddress.toLowerCase()] = displayName;
   }
   const creatorKey = data.creator.toLowerCase();
-  if (!addressNames[creatorKey]) {
-    addressNames[creatorKey] = data.metadata?.name || `Syndicate #${data.syndicateId.toString()}`;
-  }
 
   const liveGovernor = await fetchGovernorData(data.vault);
   const isMock = !liveGovernor;
@@ -290,6 +288,49 @@ export default async function ProposalsPage({
     governor.proposals.find(
       (p) => p.computedState === ProposalState.Executed,
     ) ?? null;
+
+  // Fetch portfolio strategy data if active proposal exists
+  let portfolioAllocations: {
+    allocations: { symbol: string; weightPct: number }[];
+    totalAmount: string;
+    assetSymbol: string;
+  } | null = null;
+
+  if (activeProposal && liveGovernor) {
+    const portfolioData = await fetchPortfolioData(
+      liveGovernor.governorAddress,
+      activeProposal.id,
+      data.chainId,
+      data.assetDecimals,
+      data.assetSymbol,
+    );
+    if (portfolioData) {
+      portfolioAllocations = {
+        allocations: portfolioData.allocations.map((a) => ({
+          symbol: a.symbol,
+          weightPct: a.targetWeightBps / 100,
+        })),
+        totalAmount: portfolioData.totalAmount,
+        assetSymbol: portfolioData.assetSymbol,
+      };
+    }
+  }
+
+  // Mock portfolio data when using mock governor
+  if (isMock && activeProposal) {
+    portfolioAllocations = {
+      allocations: [
+        { symbol: "JPM", weightPct: 25.0 },
+        { symbol: "NVDA", weightPct: 20.0 },
+        { symbol: "MSFT", weightPct: 18.0 },
+        { symbol: "V", weightPct: 15.0 },
+        { symbol: "AAPL", weightPct: 12.0 },
+        { symbol: "META", weightPct: 10.0 },
+      ],
+      totalAmount: "50,000.00",
+      assetSymbol: data.assetSymbol,
+    };
+  }
 
   const votingQueue = governor.proposals.filter(
     (p) =>
@@ -371,6 +412,7 @@ export default async function ProposalsPage({
               addressNames={addressNames}
               assetDecimals={data.assetDecimals}
               assetSymbol={data.assetSymbol}
+              portfolioAllocations={portfolioAllocations}
             />
           </div>
 

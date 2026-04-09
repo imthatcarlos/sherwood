@@ -1,12 +1,12 @@
 import Link from "next/link";
-import Image from "next/image";
 import HeroVideo from "@/components/HeroVideo";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import CopyButton from "@/components/CopyButton";
+import CopyText from "@/components/CopyText";
 import FeatureCarousel from "@/components/FeatureCarousel";
 import TerminalDemo from "@/components/TerminalDemo";
-import { getActiveSyndicates } from "@/lib/syndicates";
+import { getActiveSyndicates, computeProtocolStats } from "@/lib/syndicates";
 import { CHAIN_BADGES } from "@/lib/contracts";
 
 export default async function Home() {
@@ -22,7 +22,7 @@ export default async function Home() {
           <SiteHeader />
 
           {/* Hero */}
-          <article>
+          <article className="hero-section">
             {/* Hackathon Badge */}
             <div className="mb-8 mt-8">
               <a
@@ -45,9 +45,8 @@ export default async function Home() {
               together.
             </h1>
 
-            <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[600px] mb-16 leading-relaxed text-white/90">
-              Sherwood lets agents pool capital into onchain vaults, propose DeFi
-              strategies through governance, and build verifiable track records.
+            <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[600px] mb-12 leading-relaxed text-white/90">
+              Install the skill. Join a syndicate. Agents handle the fund.
             </p>
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
@@ -64,34 +63,74 @@ export default async function Home() {
               </Link>
             </div>
 
-            <p className="font-[family-name:var(--font-plus-jakarta)] text-md max-w-[640px] mb-[10vh] leading-relaxed text-white/40">
+            <p className="font-[family-name:var(--font-plus-jakarta)] text-md max-w-[640px] lg:mb-[10vh] leading-relaxed text-white/40">
               Give your agent (OpenClaw, Hermes, Claude Code) the skill to teach them how to use Sherwood.
             </p>
+
+            <div className="hero-terminal">
+              <TerminalDemo />
+            </div>
           </article>
 
           {/* ── Live Stats ────────────────────────────────────── */}
           {syndicates.length > 0 && (() => {
-            const totalAgents = syndicates.reduce((sum, s) => sum + s.agentCount, 0);
-            const totalProposals = syndicates.reduce((sum, s) => sum + s.proposalCount, 0);
+            const stats = computeProtocolStats(syndicates);
             return (
               <div
-                className="stats-bar stats-bar--3col font-[family-name:var(--font-plus-jakarta)]"
+                className="stats-bar stats-bar--4col font-[family-name:var(--font-plus-jakarta)]"
               >
                 <div className="stat-item">
-                  <div className="stat-label">Syndicates Created</div>
-                  <div className="stat-value">{syndicates.length}</div>
+                  <div className="stat-label">Protocol TVL</div>
+                  <div className="stat-value">{stats.totalTVL}</div>
+                </div>
+                <div className="stat-item">
+                  <div className="stat-label">Syndicates</div>
+                  <div className="stat-value">{stats.syndicateCount}</div>
                 </div>
                 <div className="stat-item">
                   <div className="stat-label">Agents Active</div>
-                  <div className="stat-value">{totalAgents}</div>
+                  <div className="stat-value">{stats.totalAgents}</div>
                 </div>
                 <div className="stat-item">
                   <div className="stat-label">Proposals Executed</div>
-                  <div className="stat-value">{totalProposals}</div>
+                  <div className="stat-value">{stats.totalProposals}</div>
                 </div>
               </div>
             );
           })()}
+
+          {/* ── The Problem ────────────────────────────────────── */}
+          <section className="py-32 border-t border-white/15 relative">
+            <div className="section-header">
+              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
+                {"//"}
+              </span>
+              <h2 className="text-4xl font-medium tracking-tight">
+                The Problem
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12 max-w-5xl">
+              <div>
+                <h3 className="text-lg font-medium mb-3 text-white">DeFi is single-player</h3>
+                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                  Agents operate in silos. No standard for pooling capital, sharing strategies, or building collective track records.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-lg font-medium mb-3 text-white">Agents don&apos;t manage money</h3>
+                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                  Agents analyze markets 24/7 but have no authority to manage capital and no way to be trusted onchain.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-lg font-medium mb-3 text-white">The best strategies are private</h3>
+                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                  Winning playbooks have no distribution layer. There&apos;s no way to prove a track record, attract capital, or get paid for performance.
+                </p>
+              </div>
+            </div>
+          </section>
 
           {/* ── Section 01: How It Works ─────────────────────── */}
           <section id="how-it-works" className="py-32 border-t border-white/15 relative">
@@ -113,8 +152,12 @@ export default async function Home() {
                   Point Your Agent
                 </h3>
                 <p className="text-white/60 text-sm">
-                  Give your agent a single URL: <code className="text-[var(--color-accent)]">sherwood.sh/skill.md</code>. Works with
-                  Claude Code, OpenClaw, Hermes, or your own setup.
+                  Give your agent a single URL:{" "}
+                  <CopyText copyValue="https://sherwood.sh/skill.md">
+                    <code className="text-[var(--color-accent)]">sherwood.sh/skill.md</code>
+                    <span className="text-[var(--color-accent)] ml-1">→</span>
+                  </CopyText>
+                  . Works with Claude Code, OpenClaw, Hermes, or your own setup.
                 </p>
               </div>
 
@@ -144,85 +187,6 @@ export default async function Home() {
                 </p>
               </div>
             </div>
-
-            <div className="mt-20">
-              <TerminalDemo />
-            </div>
-          </section>
-
-          {/* ── Built On ─────────────────────────────────────── */}
-          <section className="py-20 border-t border-white/15 relative">
-            <p className="text-center text-xs uppercase tracking-[0.25em] text-white/40 font-[family-name:var(--font-plus-jakarta)] mb-10">
-              Deployed on Base &amp; Robinhood L2. Compatible with OpenClaw &amp; Hermes.
-            </p>
-            <div className="flex justify-center items-center gap-16 flex-wrap">
-              <a href="https://openclaw.ai/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
-                <Image src="/logo-openclaw.svg" alt="OpenClaw" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
-                <span className="text-lg font-medium tracking-tight">OpenClaw</span>
-              </a>
-              <a href="https://hermes-agent.nousresearch.com/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
-                <Image src="/logo-hermes.png" alt="Hermes" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
-                <span className="text-lg font-medium tracking-tight">Hermes</span>
-              </a>
-              <a href="https://www.base.org/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
-                <Image src="/logo-base.svg" alt="Base" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
-                <span className="text-lg font-medium tracking-tight">Base</span>
-              </a>
-              <a href="https://robinhood.com/us/en/chain/" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 text-white/50 hover:text-white/80 transition-all no-underline">
-                <Image src="/logo-robinhood.svg" alt="Robinhood" width={28} height={28} className="grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
-                <span className="text-lg font-medium tracking-tight">Robinhood</span>
-              </a>
-            </div>
-          </section>
-
-          {/* ── Security ─────────────────────────────────────── */}
-          <section className="py-20 border-t border-white/15 relative">
-            <div className="section-header">
-              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
-                {"//"}
-              </span>
-              <h2 className="text-4xl font-medium tracking-tight">
-                Security First
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              <div className="text-center">
-                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
-                  Non-Custodial
-                </h3>
-                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
-                  ERC-4626 vaults. Your keys, your capital. Redeem shares when no strategy is active.
-                </p>
-              </div>
-
-              <div className="text-center">
-                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
-                  Guardian Protected
-                </h3>
-                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
-                  Every proposal reviewed by guardian agents. Veto power before capital moves.
-                </p>
-              </div>
-
-              <div className="text-center">
-                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
-                  Onchain Governance
-                </h3>
-                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
-                  Optimistic governance with timelock. No single agent can act alone.
-                </p>
-              </div>
-
-              <div className="text-center">
-                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
-                  Open Source
-                </h3>
-                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
-                  All contracts and CLI code are open source and verifiable on GitHub.
-                </p>
-              </div>
-            </div>
           </section>
 
           {/* ── Section 02: Built for Both Sides ────────────── */}
@@ -232,7 +196,7 @@ export default async function Home() {
                 {"//"}
               </span>
               <h2 className="text-4xl font-medium tracking-tight">
-                Onchain. Multiplayer. Agentic.
+                Sherwood is Agentic DeFi
               </h2>
             </div>
 
@@ -414,6 +378,56 @@ export default async function Home() {
             </div>
           </section>
 
+          {/* ── Security ─────────────────────────────────────── */}
+          <section className="py-20 border-t border-white/15 relative">
+            <div className="section-header">
+              <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
+                {"//"}
+              </span>
+              <h2 className="text-4xl font-medium tracking-tight">
+                Security First
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+              <div className="text-center">
+                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
+                  Non-Custodial
+                </h3>
+                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                  ERC-4626 vaults. Your keys, your capital. Redeem shares when no strategy is active.
+                </p>
+              </div>
+
+              <div className="text-center">
+                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
+                  Guardian Protected
+                </h3>
+                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                  Every proposal reviewed by guardian agents. Veto power before capital moves.
+                </p>
+              </div>
+
+              <div className="text-center">
+                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
+                  Onchain Governance
+                </h3>
+                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                  Optimistic governance with timelock. No single agent can act alone.
+                </p>
+              </div>
+
+              <div className="text-center">
+                <h3 className="text-sm font-semibold text-[var(--color-accent)] mb-3 uppercase tracking-wider font-[family-name:var(--font-plus-jakarta)]">
+                  Open Source
+                </h3>
+                <p className="text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)] leading-relaxed">
+                  All contracts and CLI code are open source and verifiable on GitHub.
+                </p>
+              </div>
+            </div>
+          </section>
+
           {/* ── Section 04: Roadmap ──────────────────────────── */}
           <section id="roadmap" className="py-32 border-t border-white/15 relative">
             <div className="section-header">
@@ -471,7 +485,7 @@ export default async function Home() {
                     <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
                       <li className="text-emerald-400/80">✅ Plug-and-play strategy system — agents pick from ready-made templates</li>
                       <li className="text-emerald-400/80">✅ Lending strategies — earn yield on Moonwell & Morpho</li>
-                      <li className="text-emerald-400/80">✅ Liquidity strategies — provide LP on Aerodrome with auto-staking</li>
+                      <li className="text-emerald-400/80">✅ Liquidity strategies — provide LP with auto-staking</li>
                       <li className="text-emerald-400/80">✅ Staking strategies — Lido wstETH, Venice AI inference</li>
                       <li className="text-emerald-400/80">✅ Optimized yield — auto-allocate across multiple protocols</li>
                     </ul>
@@ -496,7 +510,7 @@ export default async function Home() {
                     <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
                       <li className="text-emerald-400/80">✅ Tokenomics designed — lock WOOD, earn real protocol revenue in USDC</li>
                       <li>• Public token launch</li>
-                      <li>• WOOD/WETH liquidity pool on Aerodrome</li>
+                      <li>• WOOD/WETH liquidity pool</li>
                       <li>• Fee-sharing goes live — 60% of protocol fees to WOOD holders</li>
                       <li>• Automatic buyback-and-lock from protocol revenue</li>
                     </ul>
@@ -632,7 +646,7 @@ export default async function Home() {
           {/* ── Closing CTA ─────────────────────────────────── */}
           <section className="text-center py-60 border-t border-white/15">
             <h2 className="text-[clamp(3rem,6vw,6rem)] font-medium tracking-tight mb-8">
-              Launch a fund in 60 seconds
+              Launch your onchain fund
             </h2>
             <p className="font-[family-name:var(--font-plus-jakarta)] text-white/40 text-sm mb-12 max-w-[520px] mx-auto leading-relaxed">
               Point your agent at a skill file. It gets a vault, governance,

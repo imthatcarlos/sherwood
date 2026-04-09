@@ -81,17 +81,21 @@ const BASE_SEPOLIA_INFRA = {
 } as const;
 
 // ── Robinhood L2 Testnet (Arbitrum Orbit, chain 46630) ──
-// No Moonwell, no Uniswap, no Venice, no ENS/Durin, no ERC-8004, no EAS.
-// USDC: Circle testnet, WETH: canonical bridged.
+// Synthra DEX for swaps. Stock tokens available.
 
 const ROBINHOOD_TESTNET_TOKENS = {
-  USDC: ZERO, // no Circle USDC on Robinhood L2
+  USDC: ZERO,
   WETH: "0x7943e237c7F95DA44E0301572D358911207852Fa" as Address,
   cbETH: ZERO,
   wstETH: ZERO,
   cbBTC: ZERO,
   DAI: ZERO,
   AERO: ZERO,
+  TSLA: "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E" as Address,
+  AMZN: "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02" as Address,
+  PLTR: "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0" as Address,
+  NFLX: "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93" as Address,
+  AMD: "0x71178BAc73cBeb415514eB542a8995b82669778d" as Address,
 } as const;
 
 const ROBINHOOD_TESTNET_MOONWELL = {
@@ -108,6 +112,24 @@ const ROBINHOOD_TESTNET_MOONWELL = {
 const ROBINHOOD_TESTNET_UNISWAP = {
   SWAP_ROUTER: ZERO,
   QUOTER_V2: ZERO,
+} as const;
+
+// ── Synthra DEX (Robinhood L2 — Uniswap V3-compatible concentrated liquidity) ──
+
+const BASE_SYNTHRA = { ROUTER: ZERO, QUOTER: ZERO, FACTORY: ZERO } as const;
+const BASE_SEPOLIA_SYNTHRA = { ROUTER: ZERO, QUOTER: ZERO, FACTORY: ZERO } as const;
+const ROBINHOOD_TESTNET_SYNTHRA = {
+  ROUTER: "0x3Ce954107b1A675826B33bF23060Dd655e3758fE" as Address,
+  QUOTER: "0x231606c321A99DE81e28fE48B07a93F1ba49e713" as Address,
+  FACTORY: "0x911b4000D3422F482F4062a913885f7b035382Df" as Address,
+} as const;
+
+// ── Chainlink (Data Streams verifier proxy) ──
+
+const BASE_CHAINLINK = { VERIFIER_PROXY: ZERO } as const;
+const BASE_SEPOLIA_CHAINLINK = { VERIFIER_PROXY: ZERO } as const;
+const ROBINHOOD_TESTNET_CHAINLINK = {
+  VERIFIER_PROXY: "0x72790f9eB82db492a7DDb6d2af22A270Dcc3Db64" as Address,
 } as const;
 
 const ROBINHOOD_TESTNET_INFRA = {
@@ -202,8 +224,8 @@ const BASE_SEPOLIA_SHERWOOD = {
 } as const;
 
 const ROBINHOOD_TESTNET_SHERWOOD = {
-  FACTORY: "0xd5C4eE2E4c5B606b9401E69A3B3FeE169037C284" as Address,
-  GOVERNOR: "0x358AD8B492BcC710BE0D7c902D8702164c35DC34" as Address,
+  FACTORY: "0x6d026e2f5Ff0C34A01690EC46Cb601B8fF391985" as Address,
+  GOVERNOR: "0xd882056ba6b0aEd8908c541884B327121E2f2C9C" as Address,
 } as const;
 
 const HYPEREVM_SHERWOOD = { FACTORY: ZERO, GOVERNOR: ZERO } as const;
@@ -259,6 +281,7 @@ const BASE_STRATEGY_TEMPLATES = {
   WSTETH_MOONWELL: "0x6d026e2f5Ff0C34A01690EC46Cb601B8fF391985" as Address,
   MAMO_YIELD: "0x5c98808Ce5e51767ba2d969F75312eEFF0b14a6A" as Address,
   HYPERLIQUID_PERP: ZERO as Address,
+  PORTFOLIO: ZERO as Address,
 } as const;
 
 const BASE_SEPOLIA_STRATEGY_TEMPLATES = {
@@ -268,6 +291,7 @@ const BASE_SEPOLIA_STRATEGY_TEMPLATES = {
   WSTETH_MOONWELL: ZERO as Address,
   MAMO_YIELD: ZERO as Address,
   HYPERLIQUID_PERP: ZERO as Address,
+  PORTFOLIO: ZERO as Address,
 } as const;
 
 const ROBINHOOD_TESTNET_STRATEGY_TEMPLATES = {
@@ -277,6 +301,7 @@ const ROBINHOOD_TESTNET_STRATEGY_TEMPLATES = {
   WSTETH_MOONWELL: ZERO as Address,
   MAMO_YIELD: ZERO as Address,
   HYPERLIQUID_PERP: ZERO as Address,
+  PORTFOLIO: "0xAe981882923E0C76A7F10E7cAa3782023c0abd9B" as Address,
 } as const;
 
 const HYPEREVM_STRATEGY_TEMPLATES = {
@@ -286,6 +311,7 @@ const HYPEREVM_STRATEGY_TEMPLATES = {
   WSTETH_MOONWELL: ZERO as Address,
   MAMO_YIELD: ZERO as Address,
   HYPERLIQUID_PERP: ZERO as Address, // TODO: set after DeployTemplates on HyperEVM
+  PORTFOLIO: ZERO as Address,
 } as const;
 
 // ── EAS (Ethereum Attestation Service) — Base predeploys ──
@@ -436,6 +462,25 @@ const STRATEGY_TEMPLATE_REGISTRY: Record<Network, typeof BASE_STRATEGY_TEMPLATES
   "hyperevm-testnet": HYPEREVM_STRATEGY_TEMPLATES,
 };
 
+const HYPEREVM_SYNTHRA = { ROUTER: ZERO, QUOTER: ZERO, FACTORY: ZERO } as const;
+const HYPEREVM_CHAINLINK = { VERIFIER_PROXY: ZERO } as const;
+
+const SYNTHRA_REGISTRY: Record<Network, typeof BASE_SYNTHRA> = {
+  base: BASE_SYNTHRA,
+  "base-sepolia": BASE_SEPOLIA_SYNTHRA,
+  "robinhood-testnet": ROBINHOOD_TESTNET_SYNTHRA,
+  hyperevm: HYPEREVM_SYNTHRA,
+  "hyperevm-testnet": HYPEREVM_SYNTHRA,
+};
+
+const CHAINLINK_REGISTRY: Record<Network, typeof BASE_CHAINLINK> = {
+  base: BASE_CHAINLINK,
+  "base-sepolia": BASE_SEPOLIA_CHAINLINK,
+  "robinhood-testnet": ROBINHOOD_TESTNET_CHAINLINK,
+  hyperevm: HYPEREVM_CHAINLINK,
+  "hyperevm-testnet": HYPEREVM_CHAINLINK,
+};
+
 const EAS_CONTRACT_REGISTRY: Record<Network, typeof BASE_EAS> = {
   base: BASE_EAS,
   "base-sepolia": BASE_SEPOLIA_EAS,
@@ -500,4 +545,12 @@ export function EAS_CONTRACTS() {
 
 export function EAS_SCHEMAS() {
   return EAS_SCHEMA_REGISTRY[getNetwork()];
+}
+
+export function SYNTHRA() {
+  return SYNTHRA_REGISTRY[getNetwork()];
+}
+
+export function CHAINLINK() {
+  return CHAINLINK_REGISTRY[getNetwork()];
 }
