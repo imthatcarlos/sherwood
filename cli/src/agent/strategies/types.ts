@@ -40,6 +40,17 @@ export interface StrategyContext {
     volumeSpike: number;
     tweetCount: number;
   };
+  hyperliquidData?: {         // from Hyperliquid (free, native exchange data)
+    fundingRate: number;
+    openInterest: number;
+    oiChange24h: number;
+    volume24h: number;
+    markPrice: number;
+    oraclePrice: number;
+    prevDayPrice: number;
+    orderBookImbalance: number;
+    largeTradesBias: number;
+  };
   tokenSymbol?: string;       // resolved symbol (e.g. "ETH" for "ethereum")
 }
 

@@ -385,6 +385,7 @@ export function computeTradeDecision(
     sentimentContrarian: w.sentiment,
     twitterSentiment: w.sentiment,
     tokenUnlock: w.event,
+    hyperliquidFlow: w.onchain,
   };
 
   // Weighted sum

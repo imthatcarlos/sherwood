@@ -330,6 +330,7 @@ export class TradingAgent {
         fundingRateData, // from phase 3
         unlockData, // from phase 3
         twitterData, // from phase 3
+        hyperliquidData, // from phase 3
         tokenSymbol, // from phase 3
       };
 
