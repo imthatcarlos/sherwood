@@ -70,31 +70,39 @@ function formatDelta(delta: number): string {
 }
 
 /**
- * Filter price history bars by timeframe.
- * Source data is 15-minute bars for 24h. Timeframes select a window + downsample.
+ * Downsample bars to match the selected granularity.
+ * The chart always shows the full range (proposal start → now).
+ * The granularity selector controls how many bars are shown:
+ *   15m = every bar, 1h = every 4th, 4h = every 16th, 1d = every 96th
+ * These ratios assume 15-min source resolution; for coarser source data
+ * the step is clamped to 1.
  */
-function filterBars(bars: PriceBar[], timeframe: typeof TIMEFRAMES[number]): PriceBar[] {
-  if (bars.length === 0) return bars;
-  const now = bars[bars.length - 1].timestamp;
-  const windowSeconds: Record<string, number> = {
-    "15m": 15 * 60,
-    "1h": 3600,
-    "4h": 4 * 3600,
-    "1d": 24 * 3600,
-  };
-  const cutoff = now - windowSeconds[timeframe];
-  const filtered = bars.filter((b) => b.timestamp >= cutoff);
+function downsampleBars(bars: PriceBar[], granularity: typeof TIMEFRAMES[number]): PriceBar[] {
+  if (bars.length <= 2) return bars;
 
-  // For 1h and 4h, downsample by taking every Nth bar to reduce noise
-  if (timeframe === "4h") {
-    // Every 4th bar (1h intervals)
-    return filtered.filter((_, i) => i % 4 === 0 || i === filtered.length - 1);
+  // Estimate source resolution from first two bars
+  const srcInterval = bars.length > 1 ? bars[1].timestamp - bars[0].timestamp : 900;
+
+  // Target interval in seconds for each granularity
+  const targetInterval: Record<string, number> = {
+    "15m": 900,
+    "1h": 3600,
+    "4h": 14400,
+    "1d": 86400,
+  };
+
+  const step = Math.max(1, Math.round(targetInterval[granularity] / srcInterval));
+  if (step <= 1) return bars;
+
+  const result: PriceBar[] = [];
+  for (let i = 0; i < bars.length; i += step) {
+    result.push(bars[i]);
   }
-  if (timeframe === "1d") {
-    // Every 4th bar (1h intervals from 15m data)
-    return filtered.filter((_, i) => i % 4 === 0 || i === filtered.length - 1);
+  // Always include the last bar
+  if (result[result.length - 1] !== bars[bars.length - 1]) {
+    result.push(bars[bars.length - 1]);
   }
-  return filtered;
+  return result;
 }
 
 function formatTime(ts: number): string {
@@ -170,8 +178,8 @@ export default function PortfolioDashboard({
     ? ((portfolioValue - totalInvestedNum) / totalInvestedNum) * 100
     : 0;
 
-  // Filter bars for selected timeframe
-  const chartBars = useMemo(() => filterBars(priceHistory, selectedTf), [priceHistory, selectedTf]);
+  // Downsample bars for selected granularity (chart always shows full range)
+  const chartBars = useMemo(() => downsampleBars(priceHistory, selectedTf), [priceHistory, selectedTf]);
   const chartData = chartBars.map((b) => b.value);
   const labels = chartBars.map((b) => formatTime(b.timestamp));
 
@@ -272,28 +280,43 @@ export default function PortfolioDashboard({
 
       {/* Right: ticker strip */}
       <div className="ticker-strip">
-        {allocations.map((a, i) => (
-          <div key={a.token} className="ticker-item">
-            <div className="ticker-header">
-              {a.logo ? (
-                <img
-                  src={a.logo}
-                  alt={a.symbol}
-                  width={20}
-                  height={20}
-                  style={{ borderRadius: "50%", flexShrink: 0 }}
-                />
-              ) : (
-                <span className="dot" style={{ width: 12, height: 12, borderRadius: "50%", background: PALETTE[i % PALETTE.length], display: "inline-block", flexShrink: 0 }} />
-              )}
-              <span className="ticker-symbol">{a.symbol}</span>
-              <span className="ticker-weight">{a.weightPct.toFixed(0)}%</span>
+        {allocations.map((a, i) => {
+          const tv = tokenValues[i];
+          const delta = tv && tv.invested > 0
+            ? ((tv.value - tv.invested) / tv.invested) * 100
+            : 0;
+          const hasPrices = !loading && tv?.price > 0;
+
+          return (
+            <div key={a.token} className="ticker-item">
+              <div className="ticker-header">
+                {a.logo ? (
+                  <img
+                    src={a.logo}
+                    alt={a.symbol}
+                    width={20}
+                    height={20}
+                    style={{ borderRadius: "50%", flexShrink: 0 }}
+                  />
+                ) : (
+                  <span className="dot" style={{ width: 12, height: 12, borderRadius: "50%", background: PALETTE[i % PALETTE.length], display: "inline-block", flexShrink: 0 }} />
+                )}
+                <span className="ticker-symbol">{a.symbol}</span>
+                <span className="ticker-weight">{a.weightPct.toFixed(0)}%</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span className="ticker-mcap">
+                  {a.marketCap ? `MCap ${formatMarketCap(a.marketCap)}` : "—"}
+                </span>
+                {hasPrices && (
+                  <span className={`ticker-delta ${delta >= 0 ? "delta-positive" : "delta-negative"}`}>
+                    {formatDelta(delta)}
+                  </span>
+                )}
+              </div>
             </div>
-            <span className="ticker-mcap">
-              {a.marketCap ? `MCap ${formatMarketCap(a.marketCap)}` : "—"}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -172,20 +172,31 @@ export interface PriceBar {
 
 /**
  * Fetch portfolio value time-series using Codex getBars.
- * Fetches 15-minute candles for the last 24h for each token,
+ * Fetches candles from proposal execution to now for each token,
  * multiplies close price by held amount, sums across tokens.
+ *
+ * Resolution is adaptive based on strategy duration:
+ *   < 6h → "5" (5-min bars), < 24h → "15", < 7d → "60", else → "240"
  *
  * Returns an array of { timestamp, value } sorted by time.
  */
 export async function fetchPortfolioPriceHistory(
   tokens: { address: string; amount: number }[],
   chainId: number,
+  executedAt: number,
 ): Promise<PriceBar[]> {
   const codexKey = process.env.CODEX_API_KEY;
   if (!codexKey || tokens.length === 0) return [];
 
   const now = Math.floor(Date.now() / 1000);
-  const from = now - 86400; // 24h
+  const duration = now - executedAt;
+
+  // Adaptive resolution based on strategy duration
+  let resolution: string;
+  if (duration < 6 * 3600) resolution = "5";
+  else if (duration < 24 * 3600) resolution = "15";
+  else if (duration < 7 * 86400) resolution = "60";
+  else resolution = "240";
 
   try {
     const barResults = await Promise.all(
@@ -197,7 +208,7 @@ export async function fetchPortfolioPriceHistory(
             Authorization: codexKey,
           },
           body: JSON.stringify({
-            query: `{ getBars(symbol: "${t.address}:${chainId}", from: ${from}, to: ${now}, resolution: "15") { t c } }`,
+            query: `{ getBars(symbol: "${t.address}:${chainId}", from: ${executedAt}, to: ${now}, resolution: "${resolution}") { t c } }`,
           }),
         });
         const data = await res.json();

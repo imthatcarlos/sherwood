@@ -50,6 +50,7 @@ export async function fetchPortfolioData(
   chainId: number,
   assetDecimals: number,
   assetSymbol: string,
+  executedAt?: number,
 ): Promise<PortfolioData | null> {
   const client = getPublicClient(chainId);
 
@@ -201,12 +202,14 @@ export async function fetchPortfolioData(
     });
 
     // Step 7: Fetch price history for portfolio chart (Codex getBars)
+    const priceHistoryFrom = executedAt ?? Math.floor(Date.now() / 1000) - 86400;
     const priceHistory = await fetchPortfolioPriceHistory(
       allocations.map((a) => ({
         address: a.token,
         amount: parseFloat(a.tokenAmount),
       })),
       chainId,
+      priceHistoryFrom,
     );
 
     return {

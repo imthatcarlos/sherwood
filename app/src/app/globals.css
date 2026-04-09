@@ -988,6 +988,13 @@ body {
   font-family: var(--font-plus-jakarta), sans-serif;
 }
 
+.ticker-item .ticker-delta {
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-plus-jakarta), sans-serif;
+}
+
 .ticker-item .ticker-mcap {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.5);
