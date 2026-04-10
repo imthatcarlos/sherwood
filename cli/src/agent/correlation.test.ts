@@ -5,11 +5,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CorrelationGuard } from './correlation.js';
 
-// Mock the CoinGeckoProvider
+// Mock the CoinGeckoProvider as a class constructor
 vi.mock('../providers/data/coingecko.js', () => ({
-  CoinGeckoProvider: vi.fn().mockImplementation(() => ({
-    getOHLC: vi.fn(),
-  }))
+  CoinGeckoProvider: class {
+    getOHLC = vi.fn().mockResolvedValue([]);
+  },
 }));
 
 describe('CorrelationGuard', () => {
