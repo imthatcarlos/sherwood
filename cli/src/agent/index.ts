@@ -432,6 +432,11 @@ export class TradingAgent {
     };
   }
 
+  /** Update the token watchlist without recreating the agent (preserves caches). */
+  updateTokens(tokens: string[]): void {
+    this.config.tokens = tokens;
+  }
+
   /** Analyze all watchlist tokens. */
   async analyzeAll(): Promise<TokenAnalysis[]> {
     const results: TokenAnalysis[] = [];

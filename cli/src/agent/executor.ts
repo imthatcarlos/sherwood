@@ -24,6 +24,8 @@ export interface ExecutionConfig {
   strategyClone?: Address;
   /** Proposer private key (read from SHERWOOD_PROPOSER_KEY env) */
   proposerPrivateKey?: Hex;
+  /** HyperCore perp asset index (default 3 = ETH) */
+  assetIndex?: number;
 }
 
 export interface OrderParams {
@@ -257,9 +259,11 @@ export class TradeExecutor {
 
     // limitPx: slightly above market for buy IOC (1% slippage buffer)
     const limitPx = priceToUint64(currentPrice * 1.01);
-    // sz: token quantity = USD amount / current price
+    // sz: token quantity — use asset-specific szDecimals for HyperCore encoding
     const quantity = order.amountUsd / currentPrice;
-    const sz = sizeToUint64(quantity);
+    const assetIndex = this.config.assetIndex ?? 3; // default ETH
+    const szDec = HYPERCORE_SZ_DECIMALS[assetIndex] ?? 6;
+    const sz = sizeToUint64(quantity, szDec);
     const stopLossPx = priceToUint64(order.stopLoss);
     const stopLossSz = sz;
 
@@ -329,7 +333,19 @@ function priceToUint64(priceUsd: number): bigint {
   return BigInt(Math.round(priceUsd * 1e6));
 }
 
-/** Convert a USD size (e.g. 1000.00) to HyperCore uint64 format (6-decimal fixed point). */
-function sizeToUint64(amountUsd: number): bigint {
-  return BigInt(Math.round(amountUsd * 1e6));
+/** Convert a token quantity to HyperCore uint64 format using the asset's szDecimals.
+ *  HyperCore szDecimals varies per asset (e.g. BTC=5, ETH=4, others differ).
+ *  Default 6 for USDC-denominated sizes. */
+function sizeToUint64(quantity: number, szDecimals: number = 6): bigint {
+  return BigInt(Math.round(quantity * 10 ** szDecimals));
 }
+
+/** Known HyperCore szDecimals per asset index. Source: Hyperliquid API meta endpoint. */
+const HYPERCORE_SZ_DECIMALS: Record<number, number> = {
+  0: 5,  // BTC
+  1: 4,  // ETH (but also index 3 on some configs)
+  2: 2,  // ATOM
+  3: 4,  // ETH
+  4: 1,  // DOGE
+  // Add more as needed — or fetch dynamically from Hyperliquid meta API
+};

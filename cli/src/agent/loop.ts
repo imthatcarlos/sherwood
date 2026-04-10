@@ -174,9 +174,9 @@ export class AgentLoop {
         const selector = new DynamicTokenSelector();
         const selection = await selector.selectTokens();
 
-        // Update agent config with new tokens
+        // Update token list without recreating the agent (preserves OI cache, provider state)
         this.config.agent.tokens = selection.tokens;
-        this.agent = new TradingAgent(this.config.agent);
+        this.agent.updateTokens(selection.tokens);
 
         if (this.cycleCount % 6 === 1) { // Show selection summary every 6th cycle (~30min for 5min cycles)
           console.log(chalk.dim(`  Updated tokens: ${selection.tokens.length} from ${selection.totalMarketsScanned} HL markets`));

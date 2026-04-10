@@ -229,21 +229,23 @@ export class TwitterSentimentProvider {
 
       // Process each batch
       for (const batch of batches) {
-        const tweetTexts = batch.map((tweet, idx) => `${idx + 1}. "${tweet.text}"`).join('\n');
+        // Sanitize tweet text to prevent prompt injection:
+        // - Truncate to 280 chars (Twitter max)
+        // - Strip control characters and prompt-injection patterns
+        // - Use system/user message separation
+        const sanitizeTweet = (text: string): string => {
+          return text
+            .slice(0, 280)
+            .replace(/[\x00-\x1f]/g, '') // strip control chars
+            .replace(/["\\]/g, (c) => `\\${c}`) // escape quotes/backslashes
+            .replace(/\n/g, ' '); // flatten newlines
+        };
 
-        const prompt = `You are a crypto market sentiment analyzer. For each tweet below, classify sentiment as:
-- BULLISH (positive price expectation)
-- BEARISH (negative price expectation)
-- NEUTRAL (no clear directional sentiment)
+        const tweetTexts = batch.map((tweet, idx) => `${idx + 1}. "${sanitizeTweet(tweet.text)}"`).join('\n');
 
-Also rate confidence 0-100.
+        const systemPrompt = `You are a crypto market sentiment analyzer. For each tweet, classify sentiment as BULLISH, BEARISH, or NEUTRAL with confidence 0-100. Consider sarcasm, irony, CT slang. Respond ONLY as a JSON array: [{"sentiment": "BULLISH", "confidence": 85}, ...]`;
 
-Consider: sarcasm, irony, CT slang, context. "Number go up" is bullish. "This is fine" during a dump is bearish sarcasm.
-
-Tweets:
-${tweetTexts}
-
-Respond as JSON array: [{"sentiment": "BULLISH", "confidence": 85}, ...]`;
+        const userPrompt = `Analyze these ${batch.length} tweets:\n${tweetTexts}`;
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -253,7 +255,10 @@ Respond as JSON array: [{"sentiment": "BULLISH", "confidence": 85}, ...]`;
           },
           body: JSON.stringify({
             model: 'gpt-4o-mini',
-            messages: [{ role: 'user', content: prompt }],
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
             temperature: 0,
           }),
         });

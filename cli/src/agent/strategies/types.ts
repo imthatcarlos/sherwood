@@ -29,16 +29,20 @@ export interface StrategyContext {
     annualizedRate: number;
     exchange: string;
   };
-  unlockData?: {              // from DefiLlama FDV analysis (free)
-    upcomingUnlocks: Array<{ percentOfSupply: number; daysUntil: number; description: string }>;
-    totalUpcomingPercent: number;
-  };
-  twitterData?: {             // from Twitter API v2 (free tier with auth)
+  twitterData?: {             // from Twitter API v2 + OpenAI LLM
     mentionVolume: number;
     sentimentScore: number;
     engagementWeightedSentiment: number;
     volumeSpike: number;
     tweetCount: number;
+    llmSentiment?: number;
+    llmConfidence?: number;
+    llmBullishPercent?: number;
+    llmBearishPercent?: number;
+  };
+  unlockData?: {              // from DefiLlama FDV analysis (free)
+    upcomingUnlocks: Array<{ percentOfSupply: number; daysUntil: number; description: string }>;
+    totalUpcomingPercent: number;
   };
   hyperliquidData?: {         // from Hyperliquid (free, native exchange data)
     fundingRate: number;

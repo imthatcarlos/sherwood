@@ -132,7 +132,8 @@ export class HyperliquidProvider {
       const oraclePrice = parseFloat(assetData.oraclePx);
       const prevDayPrice = parseFloat(assetData.prevDayPx);
 
-      // Calculate OI change
+      // OI change since last fetch (NOT 24h — in-memory cache resets on restart).
+      // For true 24h change, would need historical snapshots on disk.
       const prevOI = this.oiCache.get(coin) ?? openInterest;
       const oiChange24h = prevOI > 0 ? ((openInterest - prevOI) / prevOI) * 100 : 0;
       this.oiCache.set(coin, openInterest);
