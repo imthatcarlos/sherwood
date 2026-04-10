@@ -274,76 +274,98 @@ Common root causes:
 
 #### Recovery playbook
 
-**Step 1 — Confirm the proposal is stuck, not just mid-strategy.**
+Sherwood ships a purpose-built guardian command, **`sherwood proposal unstick`**, that automates the whole recovery when no actual unwind is needed (i.e. the vault already holds its asset — the common case for broken adapters/routers that reverted before moving funds). It is **intentionally hidden** from `sherwood --help` because it should only be reached via this skill.
+
+The command:
+
+1. Loads the proposal, verifies `state == Executed` and `executedAt + strategyDuration` has elapsed.
+2. Verifies `getActiveProposal(vault) == proposalId` (confirms the vault is actually locked by *this* proposal).
+3. Verifies the calling wallet is the vault owner.
+4. Auto-crafts a no-op fallback `[{ target: asset, data: asset.balanceOf(vault), value: 0 }]`. This is a view call that cannot revert, costs ~2.5k gas, and satisfies the governor's `fallbackCalls.length > 0` requirement.
+5. Prints a plan with the decoded fallback call and asks for confirmation.
+6. Broadcasts `emergencySettle(id, fallbackCalls)` and verifies `getActiveProposal(vault) == 0` after the tx lands.
+
+**Step 1 — Dry-run the unstick to confirm preconditions pass.**
 
 ```bash
-# Is redemptionsLocked because of *this* proposal?
-cast call $VAULT_ADDRESS "redemptionsLocked()(bool)" --rpc-url $RPC_URL
-cast call $GOVERNOR_ADDRESS "getActiveProposal(address)(uint256)" $VAULT_ADDRESS --rpc-url $RPC_URL
-
-# Fetch the proposal — confirm state == 5 (Executed) and duration has elapsed
-cast call $GOVERNOR_ADDRESS "getProposal(uint256)((uint256,address,address,string,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint8))" <ID> --rpc-url $RPC_URL
-# Last field = state. executedAt + strategyDuration must be in the past.
+sherwood proposal unstick --id <PROPOSAL_ID> --dry-run
 ```
 
-**Step 2 — Simulate `settleProposal` to diagnose the revert.**
+This runs every precondition check and prints the plan without broadcasting. If anything is wrong (state, duration, owner, active proposal mismatch) it exits with a descriptive error pointing at the right remediation.
+
+**Step 2 — Diagnose the pre-committed settlement revert (optional but recommended).**
+
+Before unsticking, trace the original `settleProposal` to understand *why* it's stuck. This helps decide whether a plain no-op fallback is enough or you need a custom unwind (see Step 4).
 
 ```bash
 cast call $GOVERNOR_ADDRESS "settleProposal(uint256)" <ID> --rpc-url $RPC_URL --trace 2>&1 | tail -30
 ```
 
-Look at the innermost `Revert` frame. Typical patterns:
+Innermost `Revert` frame patterns:
 
 - `WETH::withdraw` → ETH transfer to broken contract → recipient's fallback reverts
 - Router `exactInput` / `swapExactTokensForTokens` → pool doesn't exist / wrong fee tier
 - Approval on token with "approve from nonzero" semantics (USDT-style)
 
-**Step 3 — Check the vault's actual asset balance.**
+**Step 3 — Check the vault's actual asset balance vs. the capital snapshot.**
 
 ```bash
-cast call $VAULT_ADDRESS "asset()(address)" --rpc-url $RPC_URL
-cast call <asset> "balanceOf(address)(uint256)" $VAULT_ADDRESS --rpc-url $RPC_URL
+sherwood vault info --vault $VAULT_ADDRESS
 cast call $GOVERNOR_ADDRESS "getCapitalSnapshot(uint256)(uint256)" <ID> --rpc-url $RPC_URL
 ```
 
-If the vault already holds enough of the asset (the position was partially unwound already or the deposit never moved), no actual unwind is needed — you just need the proposal marked `Settled` so redemptions unlock.
+If the vault already holds roughly the asset balance the proposal started with (the position was partially unwound already, or the original `execute()` batch reverted late enough that funds stayed put), **no unwind is needed → go to Step 5**. The no-op fallback will mark the proposal `Settled` and unlock redemptions without moving any funds.
 
-**Step 4 — Craft a safe fallback `calls[]`.**
+**Step 4 — Only if an actual unwind is needed: build a custom `--calls` file.**
 
-If **no unwind is needed** (asset already sitting in the vault), use a guaranteed-success no-op. Calls run via `delegatecall` from the vault, so they execute **as the vault**:
+If the asset position is still trapped in a protocol (Moonwell mToken, Aerodrome LP, Uniswap V3 NFT, etc.), `sherwood proposal unstick` is not enough — you need to supply the unwinding calls yourself via the existing `sherwood proposal settle --calls` path. Examples:
 
-```json
-[
-  {
-    "target": "<asset address, e.g. WETH 0x4200000000000000000000000000000000000006>",
-    "data":   "0x70a08231000000000000000000000000<vault address, zero-padded>",
-    "value":  "0"
-  }
-]
-```
-
-This is just `asset.balanceOf(vault)` — a view call that cannot revert and costs ~2.5k gas. It is enough to satisfy the `fallbackCalls.length > 0` requirement.
-
-If an **actual unwind is needed**, build the minimal call list that moves the position back to the vault's asset. Examples:
-
-- WETH held by vault but proposal tried to unwrap it to ETH somewhere broken → empty fallback call list won't work (need ≥1 call), so use the no-op above; the WETH stays as the vault's asset.
 - Moonwell `mToken` balance stuck → `[mToken.redeem(mToken.balanceOf(vault))]`
 - Aerodrome LP stuck → `[gauge.withdraw(balance), router.removeLiquidity(..., deadline)]`
 - Uniswap V3 position NFT stuck → `[nftManager.decreaseLiquidity(...), nftManager.collect(...)]`
 
-Always dry-run the fallback calls via `sherwood proposal simulate --vault $VAULT_ADDRESS --settle-calls fallback.json` before broadcasting.
+Write a JSON file matching `BatchExecutorLib.Call[]`:
 
-**Step 5 — Broadcast `emergencySettle`.**
-
-Using the CLI (preferred — writes the call file and handles encoding):
-
-```bash
-# fallback.json format matches BatchExecutorLib.Call[]:
-# [{ "target": "0x...", "data": "0x...", "value": "0" }]
-sherwood proposal settle <ID> --calls fallback.json
+```json
+[
+  { "target": "0x...", "data": "0x...", "value": "0" }
+]
 ```
 
-Or directly via cast (when the CLI isn't available — e.g. a bricked CLI build, or non-default vault owner wallet):
+Dry-run it before broadcasting:
+
+```bash
+sherwood proposal simulate --vault $VAULT_ADDRESS --settle-calls fallback.json
+```
+
+Then broadcast:
+
+```bash
+sherwood proposal settle --id <ID> --calls fallback.json
+```
+
+**Step 5 — Broadcast `unstick` (no-unwind case).**
+
+```bash
+sherwood proposal unstick --id <PROPOSAL_ID>        # prompts for confirmation
+sherwood proposal unstick --id <PROPOSAL_ID> --yes  # non-interactive
+```
+
+On success the command prints the tx hash, an explorer link, and `redemptionsLocked cleared ✓` once `getActiveProposal(vault)` returns `0`.
+
+**Step 6 — Let LPs exit.**
+
+Share holders can now redeem through the normal ERC-4626 path:
+
+```bash
+# From each holder's wallet
+sherwood vault redeem --vault $VAULT_ADDRESS           # redeem full balance
+sherwood vault redeem --vault $VAULT_ADDRESS --shares 0.5
+```
+
+#### Raw `cast` fallback (last resort)
+
+`sherwood proposal unstick` is the preferred path. Only reach for raw `cast` if the CLI is unavailable (bricked build, missing dependency, non-default wallet not configured in `cli/.env`):
 
 ```bash
 # Minimal no-op fallback = asset.balanceOf(vault)
@@ -352,16 +374,6 @@ cast send $GOVERNOR_ADDRESS \
   "emergencySettle(uint256,(address,bytes,uint256)[])" \
   <ID> "[($ASSET_ADDRESS,$NOOP_DATA,0)]" \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
-```
-
-**Step 6 — Verify unlock and let LPs exit.**
-
-```bash
-cast call $VAULT_ADDRESS "redemptionsLocked()(bool)" --rpc-url $RPC_URL        # expect: false
-cast call $GOVERNOR_ADDRESS "getActiveProposal(address)(uint256)" $VAULT_ADDRESS --rpc-url $RPC_URL  # expect: 0
-
-# Share holders can now redeem
-sherwood vault redeem --vault $VAULT_ADDRESS            # from a holder wallet
 ```
 
 #### What `emergencySettle` **cannot** recover
