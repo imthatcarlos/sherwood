@@ -107,19 +107,74 @@ contract UniswapSwapAdapter is ISwapAdapter {
                 })
             );
         } else if (mode == 1) {
-            // V3 multi-hop — reverse path if stored direction doesn't match tokenIn
+            // V3 multi-hop via chained exactInputSingle calls.
+            // SwapRouter02's exactInput computes wrong pool addresses for certain pairs
+            // on Base, so we decompose the path and swap hop-by-hop using exactInputSingle
+            // which always resolves pools correctly.
             bytes memory path = abi.decode(routeData, (bytes));
             address pathStart = _extractFirstAddress(path);
             if (pathStart != tokenIn) {
                 path = _reversePath(path);
             }
-            amountOut = v3Router.exactInput(
-                ISwapRouter.ExactInputParams({
-                    path: path, recipient: msg.sender, amountIn: amountIn, amountOutMinimum: amountOutMin
-                })
-            );
+            amountOut = _chainedSingleHops(path, amountIn, amountOutMin);
         } else {
             revert UnsupportedMode();
+        }
+    }
+
+    /// @dev Execute a multi-hop swap as sequential exactInputSingle calls.
+    ///      Intermediate tokens are held by this contract between hops.
+    function _chainedSingleHops(bytes memory path, uint256 amountIn, uint256 amountOutMin)
+        internal
+        returns (uint256 amountOut)
+    {
+        uint256 len = path.length;
+        require(len >= 43 && (len - 20) % 23 == 0, "invalid path length");
+        uint256 numHops = (len - 20) / 23;
+
+        uint256 currentAmount = amountIn;
+
+        for (uint256 i; i < numHops; ++i) {
+            address hopIn = _extractAddressAt(path, i * 23);
+            uint24 fee = _extractFeeAt(path, i * 23 + 20);
+            address hopOut = _extractAddressAt(path, i * 23 + 23);
+
+            bool lastHop = (i == numHops - 1);
+
+            // Approve router for intermediate tokens (first hop was approved in swap())
+            if (i > 0) {
+                IERC20(hopIn).forceApprove(address(v3Router), currentAmount);
+            }
+
+            currentAmount = v3Router.exactInputSingle(
+                ISwapRouter.ExactInputSingleParams({
+                    tokenIn: hopIn,
+                    tokenOut: hopOut,
+                    fee: fee,
+                    recipient: lastHop ? msg.sender : address(this),
+                    amountIn: currentAmount,
+                    amountOutMinimum: lastHop ? amountOutMin : 0,
+                    sqrtPriceLimitX96: 0
+                })
+            );
+        }
+
+        amountOut = currentAmount;
+    }
+
+    /// @dev Extract a 20-byte address at an arbitrary byte offset in a packed path.
+    function _extractAddressAt(bytes memory path, uint256 offset) internal pure returns (address addr) {
+        require(path.length >= offset + 20, "path too short");
+        assembly {
+            addr := shr(96, mload(add(add(path, 32), offset)))
+        }
+    }
+
+    /// @dev Extract a 3-byte uint24 fee at an arbitrary byte offset in a packed path.
+    function _extractFeeAt(bytes memory path, uint256 offset) internal pure returns (uint24 fee) {
+        require(path.length >= offset + 3, "path too short");
+        assembly {
+            fee := shr(232, mload(add(add(path, 32), offset)))
         }
     }
 
