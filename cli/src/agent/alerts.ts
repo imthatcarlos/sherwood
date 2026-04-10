@@ -363,6 +363,7 @@ export class AlertSystem {
     return state.alerts.some(existing =>
       existing.type === newAlert.type &&
       existing.tokenId === newAlert.tokenId &&
+      existing.title === newAlert.title &&
       (now - existing.timestamp) < DEDUP_WINDOW &&
       !existing.acknowledged
     );

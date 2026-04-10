@@ -417,20 +417,22 @@ export function computeTradeDecision(
   let score = totalWeight > 0 ? weightedSum / totalWeight : 0;
   const confidence = totalWeight > 0 ? weightedConfidence / totalWeight : 0;
 
-  // Apply correlation suppression if provided
+  // Apply correlation-aware adjustment if provided
+  // BTC bearish → suppress longs, boost shorts
+  // BTC bullish → boost longs, suppress shorts
   if (correlationCheck) {
     if (correlationCheck.btcBias === "bearish" && score > 0) {
-      // Suppress long signals when BTC is bearish
+      // Suppress long signals when BTC is bearish (factor < 1)
       score *= correlationCheck.suppressionFactor;
     } else if (correlationCheck.btcBias === "bearish" && score < 0) {
-      // Boost short signals slightly when BTC is bearish
+      // Boost short signals when BTC is bearish
       score *= (1 + Math.abs(correlationCheck.btcScore) * 0.3);
     } else if (correlationCheck.btcBias === "bullish" && score > 0) {
-      // Boost long signals slightly when BTC is bullish
-      score *= correlationCheck.suppressionFactor;
+      // Boost long signals when BTC is bullish
+      score *= (1 + Math.abs(correlationCheck.btcScore) * 0.3);
     } else if (correlationCheck.btcBias === "bullish" && score < 0) {
-      // Suppress short signals when BTC is bullish
-      score *= (1 - correlationCheck.btcScore * 0.3);
+      // Suppress short signals when BTC is bullish (factor < 1)
+      score *= correlationCheck.suppressionFactor;
     }
 
     // Clamp the final score

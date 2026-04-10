@@ -343,7 +343,14 @@ export function registerAgentCommands(program: Command): void {
           chain: options.chain ?? 'ethereum',
           strategyClone: options.strategyClone as `0x${string}` | undefined,
           proposerPrivateKey: proposerKey,
-          assetIndex: options.assetIndex ? parseInt(options.assetIndex, 10) : undefined,
+          assetIndex: options.assetIndex ? (() => {
+            const idx = parseInt(options.assetIndex!, 10);
+            if (isNaN(idx) || idx < 0) {
+              console.error(chalk.red(`  Invalid --asset-index: ${options.assetIndex}`));
+              process.exit(1);
+            }
+            return idx;
+          })() : undefined,
         },
         riskConfig: savedRiskConfig,
         logPath: options.log,
