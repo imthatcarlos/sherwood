@@ -270,10 +270,15 @@ Respond as JSON array: [{"sentiment": "BULLISH", "confidence": 85}, ...]`;
           return null;
         }
 
-        // Parse JSON response
+        // Parse JSON response — strip markdown code blocks if present
         let batchResults: OpenAISentimentResponse[];
         try {
-          batchResults = JSON.parse(content);
+          let jsonStr = content.trim();
+          // OpenAI sometimes wraps JSON in ```json ... ``` markdown blocks
+          if (jsonStr.startsWith('```')) {
+            jsonStr = jsonStr.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+          }
+          batchResults = JSON.parse(jsonStr);
           if (!Array.isArray(batchResults) || batchResults.length !== batch.length) {
             console.warn('OpenAI response format mismatch');
             return null;
