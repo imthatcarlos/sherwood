@@ -515,6 +515,14 @@ syndicate
         console.log(`  Metadata:   ${chalk.dim(info.metadataURI)}`);
       }
 
+      // Show XMTP group ID if cached
+      if (info.subdomain) {
+        const xmtpGroupId = getCachedGroupId(info.subdomain);
+        if (xmtpGroupId) {
+          console.log(`  XMTP Group: ${chalk.cyan(xmtpGroupId)}`);
+        }
+      }
+
       // Also show vault info
       vaultLib.setVaultAddress(info.vault);
       const vaultInfo = await vaultLib.getVaultInfo();
@@ -1540,6 +1548,17 @@ configCmd
     console.log(`  Vault:      ${contracts.vault ?? chalk.dim("not set")}`);
     console.log(`  Uniswap:    ${getUniswapApiKey() ? chalk.green("API key configured") : chalk.dim("not set")}`);
     console.log(`  Venice:     ${getVeniceApiKey() ? chalk.green("API key configured") : chalk.dim("not set")}`);
+
+    // Show XMTP group IDs
+    const groupEntries = Object.entries(config.groupCache || {}).filter(([, v]) => v);
+    if (groupEntries.length > 0) {
+      console.log();
+      console.log(chalk.bold("  XMTP Groups"));
+      for (const [sub, gid] of groupEntries) {
+        console.log(`    ${sub}: ${chalk.cyan(gid)}`);
+      }
+    }
+
     console.log();
     console.log(chalk.dim("  Config file: ~/.sherwood/config.json"));
     console.log();
