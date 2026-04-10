@@ -28,6 +28,7 @@ import { resolveSyndicate, setTextRecord, getTextRecord } from "../lib/ens.js";
 import { cacheGroupId, getCachedGroupId } from "../lib/config.js";
 import { fetchMetadata, uploadMetadata } from "../lib/ipfs.js";
 import * as factoryLib from "../lib/factory.js";
+import { ENS } from "../lib/addresses.js";
 import type { ChatEnvelope, MessageType } from "../lib/types.js";
 import type { XmtpMessage } from "../lib/xmtp.js";
 
@@ -360,12 +361,18 @@ async function handleInit(name: string, force: boolean, isPublic: boolean): Prom
 
     cacheGroupId(name, groupId);
 
-    // Persist group ID: try ENS first, fall back to IPFS metadata
-    try {
-      spinner.text = "Writing group ID to ENS...";
-      await setTextRecord(name, "xmtpGroupId", groupId, syndicate.vault);
-    } catch {
-      // ENS unavailable (e.g. HyperEVM) — persist in IPFS metadata instead
+    // Persist group ID: ENS on chains with L2 Registry, IPFS metadata otherwise
+    const hasENS = ENS().L2_REGISTRY !== "0x0000000000000000000000000000000000000000";
+    if (hasENS) {
+      try {
+        spinner.text = "Writing group ID to ENS...";
+        await setTextRecord(name, "xmtpGroupId", groupId, syndicate.vault);
+      } catch (ensErr) {
+        console.warn(chalk.yellow("\n  ⚠ Could not write ENS text record"));
+        console.warn(chalk.dim(`    ${ensErr instanceof Error ? ensErr.message : String(ensErr)}`));
+      }
+    } else {
+      // No ENS (e.g. HyperEVM) — persist in IPFS metadata
       try {
         spinner.text = "Saving group ID to syndicate metadata...";
         const info = await factoryLib.getSyndicate(syndicate.id);
