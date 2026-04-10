@@ -142,12 +142,18 @@ export default async function SyndicateDetailPage({
             <AgentRoster agents={data.agents} />
 
             {/* Bottom-left: Attestation Timeline (only on chains with EAS support) */}
-            {getAddresses(data.chainId).easExplorer && (
-              <AttestationTimeline attestations={data.attestations} agentNames={agentNames} addressNames={addressNames} />
+            {getAddresses(data.chainId).easExplorer ? (
+              <>
+                <AttestationTimeline attestations={data.attestations} agentNames={agentNames} addressNames={addressNames} />
+                {/* Bottom-right: Agent comms */}
+                <LiveFeed groupId={data.xmtpGroupId ?? undefined} addressNames={addressNames} />
+              </>
+            ) : (
+              /* No EAS — Agent comms spans full width */
+              <div style={{ gridColumn: "1 / -1" }}>
+                <LiveFeed groupId={data.xmtpGroupId ?? undefined} addressNames={addressNames} />
+              </div>
             )}
-
-            {/* Bottom-right: Agent comms */}
-            <LiveFeed groupId={data.xmtpGroupId ?? undefined} addressNames={addressNames} />
           </div>
 
           {/* Equity curve + Strategy activity */}
