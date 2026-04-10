@@ -51,6 +51,7 @@ export default async function SyndicateDetailPage({
     addressNames[agent.agentAddress.toLowerCase()] = displayName;
   }
   const creatorKey = data.creator.toLowerCase();
+  const hasIdentityRegistry = getAddresses(data.chainId).identityRegistry !== "0x0000000000000000000000000000000000000000";
 
   return (
     <>
@@ -82,6 +83,7 @@ export default async function SyndicateDetailPage({
             assetDecimals={data.assetDecimals}
             assetSymbol={data.assetSymbol}
             activeTab="vault"
+            hideAgentsTab={!hasIdentityRegistry}
           />
 
           {/* Referral banner — shown when visitor arrives via ?ref=<agentId> */}
@@ -138,8 +140,8 @@ export default async function SyndicateDetailPage({
               assetDecimals={data.assetDecimals}
             />
 
-            {/* Top-right: Agent Roster */}
-            <AgentRoster agents={data.agents} />
+            {/* Top-right: Agent Roster (only on chains with ERC-8004) */}
+            {hasIdentityRegistry && <AgentRoster agents={data.agents} />}
 
             {/* Bottom-left: Attestation Timeline (only on chains with EAS support) */}
             {getAddresses(data.chainId).easExplorer ? (

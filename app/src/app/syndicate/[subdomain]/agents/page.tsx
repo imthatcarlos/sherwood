@@ -43,6 +43,7 @@ export default async function AgentsPage({
     agentNames[agent.agentId.toString()] = displayName;
   }
   const creatorKey = data.creator.toLowerCase();
+  const hasIdentityRegistry = getAddresses(data.chainId).identityRegistry !== "0x0000000000000000000000000000000000000000";
 
   return (
     <>
@@ -73,6 +74,7 @@ export default async function AgentsPage({
             assetDecimals={data.assetDecimals}
             assetSymbol={data.assetSymbol}
             activeTab="agents"
+            hideAgentsTab={!hasIdentityRegistry}
           />
 
           {/* Stats bar */}

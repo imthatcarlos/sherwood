@@ -14,7 +14,7 @@ import {
   type ProposalData,
   type GovernorData,
 } from "@/lib/governor-data";
-import { formatBps } from "@/lib/contracts";
+import { formatBps, getAddresses } from "@/lib/contracts";
 import { formatDuration } from "@/lib/governor-data";
 import { fetchPortfolioData } from "@/lib/portfolio-data";
 import type { Address } from "viem";
@@ -267,6 +267,7 @@ export default async function ProposalsPage({
     addressNames[agent.agentAddress.toLowerCase()] = displayName;
   }
   const creatorKey = data.creator.toLowerCase();
+  const hasIdentityRegistry = getAddresses(data.chainId).identityRegistry !== "0x0000000000000000000000000000000000000000";
 
   const liveGovernor = await fetchGovernorData(data.vault);
   const isMock = !liveGovernor;
@@ -412,6 +413,7 @@ export default async function ProposalsPage({
             assetDecimals={data.assetDecimals}
             assetSymbol={data.assetSymbol}
             activeTab="proposals"
+            hideAgentsTab={!hasIdentityRegistry}
           />
 
           {/* Governor params bar */}

@@ -17,6 +17,7 @@ interface SyndicateHeaderProps {
   paused: boolean;
   chainId: number;
   activeTab: TabId;
+  hideAgentsTab?: boolean;
 }
 
 function InlineCopy({ value }: { value: string }) {
@@ -79,6 +80,7 @@ export default function SyndicateHeader({
   paused,
   chainId,
   activeTab,
+  hideAgentsTab,
 }: SyndicateHeaderProps) {
   const badge = CHAIN_BADGES[chainId] || CHAIN_BADGES[8453];
 
@@ -137,13 +139,15 @@ export default function SyndicateHeader({
         >
           Proposals
         </Link>
-        <Link
-          href={`/syndicate/${subdomain}/agents`}
-          className={`syndicate-tab ${activeTab === "agents" ? "syndicate-tab-active" : ""}`}
-          aria-current={activeTab === "agents" ? "page" : undefined}
-        >
-          Agents
-        </Link>
+        {!hideAgentsTab && (
+          <Link
+            href={`/syndicate/${subdomain}/agents`}
+            className={`syndicate-tab ${activeTab === "agents" ? "syndicate-tab-active" : ""}`}
+            aria-current={activeTab === "agents" ? "page" : undefined}
+          >
+            Agents
+          </Link>
+        )}
       </nav>
     </div>
   );

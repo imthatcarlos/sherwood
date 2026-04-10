@@ -16,6 +16,7 @@ interface SyndicateClientProps {
   assetDecimals: number;
   assetSymbol: string;
   activeTab?: TabId;
+  hideAgentsTab?: boolean;
 }
 
 export default function SyndicateClient({
@@ -29,6 +30,7 @@ export default function SyndicateClient({
   assetDecimals,
   assetSymbol,
   activeTab = "vault",
+  hideAgentsTab,
 }: SyndicateClientProps) {
   const { address, isConnected } = useAccount();
 
@@ -63,6 +65,7 @@ export default function SyndicateClient({
         paused={paused}
         chainId={chainId}
         activeTab={activeTab}
+        hideAgentsTab={hideAgentsTab}
       />
 
       {/* User position — only shown on vault tab when connected and has shares */}
