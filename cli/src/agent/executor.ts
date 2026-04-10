@@ -259,10 +259,10 @@ export class TradeExecutor {
 
     // limitPx: slightly above market for buy IOC (1% slippage buffer)
     const limitPx = priceToUint64(currentPrice * 1.01);
-    // sz: token quantity — use asset-specific szDecimals for HyperCore encoding
+    // sz: token quantity — fetch asset-specific szDecimals from Hyperliquid meta API
     const quantity = order.amountUsd / currentPrice;
     const assetIndex = this.config.assetIndex ?? 3; // default ETH
-    const szDec = HYPERCORE_SZ_DECIMALS[assetIndex] ?? 6;
+    const szDec = await getSzDecimals(assetIndex);
     const sz = sizeToUint64(quantity, szDec);
     const stopLossPx = priceToUint64(order.stopLoss);
     const stopLossSz = sz;
@@ -334,18 +334,37 @@ function priceToUint64(priceUsd: number): bigint {
 }
 
 /** Convert a token quantity to HyperCore uint64 format using the asset's szDecimals.
- *  HyperCore szDecimals varies per asset (e.g. BTC=5, ETH=4, others differ).
- *  Default 6 for USDC-denominated sizes. */
-function sizeToUint64(quantity: number, szDecimals: number = 6): bigint {
+ *  HyperCore szDecimals varies per asset — MUST be fetched from the meta API. */
+function sizeToUint64(quantity: number, szDecimals: number): bigint {
   return BigInt(Math.round(quantity * 10 ** szDecimals));
 }
 
-/** Known HyperCore szDecimals per asset index. Source: Hyperliquid API meta endpoint. */
-const HYPERCORE_SZ_DECIMALS: Record<number, number> = {
-  0: 5,  // BTC
-  1: 4,  // ETH (but also index 3 on some configs)
-  2: 2,  // ATOM
-  3: 4,  // ETH
-  4: 1,  // DOGE
-  // Add more as needed — or fetch dynamically from Hyperliquid meta API
-};
+/** Fetch szDecimals for an asset index from Hyperliquid's meta API.
+ *  Caches per session to avoid repeated calls. */
+const szDecimalsCache = new Map<number, number>();
+
+async function getSzDecimals(assetIndex: number): Promise<number> {
+  if (szDecimalsCache.has(assetIndex)) return szDecimalsCache.get(assetIndex)!;
+
+  try {
+    const res = await fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'meta' }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const meta = await res.json() as { universe: Array<{ szDecimals: number }> };
+    // Cache all assets from the response
+    for (let i = 0; i < meta.universe.length; i++) {
+      szDecimalsCache.set(i, meta.universe[i]!.szDecimals);
+    }
+  } catch (err) {
+    console.error(`Failed to fetch szDecimals from Hyperliquid meta API: ${err}`);
+  }
+
+  const dec = szDecimalsCache.get(assetIndex);
+  if (dec === undefined) {
+    throw new Error(`Unknown asset index ${assetIndex} — cannot determine szDecimals. Check Hyperliquid meta API.`);
+  }
+  return dec;
+}

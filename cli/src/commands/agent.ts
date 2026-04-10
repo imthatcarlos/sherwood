@@ -286,8 +286,9 @@ export function registerAgentCommands(program: Command): void {
     .option("--mode <mode>", "Execution mode: dry-run (default), hyperliquid-perp", "dry-run")
     .option("--strategy-clone <address>", "Strategy clone address on HyperEVM (required for hyperliquid-perp)")
     .option("--chain <chain>", "Chain for live execution (hyperevm, hyperevm-testnet)", "ethereum")
+    .option("--asset-index <n>", "HyperCore perp asset index (default: 3 = ETH)")
     .option("--x402", "Include paid x402 data (Nansen smart-money, Messari fundamentals)")
-    .action(async (options: { cycle?: string; dryRun?: boolean; tokens?: string; auto?: boolean; log?: string; mode?: string; strategyClone?: string; chain?: string; x402?: boolean }) => {
+    .action(async (options: { cycle?: string; dryRun?: boolean; tokens?: string; auto?: boolean; log?: string; mode?: string; strategyClone?: string; chain?: string; assetIndex?: string; x402?: boolean }) => {
       let tokenList: string[];
 
       if (options.auto) {
@@ -342,6 +343,7 @@ export function registerAgentCommands(program: Command): void {
           chain: options.chain ?? 'ethereum',
           strategyClone: options.strategyClone as `0x${string}` | undefined,
           proposerPrivateKey: proposerKey,
+          assetIndex: options.assetIndex ? parseInt(options.assetIndex, 10) : undefined,
         },
         riskConfig: savedRiskConfig,
         logPath: options.log,
