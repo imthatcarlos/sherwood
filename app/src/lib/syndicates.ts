@@ -629,13 +629,29 @@ async function fetchSyndicatesForChain(
   chainId: number,
   entry: ChainEntry,
 ): Promise<SyndicateDisplay[]> {
-  // Use subgraph if available, otherwise onchain
+  // Always use onchain as authoritative source so newly created syndicates
+  // appear immediately. Overlay richer subgraph data (proposals, P&L) where
+  // available — the subgraph may lag behind the chain by hours or days.
+  const onchainResults = await fetchViaOnChain(chainId, entry);
+
   if (entry.subgraphUrl) {
-    const results = await fetchViaSubgraph(chainId, entry.subgraphUrl);
-    if (results.length > 0) return results;
-    // Subgraph returned nothing — fall through to onchain
+    const subgraphResults = await fetchViaSubgraph(chainId, entry.subgraphUrl);
+    if (subgraphResults.length > 0) {
+      const sgMap = new Map(subgraphResults.map((s) => [s.vault.toLowerCase(), s]));
+      return onchainResults.map((oc) => {
+        const sg = sgMap.get(oc.vault.toLowerCase());
+        if (sg) {
+          return {
+            ...oc,
+            agents: sg.agents.length > 0 ? sg.agents : oc.agents,
+            proposalCount: sg.proposalCount || oc.proposalCount,
+          };
+        }
+        return oc;
+      });
+    }
   }
-  return fetchViaOnChain(chainId, entry);
+  return onchainResults;
 }
 
 // ── Public API ─────────────────────────────────────────────

@@ -6,6 +6,7 @@ import {
 import { truncateAddress, formatAsset, formatBps } from "@/lib/contracts";
 import PortfolioAllocation from "./PortfolioAllocation";
 import PortfolioDashboard from "./PortfolioDashboard";
+import type { CbBTCLoopData } from "@/lib/cbbtc-loop-data";
 import type { Address } from "viem";
 
 interface PortfolioAllocProps {
@@ -41,6 +42,7 @@ interface ActiveProposalProps {
   assetSymbol: string;
   portfolioAllocations?: PortfolioAllocProps | null;
   enrichedPortfolio?: EnrichedPortfolioProps | null;
+  cbbtcLoopData?: CbBTCLoopData | null;
 }
 
 export default function ActiveProposal({
@@ -51,6 +53,7 @@ export default function ActiveProposal({
   assetSymbol,
   portfolioAllocations,
   enrichedPortfolio,
+  cbbtcLoopData,
 }: ActiveProposalProps) {
   const now = BigInt(Math.floor(Date.now() / 1000));
 
@@ -186,6 +189,59 @@ export default function ActiveProposal({
           assetSymbol={portfolioAllocations.assetSymbol}
         />
       ) : null}
+
+      {cbbtcLoopData && (
+        <div
+          style={{
+            marginTop: "1.5rem",
+            padding: "1rem",
+            background: "rgba(255,255,255,0.02)",
+            borderRadius: "6px",
+            border: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "10px",
+              color: "rgba(255,255,255,0.4)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: "0.75rem",
+            }}
+          >
+            Yield Breakdown
+          </div>
+          <div style={{ display: "grid", gap: "0.6rem", fontSize: "12px", fontFamily: "var(--font-plus-jakarta), sans-serif" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "rgba(255,255,255,0.5)" }}>cbBTC supply APY (Moonwell)</span>
+              <span style={{ color: "var(--color-accent)" }}>{cbbtcLoopData.display.cbBTCSupplyApyPct}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "rgba(255,255,255,0.5)" }}>USDC borrow APR (Moonwell)</span>
+              <span>{cbbtcLoopData.display.usdcBorrowAprPct}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "rgba(255,255,255,0.5)" }}>USDC yield (Mamo)</span>
+              <span>{cbbtcLoopData.display.mamoUsdcApyPct}</span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                borderTop: "1px solid rgba(255,255,255,0.06)",
+                paddingTop: "0.6rem",
+                marginTop: "0.25rem",
+                fontWeight: 600,
+              }}
+            >
+              <span>Net APY</span>
+              <span style={{ color: cbbtcLoopData.legs.mamoUsdcApy > 0n && cbbtcLoopData.legs.cbBTCSupplyApy + cbbtcLoopData.legs.mamoUsdcApy < cbbtcLoopData.legs.usdcBorrowApr ? "#ff4d4d" : "var(--color-accent)" }}>
+                {cbbtcLoopData.display.netApyPct}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

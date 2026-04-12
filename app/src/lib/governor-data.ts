@@ -131,8 +131,9 @@ async function fetchProposalMetadata(
 
 export async function fetchGovernorData(
   vaultAddress: Address,
+  chainId?: number,
 ): Promise<GovernorData | null> {
-  const client = getPublicClient();
+  const client = getPublicClient(chainId);
 
   // Step 1: Read governor address from vault
   let governorAddress: Address;
