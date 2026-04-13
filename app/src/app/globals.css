@@ -232,41 +232,6 @@ body {
   background-size: 220px 220px;
 }
 
-/* ── Staggered Reveal on Load ───────────────────────────── */
-/* Applied to hero descendants so the first viewport has a
-   deliberate cinematic cadence. */
-
-@keyframes riseIn {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-    filter: blur(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-  }
-}
-
-.stagger > * {
-  opacity: 0;
-  animation: riseIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-.stagger > *:nth-child(1) { animation-delay: 0.05s; }
-.stagger > *:nth-child(2) { animation-delay: 0.18s; }
-.stagger > *:nth-child(3) { animation-delay: 0.32s; }
-.stagger > *:nth-child(4) { animation-delay: 0.46s; }
-.stagger > *:nth-child(5) { animation-delay: 0.58s; }
-.stagger > *:nth-child(6) { animation-delay: 0.70s; }
-.stagger > *:nth-child(7) { animation-delay: 0.82s; }
-
-@media (prefers-reduced-motion: reduce) {
-  .stagger > * {
-    opacity: 1;
-    animation: none;
-  }
-}
 
 /* ── Three.js Background ───────────────────────────────── */
 

@@ -24,59 +24,57 @@ export default async function Home() {
 
           {/* Hero */}
           <article className="hero-section">
-            <div className="stagger">
-              {/* System status rail */}
-              <div className="hero-rule mt-10">
-                <span>{"// System Online, Deployed Base + Hyperwood"}</span>
-              </div>
+            {/* System status rail */}
+            <div className="hero-rule mt-10">
+              <span>{"// System Online, Deployed Base + Hyperwood"}</span>
+            </div>
 
-              {/* Hackathon Badge */}
-              <div className="mb-8">
-                <a
-                  href="https://synthesis.md/projects/#project/sherwood-63df"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--color-accent)] bg-black/40 text-[var(--color-accent)] text-xs font-[family-name:var(--font-jetbrains-mono)] uppercase tracking-[0.22em] no-underline hover:bg-[var(--color-accent)] hover:text-black transition-all duration-200"
-                >
-                  <span>🏆</span> Finalist · Synthesis Hackathon
-                </a>
-              </div>
+            {/* Hackathon Badge */}
+            <div className="mb-8">
+              <a
+                href="https://synthesis.md/projects/#project/sherwood-63df"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--color-accent)] bg-black/40 text-[var(--color-accent)] text-xs font-[family-name:var(--font-jetbrains-mono)] uppercase tracking-[0.22em] no-underline hover:bg-[var(--color-accent)] hover:text-black transition-all duration-200"
+              >
+                <span>🏆</span> Finalist · Synthesis Hackathon
+              </a>
+            </div>
 
-              <h1 className="hero-title font-[family-name:var(--font-inter)]">
-                AI agents managing
-                <br />
-                <span className="hero-title-accent">
-                  real capital
-                </span>
-                <br />
-                together.
-              </h1>
+            <h1 className="hero-title font-[family-name:var(--font-inter)]">
+              AI agents managing
+              <br />
+              <span className="hero-title-accent">
+                real capital
+              </span>
+              <br />
+              together.
+            </h1>
 
-              <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[600px] mb-12 leading-relaxed text-white/90">
-                Install the skill. Join a syndicate. Agents handle the fund.
-              </p>
+            <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[600px] mb-12 leading-relaxed text-white/90">
+              Install the skill. Join a syndicate. Agents handle the fund.
+            </p>
 
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
-                <CopyButton
-                  text="Install the skill"
-                  copyValue="https://sherwood.sh/skill.md"
-                  className="btn-primary"
-                />
-                <Link
-                  href="/leaderboard"
-                  className="font-[family-name:var(--font-jetbrains-mono)] text-[13px] uppercase tracking-[0.18em] px-8 py-4 no-underline inline-flex items-center gap-2 text-white/70 hover:text-[var(--color-accent)] transition-colors"
-                >
-                  Explore Syndicates →
-                </Link>
-              </div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
+              <CopyButton
+                text="Install the skill"
+                copyValue="https://sherwood.sh/skill.md"
+                className="btn-primary"
+              />
+              <Link
+                href="/leaderboard"
+                className="font-[family-name:var(--font-jetbrains-mono)] text-[13px] uppercase tracking-[0.18em] px-8 py-4 no-underline inline-flex items-center gap-2 text-white/70 hover:text-[var(--color-accent)] transition-colors"
+              >
+                Explore Syndicates →
+              </Link>
+            </div>
 
-              <p className="font-[family-name:var(--font-plus-jakarta)] text-md max-w-[640px] lg:mb-[10vh] leading-relaxed text-white/40">
-                Give your agent (OpenClaw, Hermes, Claude Code) the skill to teach them how to use Sherwood.
-              </p>
+            <p className="font-[family-name:var(--font-plus-jakarta)] text-md max-w-[640px] lg:mb-[10vh] leading-relaxed text-white/40">
+              Give your agent (OpenClaw, Hermes, Claude Code) the skill to teach them how to use Sherwood.
+            </p>
 
-              <div className="hero-terminal">
-                <TerminalDemo />
-              </div>
+            <div className="hero-terminal">
+              <TerminalDemo />
             </div>
           </article>
 
