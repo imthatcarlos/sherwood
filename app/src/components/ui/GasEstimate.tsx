@@ -26,7 +26,9 @@ interface Props {
   value?: bigint;
   /** Optional comparison amount in WEI (e.g. deposit amount converted via
    *  asset-to-eth oracle, or just `value` for ETH transfers). When the
-   *  estimated cost exceeds 5% of this, surface a "high gas" warning. */
+   *  estimated cost exceeds 5% of this, surface a "high gas" warning.
+   *  No callers wire this today — left in place for follow-up that adds an
+   *  asset → native price conversion to deposit/withdraw modals. */
   compareAmountWei?: bigint;
   /** Symbol of the chain's native token (defaults "ETH"). */
   nativeSymbol?: string;
@@ -36,6 +38,23 @@ interface Estimate {
   gasUnits: bigint;
   gasPrice: bigint;
   costWei: bigint;
+}
+
+/** Coerce an arg value to a stable string for dep-array memoization.
+ *  Standard JSON.stringify throws on bigints, which viem uses heavily. */
+function stableArg(v: unknown): string {
+  if (typeof v === "bigint") return v.toString();
+  if (v === null || v === undefined) return String(v);
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v, (_, val) =>
+        typeof val === "bigint" ? val.toString() : val,
+      );
+    } catch {
+      return String(v);
+    }
+  }
+  return String(v);
 }
 
 export function GasEstimate({
@@ -52,6 +71,12 @@ export function GasEstimate({
   const client = usePublicClient({ chainId });
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [error, setError] = useState(false);
+
+  // Stable arg key for the effect deps. Plain JSON.stringify can't handle
+  // bigints (most viem args contain them) and would throw a TypeError at
+  // runtime when the dep list evaluates. We stringify each arg manually
+  // with bigint-aware coercion.
+  const argsKey = (args ?? []).map(stableArg).join("|");
 
   useEffect(() => {
     if (!client || !account) return;
@@ -88,10 +113,9 @@ export function GasEstimate({
     return () => {
       cancelled = true;
     };
-    // Re-estimate on argument changes — args are reference-fresh per render
-    // so we serialize for a stable dependency.
+    // Re-estimate on argument changes via the bigint-safe argsKey above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, account, address, functionName, JSON.stringify(args ?? []), value, chainId]);
+  }, [client, account, address, functionName, argsKey, value, chainId]);
 
   if (!account) return null;
 

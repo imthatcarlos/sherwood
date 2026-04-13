@@ -125,7 +125,7 @@ export default function SiteFooter() {
           <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] uppercase tracking-[0.22em] text-[rgba(255,255,255,0.55)]">
             © {new Date().getFullYear()} Sherwood Protocol
           </p>
-          <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] uppercase tracking-[0.22em] text-[rgba(255,255,255,0.25)]">
+          <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] uppercase tracking-[0.22em] text-[rgba(255,255,255,0.55)]">
             Unaudited · Not financial advice · Use at your own risk
           </p>
         </div>

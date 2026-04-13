@@ -11,7 +11,7 @@
  * with a live Countdown to the executableAt timestamp. Empty by default.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { parseAbiItem, type Address } from "viem";
 import { SYNDICATE_GOVERNOR_ABI } from "@/lib/contracts";
@@ -40,13 +40,12 @@ interface Props {
 /** keccak256 of common parameter names. Computed offline (cast keccak256
  *  "votingPeriod" etc) and inlined so we don't need a hashing dep at
  *  runtime. If a key isn't in this map, we fall back to the truncated
- *  paramKey hex for display. */
-const PARAM_LABELS: Record<string, string> = {
-  // Governor params from CLAUDE.md — actual hashes confirmed onchain
-  // before merge would be ideal; these are placeholders that fall through
-  // to the hex truncation if no contract uses them.
-  // (Intentionally empty so the fallback kicks in — extend as we confirm.)
-};
+ *  paramKey hex for display.
+ *
+ *  TODO: populate by capturing real ParameterChangeQueued log paramKeys
+ *  from the deployed governor + reverse-mapping to the contract constants
+ *  in GovernorParameters.sol. Tracked in a follow-up issue. */
+const PARAM_LABELS: Record<string, string> = {};
 
 function labelFor(paramKey: `0x${string}`): string {
   return PARAM_LABELS[paramKey] ?? `${paramKey.slice(0, 10)}…`;
@@ -140,7 +139,7 @@ export default function TimelockPanel({ governorAddress, chainId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [client, governorAddress]);
+  }, [client, governorAddress, chainId]);
 
   // Hide the panel entirely when there's nothing to show — this is an
   // exception surface, not a constant fixture.
@@ -181,7 +180,15 @@ export default function TimelockPanel({ governorAddress, chainId }: Props) {
 }
 
 function ChangeRow({ change }: { change: PendingChange }) {
-  const now = useMemo(() => Math.floor(Date.now() / 1000), []);
+  // Tick every second so the "ready" transition reflects live without a
+  // page reload. Light-weight — one timer per pending change row, and
+  // pending changes are an exceptional surface (rarely > 1).
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const ready = change.executableAt <= BigInt(now);
   return (
     <div
@@ -218,15 +225,15 @@ function ChangeRow({ change }: { change: PendingChange }) {
         )}
       </div>
       <div className="sh-stepper">
-        <div
-          className={`sh-stepper__node ${ready ? "sh-stepper__node--done" : "sh-stepper__node--done"}`}
-        >
+        {/* Queued is always in the past. */}
+        <div className="sh-stepper__node sh-stepper__node--done">
           <div className="sh-stepper__dot">✓</div>
           <div className="sh-stepper__label">Queued</div>
         </div>
         <div
           className={`sh-stepper__connector ${ready ? "sh-stepper__connector--done" : ""}`}
         />
+        {/* Delay is active while we're waiting; done once the timelock elapses. */}
         <div
           className={`sh-stepper__node ${ready ? "sh-stepper__node--done" : "sh-stepper__node--active"}`}
         >
@@ -236,10 +243,11 @@ function ChangeRow({ change }: { change: PendingChange }) {
         <div
           className={`sh-stepper__connector ${ready ? "sh-stepper__connector--done" : ""}`}
         />
+        {/* Finalized is the next required action once the delay clears. */}
         <div
           className={`sh-stepper__node ${ready ? "sh-stepper__node--active" : ""}`}
         >
-          <div className="sh-stepper__dot">{ready ? "3" : "3"}</div>
+          <div className="sh-stepper__dot">3</div>
           <div className="sh-stepper__label">Finalized</div>
         </div>
       </div>

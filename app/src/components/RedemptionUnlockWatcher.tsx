@@ -62,6 +62,10 @@ export default function RedemptionUnlockWatcher({ vault, vaultName, chainId }: P
     chainId,
     query: { enabled: isConnected && !!address },
   });
+  // Derive a stable boolean for the effect dep — the raw bigint refetches
+  // every few seconds via wagmi's polling, which would otherwise tear down
+  // the 30s interval and reset the first-observation guard on every poll.
+  const hasShares = !!shareBalance && shareBalance > 0n;
 
   // Track the last observed locked state so we can detect the locked → open
   // transition (the only thing worth notifying on).
@@ -69,7 +73,7 @@ export default function RedemptionUnlockWatcher({ vault, vaultName, chainId }: P
 
   useEffect(() => {
     if (!client || !isConnected) return;
-    if (!shareBalance || shareBalance === 0n) return;
+    if (!hasShares) return;
 
     let cancelled = false;
 
@@ -130,7 +134,8 @@ export default function RedemptionUnlockWatcher({ vault, vaultName, chainId }: P
       cancelled = true;
       clearInterval(id);
     };
-  }, [client, isConnected, shareBalance, vault, vaultName, chainId, address, toast, router]);
+    // hasShares (boolean), not shareBalance (bigint) — see above.
+  }, [client, isConnected, hasShares, vault, vaultName, chainId, address, toast, router]);
 
   return null;
 }

@@ -19,6 +19,9 @@ interface Props {
   className?: string;
 }
 
+// Hardcoded production URL on purpose: shared links should always point
+// at canonical prod even when copied from a Vercel preview deploy. If we
+// ever support multiple production domains, plumb this through env.
 const SITE = "https://sherwood.sh";
 
 export default function ShareButton({ path, text, className }: Props) {
