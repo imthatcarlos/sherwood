@@ -45,17 +45,21 @@ const GLOSSARY: Record<string, string> = {
 interface TermProps {
   k: keyof typeof GLOSSARY | string;
   children?: ReactNode;
+  /** Which horizontal edge of the trigger the tooltip should anchor to.
+   *  Defaults to "left" (tooltip flows right). Use "right" for Terms
+   *  near the viewport's right edge so the tooltip flows left instead. */
+  align?: "left" | "right";
 }
 
 /**
  * Inline glossary term. Renders children with a dotted underline and a hover
  * tooltip. Falls back to children-only if the key is unknown.
  */
-export function Term({ k, children }: TermProps) {
+export function Term({ k, children, align }: TermProps) {
   const definition = GLOSSARY[k];
   if (!definition) return <>{children}</>;
   return (
-    <Tooltip content={definition}>
+    <Tooltip content={definition} align={align}>
       <span
         style={{
           borderBottom: "1px dotted rgba(255,255,255,0.4)",

@@ -349,7 +349,9 @@ export default async function ProposalsPage({
             </div>
             <div className="stat-item">
               <div className="stat-label">
-                <Term k="max-fee">Max Fee</Term>
+                {/* Right-of-center cell — flip tooltip so it doesn't overflow
+                    the viewport on the right. */}
+                <Term k="max-fee" align="right">Max Fee</Term>
               </div>
               <div className="stat-value" style={{ fontSize: "1.2rem" }}>
                 {formatBps(governor.params.maxPerformanceFeeBps)}
@@ -357,7 +359,8 @@ export default async function ProposalsPage({
             </div>
             <div className="stat-item">
               <div className="stat-label">
-                <Term k="cooldown">Cooldown</Term>
+                {/* Rightmost cell — tooltip must anchor to the right edge. */}
+                <Term k="cooldown" align="right">Cooldown</Term>
               </div>
               <div className="stat-value" style={{ fontSize: "1.2rem" }}>
                 {formatDuration(governor.params.cooldownPeriod)}
