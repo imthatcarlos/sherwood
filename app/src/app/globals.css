@@ -2518,21 +2518,33 @@ select:focus-visible {
 .sh-tooltip-root { position: relative; display: inline-flex; }
 .sh-tooltip-content {
   position: absolute;
-  bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  padding: 0.5rem 0.75rem;
-  background: #111;
+  padding: 0.6rem 0.8rem;
+  background: #0a0a0a;
   border: 1px solid var(--color-border);
   font-family: var(--font-mono);
   font-size: 11px;
+  line-height: 1.45;
   color: var(--color-fg);
-  white-space: nowrap;
+  /* Allow wrapping — glossary definitions are sentences, not tags. */
+  white-space: normal;
+  width: max-content;
+  max-width: 280px;
+  text-align: left;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s ease;
-  z-index: 40;
-  letter-spacing: 0.05em;
+  /* Higher z-index so tooltip clears neighboring panels + stats bars. */
+  z-index: 200;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
+}
+.sh-tooltip-content--top {
+  bottom: calc(100% + 8px);
+}
+.sh-tooltip-content--bottom {
+  top: calc(100% + 8px);
 }
 .sh-tooltip-root:hover .sh-tooltip-content,
 .sh-tooltip-root:focus-within .sh-tooltip-content {
