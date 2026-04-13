@@ -533,12 +533,16 @@ async function buildInitDataForTemplate(
   }
 
   if (templateKey === "hyperliquid-perp") {
-    if (!opts.amount) { console.error(chalk.red("--amount is required for hyperliquid-perp template")); process.exit(1); }
     const token = (opts.token as string) || "USDC";
     const asset = resolveToken(token);
     const decimals = token.toUpperCase() === "USDC" ? 6 : 18;
-    const depositAmount = parseUnits(opts.amount as string, decimals);
-    const minReturn = parseUnits((opts.minReturn as string) || opts.amount as string, decimals);
+    // Omit --amount to use the vault's full asset balance at execute time (dynamic-all mode).
+    const depositAmount = opts.amount ? parseUnits(opts.amount as string, decimals) : 0n;
+    const minReturn = opts.minReturn
+      ? parseUnits(opts.minReturn as string, decimals)
+      : opts.amount
+        ? parseUnits(opts.amount as string, decimals)
+        : 0n;
     const leverage = Number((opts.leverage as string) || "10");
     const assetIndex = Number((opts.assetIndex as string) || "0");
     const maxPosition = parseUnits((opts.maxPosition as string) || "100000", decimals);

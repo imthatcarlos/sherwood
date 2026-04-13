@@ -80,6 +80,7 @@ contract HyperliquidPerpStrategy is BaseStrategy {
     }
 
     /// @notice Decode: (address asset, uint256 depositAmount, uint256 minReturnAmount, uint32 perpAssetIndex, uint32 leverage, uint256 maxPositionSize, uint32 maxTradesPerDay)
+    /// @dev depositAmount_ == 0 means "use the vault's full asset balance at execute time" (dynamic-all mode).
     function _initialize(bytes calldata data) internal override {
         (
             address asset_,
@@ -92,7 +93,6 @@ contract HyperliquidPerpStrategy is BaseStrategy {
         ) = abi.decode(data, (address, uint256, uint256, uint32, uint32, uint256, uint32));
 
         if (asset_ == address(0)) revert ZeroAddress();
-        if (depositAmount_ == 0) revert InvalidAmount();
         if (depositAmount_ > type(uint64).max) revert DepositAmountTooLarge();
         if (leverage_ == 0 || leverage_ > 50) revert InvalidAmount();
         if (maxPositionSize_ == 0) revert InvalidAmount();
@@ -108,10 +108,20 @@ contract HyperliquidPerpStrategy is BaseStrategy {
     }
 
     /// @notice Pull USDC from vault, transfer to perp margin via precompile
+    /// @dev In dynamic-all mode (depositAmount == 0) the vault's current asset
+    ///      balance is pulled in full. The uint64.max cap still applies to the
+    ///      HyperCore transfer amount.
     function _execute() internal override {
-        _pullFromVault(address(asset), depositAmount);
+        uint256 amountIn = depositAmount;
+        if (amountIn == 0) {
+            amountIn = IERC20(asset).balanceOf(vault());
+        }
+        if (amountIn == 0) revert InvalidAmount();
+        if (amountIn > type(uint64).max) revert DepositAmountTooLarge();
 
-        uint64 ntl = uint64(depositAmount);
+        _pullFromVault(address(asset), amountIn);
+
+        uint64 ntl = uint64(amountIn);
 
         L1Write.sendUpdateLeverage(perpAssetIndex, true, leverage);
         leverageSentToCore = true;
@@ -119,7 +129,7 @@ contract HyperliquidPerpStrategy is BaseStrategy {
 
         L1Write.sendUsdClassTransfer(ntl, true);
 
-        emit FundsParked(depositAmount);
+        emit FundsParked(amountIn);
     }
 
     /// @notice Proposer-driven trading actions via precompiles

@@ -5,7 +5,7 @@
  */
 
 import type { Address, Hex } from "viem";
-import { encodeAbiParameters, encodeFunctionData } from "viem";
+import { encodeAbiParameters, encodeFunctionData, maxUint256 } from "viem";
 import { ERC20_ABI, BASE_STRATEGY_ABI, HYPERLIQUID_PERP_STRATEGY_ABI } from "../lib/abis.js";
 import type { BatchCall } from "../lib/batch.js";
 
@@ -37,13 +37,18 @@ export function buildExecuteCalls(
   asset: Address,
   amount: bigint,
 ): BatchCall[] {
+  // In dynamic-all mode (amount == 0) we approve maxUint256 up front and
+  // revoke to 0 after execute() in the same atomic batch — the residual
+  // allowance never persists beyond the tx.
+  const approveAmount = amount === 0n ? maxUint256 : amount;
+
   return [
     {
       target: asset,
       data: encodeFunctionData({
         abi: ERC20_ABI,
         functionName: "approve",
-        args: [clone, amount],
+        args: [clone, approveAmount],
       }),
       value: 0n,
     },
@@ -52,6 +57,15 @@ export function buildExecuteCalls(
       data: encodeFunctionData({
         abi: BASE_STRATEGY_ABI,
         functionName: "execute",
+      }),
+      value: 0n,
+    },
+    {
+      target: asset,
+      data: encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [clone, 0n],
       }),
       value: 0n,
     },

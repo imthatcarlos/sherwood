@@ -81,11 +81,61 @@ contract HyperliquidPerpStrategyTest is Test {
         HyperliquidPerpStrategy(clone).initialize(vault, proposer, initData);
     }
 
-    function test_initialize_zeroDeposit_reverts() public {
+    function test_initialize_zeroDeposit_allowsDynamicAll() public {
         address payable clone = payable(Clones.clone(address(template)));
         bytes memory initData = abi.encode(address(usdc), 0, MIN_RETURN, PERP_ASSET, LEVERAGE, MAX_POSITION, MAX_TRADES);
-        vm.expectRevert(HyperliquidPerpStrategy.InvalidAmount.selector);
         HyperliquidPerpStrategy(clone).initialize(vault, proposer, initData);
+        assertEq(HyperliquidPerpStrategy(clone).depositAmount(), 0);
+    }
+
+    function test_execute_dynamicAll_usesFullVaultBalance() public {
+        address payable clone = payable(Clones.clone(address(template)));
+        HyperliquidPerpStrategy s = HyperliquidPerpStrategy(clone);
+        bytes memory initData = abi.encode(address(usdc), 0, MIN_RETURN, PERP_ASSET, LEVERAGE, MAX_POSITION, MAX_TRADES);
+        s.initialize(vault, proposer, initData);
+
+        uint256 vaultBalance = usdc.balanceOf(vault);
+        vm.prank(vault);
+        usdc.approve(address(s), type(uint256).max);
+
+        vm.prank(vault);
+        s.execute();
+
+        assertEq(usdc.balanceOf(vault), 0);
+        assertEq(usdc.balanceOf(address(s)), vaultBalance);
+        assertEq(s.depositAmount(), 0); // stays 0 — dynamic mode is sticky
+        assertEq(uint8(s.state()), uint8(BaseStrategy.State.Executed));
+    }
+
+    function test_execute_dynamicAll_zeroVaultBalance_reverts() public {
+        address payable clone = payable(Clones.clone(address(template)));
+        HyperliquidPerpStrategy s = HyperliquidPerpStrategy(clone);
+        bytes memory initData = abi.encode(address(usdc), 0, MIN_RETURN, PERP_ASSET, LEVERAGE, MAX_POSITION, MAX_TRADES);
+        s.initialize(vault, proposer, initData);
+
+        deal(address(usdc), vault, 0);
+        vm.prank(vault);
+        usdc.approve(address(s), type(uint256).max);
+
+        vm.prank(vault);
+        vm.expectRevert(HyperliquidPerpStrategy.InvalidAmount.selector);
+        s.execute();
+    }
+
+    function test_execute_dynamicAll_vaultBalanceTooLarge_reverts() public {
+        address payable clone = payable(Clones.clone(address(template)));
+        HyperliquidPerpStrategy s = HyperliquidPerpStrategy(clone);
+        bytes memory initData = abi.encode(address(usdc), 0, MIN_RETURN, PERP_ASSET, LEVERAGE, MAX_POSITION, MAX_TRADES);
+        s.initialize(vault, proposer, initData);
+
+        // Fund vault beyond uint64.max
+        usdc.mint(vault, uint256(type(uint64).max));
+        vm.prank(vault);
+        usdc.approve(address(s), type(uint256).max);
+
+        vm.prank(vault);
+        vm.expectRevert(HyperliquidPerpStrategy.DepositAmountTooLarge.selector);
+        s.execute();
     }
 
     function test_initialize_depositTooLarge_reverts() public {
