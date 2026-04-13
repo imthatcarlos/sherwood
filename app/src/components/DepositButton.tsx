@@ -73,11 +73,11 @@ export default function DepositButton({
   // Vault paused
   if (paused) {
     return (
-      <div style={{ position: "relative" }}>
+      <div className="btn-disabled-wrap">
         <button className="btn-action" disabled style={{ opacity: 0.4, cursor: "not-allowed" }}>
           [ DEPOSITS PAUSED ]
         </button>
-        <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.35)", marginTop: "4px", textAlign: "center" }}>
+        <div className="btn-disabled-wrap__sub">
           Vault is temporarily paused
         </div>
       </div>
@@ -87,11 +87,11 @@ export default function DepositButton({
   // Whitelist vault — not approved
   if (!openDeposits && isApproved === false) {
     return (
-      <div style={{ position: "relative" }}>
+      <div className="btn-disabled-wrap">
         <button className="btn-action" disabled style={{ opacity: 0.4, cursor: "not-allowed" }}>
           [ APPROVAL REQUIRED ]
         </button>
-        <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.35)", marginTop: "4px", textAlign: "center" }}>
+        <div className="btn-disabled-wrap__sub">
           Vault requires depositor approval
         </div>
       </div>
@@ -101,7 +101,7 @@ export default function DepositButton({
   // No balance — disable + suggest acquiring the asset.
   if (!hasBalance) {
     return (
-      <div style={{ position: "relative" }}>
+      <div className="btn-disabled-wrap">
         <button
           className="btn-action"
           disabled
@@ -110,14 +110,7 @@ export default function DepositButton({
         >
           [ NO {assetSymbol.toUpperCase()} ]
         </button>
-        <div
-          style={{
-            fontSize: "9px",
-            color: "rgba(255,255,255,0.35)",
-            marginTop: "4px",
-            textAlign: "center",
-          }}
-        >
+        <div className="btn-disabled-wrap__sub">
           Acquire {assetSymbol} to deposit
         </div>
       </div>

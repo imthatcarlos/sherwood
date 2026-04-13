@@ -50,7 +50,7 @@ export default function WithdrawButton({
 
   if (blockedReason) {
     return (
-      <div style={{ position: "relative" }}>
+      <div className="btn-disabled-wrap">
         <button
           className="btn-action-secondary"
           disabled
@@ -59,16 +59,7 @@ export default function WithdrawButton({
         >
           [ {blockedReason.label} ]
         </button>
-        <div
-          style={{
-            fontSize: "9px",
-            color: "rgba(255,255,255,0.35)",
-            marginTop: "4px",
-            textAlign: "center",
-          }}
-        >
-          {blockedReason.detail}
-        </div>
+        <div className="btn-disabled-wrap__sub">{blockedReason.detail}</div>
       </div>
     );
   }

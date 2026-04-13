@@ -1572,8 +1572,28 @@ select:focus-visible {
   margin-bottom: 2rem;
 }
 
-.stats-bar-row .btn-action {
+.stats-bar-row .btn-action,
+.stats-bar-row .btn-action-secondary {
   align-self: center;
+  white-space: nowrap;
+}
+
+/* When a button is in its disabled / blocked state it renders a small
+   subtitle ("Active strategy in progress" etc). Pin the subtitle below
+   the button absolutely so it doesn't push the button off the shared
+   baseline with its Deposit/Withdraw sibling. */
+.stats-bar-row .btn-disabled-wrap {
+  position: relative;
+}
+.stats-bar-row .btn-disabled-wrap__sub {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  letter-spacing: 0.05em;
   white-space: nowrap;
 }
 
@@ -1823,6 +1843,7 @@ select:focus-visible {
   font-family: var(--font-plus-jakarta), "Plus Jakarta Sans", sans-serif;
   background: transparent;
   color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
   border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 0.8rem 1.5rem;
   font-size: 14px;
