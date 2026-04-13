@@ -158,12 +158,20 @@ const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
  * To detect Pending/Approved (voting) proposals we also scan recent proposals
  * via `proposalCount()` + `getProposal(id)`.
  */
+interface ProposalStatusResult {
+  statuses: Map<string, "VOTING" | "ACTIVE_STRATEGY">;
+  /** vault address (lowercase) → capital-snapshot bigint for vaults with an
+   *  executing proposal. Used to render TVL that INCLUDES deployed capital. */
+  capitalSnapshots: Map<string, bigint>;
+}
+
 async function resolveProposalStatuses(
   chainId: number,
   vaults: Address[],
-): Promise<Map<string, "VOTING" | "ACTIVE_STRATEGY">> {
+): Promise<ProposalStatusResult> {
   const statusMap = new Map<string, "VOTING" | "ACTIVE_STRATEGY">();
-  if (vaults.length === 0) return statusMap;
+  const capitalSnapshots = new Map<string, bigint>();
+  if (vaults.length === 0) return { statuses: statusMap, capitalSnapshots };
 
   const client = getPublicClient(chainId);
 
@@ -183,7 +191,7 @@ async function resolveProposalStatuses(
       govVaults.push({ vault: vaults[i], governor: r.result as Address });
     }
   }
-  if (govVaults.length === 0) return statusMap;
+  if (govVaults.length === 0) return { statuses: statusMap, capitalSnapshots };
 
   // 2. Get active proposal ID for each vault + proposalCount from governor
   //    (all vaults share the same governor, so we only need proposalCount once)
@@ -207,14 +215,39 @@ async function resolveProposalStatuses(
 
   const proposalCount = Number(countResult);
 
-  // Mark vaults with an executed active proposal
+  // Mark vaults with an executed active proposal + collect proposal IDs so
+  // we can batch-read their capitalSnapshots in the next multicall.
   const vaultSet = new Set(govVaults.map((gv) => gv.vault.toLowerCase()));
+  const activeByVault: { vault: Address; proposalId: bigint }[] = [];
   for (let i = 0; i < govVaults.length; i++) {
     const r = activeResults[i];
     if (r.status === "success") {
       const pid = r.result as bigint;
       if (pid > 0n) {
         statusMap.set(govVaults[i].vault.toLowerCase(), "ACTIVE_STRATEGY");
+        activeByVault.push({ vault: govVaults[i].vault, proposalId: pid });
+      }
+    }
+  }
+
+  // Batch read capitalSnapshot for every active proposal so leaderboard TVL
+  // reflects capital that's out in strategies, not just the vault balance.
+  if (activeByVault.length > 0) {
+    const snapshotResults = await client.multicall({
+      contracts: activeByVault.map((av) => ({
+        address: governorAddress,
+        abi: SYNDICATE_GOVERNOR_ABI,
+        functionName: "getCapitalSnapshot" as const,
+        args: [av.proposalId] as const,
+      })),
+    });
+    for (let i = 0; i < activeByVault.length; i++) {
+      const r = snapshotResults[i];
+      if (r.status === "success") {
+        capitalSnapshots.set(
+          activeByVault[i].vault.toLowerCase(),
+          r.result as bigint,
+        );
       }
     }
   }
@@ -259,7 +292,7 @@ async function resolveProposalStatuses(
     }
   }
 
-  return statusMap;
+  return { statuses: statusMap, capitalSnapshots };
 }
 
 // ── Per-chain fetchers ────────────────────────────────────
@@ -353,7 +386,8 @@ async function fetchViaSubgraph(
 
   // Resolve proposal-aware statuses for all vaults
   const vaultAddresses = data.syndicates.map((s) => s.vault as Address);
-  const proposalStatuses = await resolveProposalStatuses(chainId, vaultAddresses);
+  const { statuses: proposalStatuses, capitalSnapshots } =
+    await resolveProposalStatuses(chainId, vaultAddresses);
 
   // Resolve ERC-8004 identities for all agents across syndicates
   const allAgents = data.syndicates.flatMap((s) => s.agents || []);
@@ -377,7 +411,7 @@ async function fetchViaSubgraph(
     data.syndicates.map(async (s, i) => {
       const metadata = await fetchMetadata(s.metadataURI);
 
-      const totalAssets = (vaultResults[i * 2]?.result as bigint) ?? 0n;
+      const rawTotalAssets = (vaultResults[i * 2]?.result as bigint) ?? 0n;
       const assetAddr = (vaultResults[i * 2 + 1]?.result as Address) ?? "";
       const info = assetInfo[assetAddr.toLowerCase()] ?? {
         decimals: 18,
@@ -394,6 +428,13 @@ async function fetchViaSubgraph(
       if (agentCount > 0) {
         status = proposalStatuses.get(s.vault.toLowerCase()) ?? "IDLE";
       }
+
+      // During an active strategy the vault's totalAssets is drained (capital
+      // sits in the strategy contract). Fall back to the proposal's
+      // capitalSnapshot so the leaderboard TVL reflects full AUM.
+      const snapshot = capitalSnapshots.get(s.vault.toLowerCase());
+      const totalAssets =
+        snapshot && snapshot > rawTotalAssets ? snapshot : rawTotalAssets;
 
       const tvlFormatted = formatAsset(
         totalAssets,
@@ -609,12 +650,13 @@ async function fetchViaOnChain(
 
   // Resolve proposal-aware statuses for all vaults
   const vaultAddresses = rawSyndicates.map((s) => s.vault);
-  const proposalStatuses = await resolveProposalStatuses(chainId, vaultAddresses);
+  const { statuses: proposalStatuses, capitalSnapshots } =
+    await resolveProposalStatuses(chainId, vaultAddresses);
 
   // Build display objects
   return Promise.all(
     rawSyndicates.map(async (s, i) => {
-      const totalAssets = (vaultResults[i * 4]?.result as bigint) ?? 0n;
+      const rawTotalAssets = (vaultResults[i * 4]?.result as bigint) ?? 0n;
       const agentCount = Number(
         (vaultResults[i * 4 + 1]?.result as bigint) ?? 0n,
       );
@@ -635,6 +677,11 @@ async function fetchViaOnChain(
       if (agentCount > 0) {
         status = proposalStatuses.get(s.vault.toLowerCase()) ?? "IDLE";
       }
+
+      // Include deployed capital in TVL when the strategy is active.
+      const snapshot = capitalSnapshots.get(s.vault.toLowerCase());
+      const totalAssets =
+        snapshot && snapshot > rawTotalAssets ? snapshot : rawTotalAssets;
 
       const tvlFormatted = formatAsset(
         totalAssets,
