@@ -33,7 +33,8 @@ import { Backtester } from "../agent/backtest.js";
 import type { BacktestConfig, WalkForwardConfig } from "../agent/backtest.js";
 import { AlertFormatter } from "../agent/alert-formatter.js";
 import { ExecutionPipeline } from "../agent/execution-pipeline.js";
-import { auditSignalHistory, suggestRenormalizedWeights } from "../agent/signal-audit.js";
+import { auditSignalHistory, suggestRenormalizedWeights, diffAudits } from "../agent/signal-audit.js";
+import type { AuditResult } from "../agent/signal-audit.js";
 import { DEFAULT_WEIGHTS } from "../agent/scoring.js";
 
 const DEFAULT_TOKENS = ["ethereum", "bitcoin", "solana", "aave", "uniswap"];
@@ -639,9 +640,90 @@ export function registerAgentCommands(program: Command): void {
     .description("Audit signal history — which signal categories actually fire?")
     .option("--drop-threshold <rate>", "Fire-rate below which a category is flagged for dropping", "0.1")
     .option("--json", "Emit raw JSON instead of formatted table")
-    .action(async (options: { dropThreshold?: string; json?: boolean }) => {
+    .option("--save <path>", "Save current audit as a baseline JSON snapshot")
+    .option("--baseline <path>", "Diff current audit against a saved baseline")
+    .action(async (options: { dropThreshold?: string; json?: boolean; save?: string; baseline?: string }) => {
       const dropThreshold = parseFloat(options.dropThreshold ?? "0.1");
       const result = await auditSignalHistory();
+
+      // --save: write snapshot and exit
+      if (options.save) {
+        await mkdir(join(homedir(), '.sherwood', 'agent'), { recursive: true });
+        await writeFile(options.save, JSON.stringify(result, null, 2), 'utf-8');
+        console.log(chalk.green(`  Saved baseline snapshot to ${options.save}`));
+        console.log(chalk.dim(`  ${result.totalEntries} entries, ${result.perSignal.length} signals`));
+        return;
+      }
+
+      // --baseline: load and diff
+      if (options.baseline) {
+        let baseline: AuditResult;
+        try {
+          const raw = await readFile(options.baseline, 'utf-8');
+          baseline = JSON.parse(raw) as AuditResult;
+        } catch (err) {
+          console.error(chalk.red(`  Failed to load baseline: ${(err as Error).message}`));
+          process.exitCode = 1;
+          return;
+        }
+
+        const diff = diffAudits(baseline, result);
+
+        if (options.json) {
+          console.log(JSON.stringify(diff, null, 2));
+          return;
+        }
+
+        console.log("");
+        console.log(chalk.bold("  Signal Audit Diff"));
+        console.log(chalk.dim("  " + "═".repeat(72)));
+        if (baseline.dateRange && result.dateRange) {
+          console.log(chalk.dim(`  Baseline: ${baseline.dateRange.from.slice(0, 10)} → ${baseline.dateRange.to.slice(0, 10)} (${baseline.totalEntries} entries)`));
+          console.log(chalk.dim(`  Current:  ${result.dateRange.from.slice(0, 10)} → ${result.dateRange.to.slice(0, 10)} (${result.totalEntries} entries)`));
+        }
+        console.log("");
+
+        // Per-category diff
+        console.log(chalk.bold("  Per Category"));
+        console.log(chalk.dim(`  ${"Category".padEnd(14)} ${"Was".padEnd(7)} ${"Now".padEnd(7)} ${"Δ".padEnd(8)} Status`));
+        console.log(chalk.dim("  " + "─".repeat(72)));
+        for (const c of diff.perCategory) {
+          const arrow = c.status === "improved" ? chalk.green("↑") :
+            c.status === "regressed" ? chalk.red("↓") :
+            c.status === "new" ? chalk.cyan("✦") :
+            c.status === "removed" ? chalk.red("✗") : chalk.dim("=");
+          const deltaStr = (c.fireRateDelta >= 0 ? "+" : "") + (c.fireRateDelta * 100).toFixed(0) + "pp";
+          const deltaColor = c.status === "improved" ? chalk.green : c.status === "regressed" ? chalk.red : chalk.dim;
+          console.log(
+            `  ${c.category.padEnd(14)} ${(c.baseline.fireRate * 100).toFixed(0).padStart(5)}%  ${(c.current.fireRate * 100).toFixed(0).padStart(5)}%  ${deltaColor(deltaStr.padEnd(7))} ${arrow} ${c.status}`,
+          );
+        }
+
+        // Per-signal diff (only show changes)
+        const changedSignals = diff.perSignal.filter((s) => s.status !== "stable");
+        if (changedSignals.length > 0) {
+          console.log("");
+          console.log(chalk.bold("  Changed Signals"));
+          console.log(chalk.dim(`  ${"Signal".padEnd(22)} ${"Was".padEnd(7)} ${"Now".padEnd(7)} ${"Δ".padEnd(8)} Status`));
+          console.log(chalk.dim("  " + "─".repeat(72)));
+          for (const s of changedSignals) {
+            const arrow = s.status === "improved" ? chalk.green("↑") :
+              s.status === "regressed" ? chalk.red("↓") :
+              s.status === "new" ? chalk.cyan("✦") :
+              s.status === "removed" ? chalk.red("✗") : chalk.dim("=");
+            const deltaStr = (s.fireRateDelta >= 0 ? "+" : "") + (s.fireRateDelta * 100).toFixed(0) + "pp";
+            const deltaColor = s.status === "improved" ? chalk.green : s.status === "regressed" ? chalk.red : chalk.dim;
+            console.log(
+              `  ${s.name.padEnd(22)} ${(s.baseline.fireRate * 100).toFixed(0).padStart(5)}%  ${(s.current.fireRate * 100).toFixed(0).padStart(5)}%  ${deltaColor(deltaStr.padEnd(7))} ${arrow} ${s.status}`,
+            );
+          }
+        } else {
+          console.log("");
+          console.log(chalk.dim("  No per-signal changes above 5pp threshold."));
+        }
+        console.log("");
+        return;
+      }
 
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));

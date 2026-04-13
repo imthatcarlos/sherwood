@@ -204,6 +204,104 @@ export async function auditSignalHistory(
   };
 }
 
+// ── Diff against a saved baseline ──
+
+export interface SignalDiffEntry {
+  name: string;
+  category: string;
+  baseline: { fireRate: number; meanAbsValue: number; observations: number };
+  current: { fireRate: number; meanAbsValue: number; observations: number };
+  fireRateDelta: number;
+  meanAbsValueDelta: number;
+  status: "improved" | "regressed" | "stable" | "new" | "removed";
+}
+
+export interface AuditDiff {
+  baselineDateRange: { from: string; to: string } | null;
+  currentDateRange: { from: string; to: string } | null;
+  perSignal: SignalDiffEntry[];
+  perCategory: SignalDiffEntry[];
+}
+
+const DELTA_EPSILON = 0.05; // fire-rate deltas under 5pp are "stable"
+
+function classifyStatus(
+  baselineRate: number | null,
+  currentRate: number | null,
+): SignalDiffEntry["status"] {
+  if (baselineRate === null) return "new";
+  if (currentRate === null) return "removed";
+  const delta = currentRate - baselineRate;
+  if (Math.abs(delta) < DELTA_EPSILON) return "stable";
+  return delta > 0 ? "improved" : "regressed";
+}
+
+/** Compare a current audit result against a saved baseline. */
+export function diffAudits(baseline: AuditResult, current: AuditResult): AuditDiff {
+  const baseSignals = new Map(baseline.perSignal.map((s) => [s.name, s]));
+  const currSignals = new Map(current.perSignal.map((s) => [s.name, s]));
+  const allSignalNames = new Set([...baseSignals.keys(), ...currSignals.keys()]);
+
+  const perSignal: SignalDiffEntry[] = [];
+  for (const name of allSignalNames) {
+    const b = baseSignals.get(name);
+    const c = currSignals.get(name);
+    perSignal.push({
+      name,
+      category: (c ?? b)?.category ?? "unknown",
+      baseline: {
+        fireRate: b?.fireRate ?? 0,
+        meanAbsValue: b?.meanAbsValue ?? 0,
+        observations: b?.observations ?? 0,
+      },
+      current: {
+        fireRate: c?.fireRate ?? 0,
+        meanAbsValue: c?.meanAbsValue ?? 0,
+        observations: c?.observations ?? 0,
+      },
+      fireRateDelta: (c?.fireRate ?? 0) - (b?.fireRate ?? 0),
+      meanAbsValueDelta: (c?.meanAbsValue ?? 0) - (b?.meanAbsValue ?? 0),
+      status: classifyStatus(b?.fireRate ?? null, c?.fireRate ?? null),
+    });
+  }
+  perSignal.sort((a, b) => Math.abs(b.fireRateDelta) - Math.abs(a.fireRateDelta));
+
+  const baseCats = new Map(baseline.perCategory.map((c) => [c.category, c]));
+  const currCats = new Map(current.perCategory.map((c) => [c.category, c]));
+  const allCats = new Set([...baseCats.keys(), ...currCats.keys()]);
+
+  const perCategory: SignalDiffEntry[] = [];
+  for (const cat of allCats) {
+    const b = baseCats.get(cat);
+    const c = currCats.get(cat);
+    perCategory.push({
+      name: cat,
+      category: cat,
+      baseline: {
+        fireRate: b?.fireRate ?? 0,
+        meanAbsValue: b?.meanAbsValue ?? 0,
+        observations: b?.observations ?? 0,
+      },
+      current: {
+        fireRate: c?.fireRate ?? 0,
+        meanAbsValue: c?.meanAbsValue ?? 0,
+        observations: c?.observations ?? 0,
+      },
+      fireRateDelta: (c?.fireRate ?? 0) - (b?.fireRate ?? 0),
+      meanAbsValueDelta: (c?.meanAbsValue ?? 0) - (b?.meanAbsValue ?? 0),
+      status: classifyStatus(b?.fireRate ?? null, c?.fireRate ?? null),
+    });
+  }
+  perCategory.sort((a, b) => Math.abs(b.fireRateDelta) - Math.abs(a.fireRateDelta));
+
+  return {
+    baselineDateRange: baseline.dateRange,
+    currentDateRange: current.dateRange,
+    perSignal,
+    perCategory,
+  };
+}
+
 /** Renormalize weights after dropping categories with fireRate below threshold. */
 export function suggestRenormalizedWeights(
   currentWeights: Record<string, number>,
