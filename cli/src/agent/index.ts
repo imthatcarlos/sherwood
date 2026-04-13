@@ -325,9 +325,17 @@ export class TradingAgent {
         marketData = symbolResult.value.marketData;
       }
 
-      // Process funding rate results
+      // Process funding rate — prefer Hyperliquid (native, same venue we trade on).
+      // Fall back to Binance only if HL doesn't cover this token.
+      // HL publishes hourly funding; convert to 8h-equivalent so strategy
+      // thresholds remain unit-consistent with Binance.
       let fundingRateData: StrategyContext['fundingRateData'] = undefined;
-      if (fundingRateResult.status === 'fulfilled' && fundingRateResult.value) {
+      if (hyperliquidData && typeof hyperliquidData.fundingRate === 'number' && Number.isFinite(hyperliquidData.fundingRate)) {
+        const rate1h = hyperliquidData.fundingRate;
+        const rate8h = rate1h * 8;
+        const annualizedRate = rate1h * 24 * 365;
+        fundingRateData = { rate8h, annualizedRate, exchange: 'hyperliquid' };
+      } else if (fundingRateResult.status === 'fulfilled' && fundingRateResult.value) {
         const fr = fundingRateResult.value;
         fundingRateData = { rate8h: fr.rate8h, annualizedRate: fr.annualizedRate, exchange: fr.exchange };
       }

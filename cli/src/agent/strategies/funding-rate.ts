@@ -57,36 +57,39 @@ export class FundingRateStrategy implements Strategy {
     let value = 0;
     let confidence = 0.5;
 
-    if (rate > 0.0005) {
+    // Thresholds calibrated to BTC/ETH majors (typical 8h funding is ±0.01%).
+    // Tightened from the previous altcoin-era defaults that only fired at
+    // ±0.02%/±0.05%, which almost never happen on majors in chop.
+    if (rate > 0.0002) {
       // High positive funding: longs pay shorts → market overleveraged long → bearish contrarian
       value = -0.5;
       confidence = 0.6;
       details.push(
         `High positive funding ${ratePct}% (annualized ${annualizedPct}%): overleveraged longs — bearish contrarian on ${fundingData.exchange}`,
       );
-    } else if (rate > 0.0002) {
+    } else if (rate > 0.00005) {
       // Mild positive funding: slightly overleveraged long → mildly bearish
       value = -0.3;
       confidence = 0.4;
       details.push(
-        `Mild positive funding ${ratePct}% (annualized ${annualizedPct}%): longs paying shorts — mildly bearish`,
+        `Mild positive funding ${ratePct}% (annualized ${annualizedPct}%): longs paying shorts — mildly bearish on ${fundingData.exchange}`,
       );
-    } else if (rate < -0.0005) {
+    } else if (rate < -0.0002) {
       // High negative funding: shorts pay longs → market overleveraged short → bullish contrarian
       value = 0.5;
       confidence = 0.6;
       details.push(
         `High negative funding ${ratePct}% (annualized ${annualizedPct}%): overleveraged shorts — bullish contrarian on ${fundingData.exchange}`,
       );
-    } else if (rate < -0.0002) {
+    } else if (rate < -0.00005) {
       // Mild negative funding: slightly overleveraged short → mildly bullish
       value = 0.3;
       confidence = 0.4;
       details.push(
-        `Mild negative funding ${ratePct}% (annualized ${annualizedPct}%): shorts paying longs — mildly bullish`,
+        `Mild negative funding ${ratePct}% (annualized ${annualizedPct}%): shorts paying longs — mildly bullish on ${fundingData.exchange}`,
       );
     } else {
-      // Funding between -0.02% and 0.02%: no opportunity
+      // Funding within ±0.005% (8h): truly neutral
       value = 0.0;
       confidence = 0.3;
       details.push(

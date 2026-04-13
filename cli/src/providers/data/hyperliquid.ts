@@ -41,7 +41,7 @@ const TOKEN_TO_COIN: Record<string, string> = {
 };
 
 export interface HyperliquidData {
-  fundingRate: number;          // current 8h funding rate
+  fundingRate: number;          // current hourly funding rate (Hyperliquid funds every hour)
   openInterest: number;         // USD value
   oiChangePct: number;          // OI change since last fetch (percentage, NOT 24h)
   volume24h: number;            // 24h notional volume
