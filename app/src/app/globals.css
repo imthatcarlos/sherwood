@@ -1418,7 +1418,10 @@ select:focus-visible {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   position: relative;
-  overflow: hidden;
+  /* NOTE: no overflow: hidden here. It would clip absolutely-positioned
+     children like glossary tooltips spawned from <Term> cells. The
+     ::before accent hairline is already bounded to the bar width via
+     left: 0; width: 32% so it doesn't need overflow clipping. */
 }
 
 /* A thin accent hairline runs along the top edge — reads as a
