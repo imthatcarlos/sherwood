@@ -33,6 +33,8 @@ import { Backtester } from "../agent/backtest.js";
 import type { BacktestConfig, WalkForwardConfig } from "../agent/backtest.js";
 import { AlertFormatter } from "../agent/alert-formatter.js";
 import { ExecutionPipeline } from "../agent/execution-pipeline.js";
+import { auditSignalHistory, suggestRenormalizedWeights } from "../agent/signal-audit.js";
+import { DEFAULT_WEIGHTS } from "../agent/scoring.js";
 
 const DEFAULT_TOKENS = ["ethereum", "bitcoin", "solana", "aave", "uniswap"];
 
@@ -624,6 +626,112 @@ export function registerAgentCommands(program: Command): void {
           process.exitCode = 1;
         }
       }
+    });
+
+  // ── signal-audit ──
+  agent
+    .command("signal-audit")
+    .description("Audit signal history — which signal categories actually fire?")
+    .option("--drop-threshold <rate>", "Fire-rate below which a category is flagged for dropping", "0.1")
+    .option("--json", "Emit raw JSON instead of formatted table")
+    .action(async (options: { dropThreshold?: string; json?: boolean }) => {
+      const dropThreshold = parseFloat(options.dropThreshold ?? "0.1");
+      const result = await auditSignalHistory();
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      console.log("");
+      console.log(chalk.bold("  Signal Activity Audit"));
+      console.log(chalk.dim("  " + "═".repeat(72)));
+
+      if (result.totalEntries === 0) {
+        console.log(chalk.dim(`  No signal history yet at ${result.filePath}`));
+        console.log(chalk.dim("  Run 'sherwood agent analyze' a few times to populate it."));
+        console.log("");
+        return;
+      }
+
+      console.log(chalk.dim(`  Source:  ${result.filePath}`));
+      console.log(chalk.dim(`  Entries: ${result.totalEntries}`));
+      if (result.dateRange) {
+        console.log(
+          chalk.dim(
+            `  Range:   ${result.dateRange.from.slice(0, 10)} → ${result.dateRange.to.slice(0, 10)}`,
+          ),
+        );
+      }
+      console.log("");
+
+      // Per-category summary
+      console.log(chalk.bold("  Per Category"));
+      console.log(
+        chalk.dim(
+          `  ${"Category".padEnd(14)} ${"Fire%".padEnd(7)} ${"Obs".padEnd(6)} ${"Mean|v|".padEnd(9)} Signals`,
+        ),
+      );
+      console.log(chalk.dim("  " + "─".repeat(72)));
+      for (const c of result.perCategory) {
+        const color =
+          c.recommendation === "keep"
+            ? chalk.green
+            : c.recommendation === "drop"
+              ? chalk.red
+              : chalk.yellow;
+        const rec = `[${c.recommendation.toUpperCase()}]`;
+        console.log(
+          `  ${c.category.padEnd(14)} ${(c.fireRate * 100).toFixed(0).padStart(5)}%  ${String(c.observations).padEnd(6)} ${c.meanAbsValue.toFixed(3).padEnd(9)} ${c.signalNames.join(", ")} ${color(rec)}`,
+        );
+      }
+
+      // Per-signal detail
+      console.log("");
+      console.log(chalk.bold("  Per Signal"));
+      console.log(
+        chalk.dim(
+          `  ${"Signal".padEnd(22)} ${"Category".padEnd(12)} ${"Fire%".padEnd(7)} ${"Obs".padEnd(6)} ${"Mean|v|".padEnd(9)} ${"Bias".padEnd(8)} Conf`,
+        ),
+      );
+      console.log(chalk.dim("  " + "─".repeat(72)));
+      for (const s of result.perSignal) {
+        const biasColor = s.directionalBias >= 0 ? chalk.green : chalk.red;
+        console.log(
+          `  ${s.name.padEnd(22)} ${s.category.padEnd(12)} ${(s.fireRate * 100).toFixed(0).padStart(5)}%  ${String(s.observations).padEnd(6)} ${s.meanAbsValue.toFixed(3).padEnd(9)} ${biasColor((s.directionalBias >= 0 ? "+" : "") + s.directionalBias.toFixed(3)).padEnd(17)} ${s.meanConfidence.toFixed(2)}`,
+        );
+      }
+
+      // Renormalized weight suggestion
+      const current = DEFAULT_WEIGHTS as unknown as Record<string, number>;
+      const suggested = suggestRenormalizedWeights(current, result.perCategory, dropThreshold);
+      const changed = Object.keys(current).some(
+        (k) => Math.abs((suggested[k] ?? 0) - (current[k] ?? 0)) > 0.001,
+      );
+
+      if (changed) {
+        console.log("");
+        console.log(chalk.bold("  Suggested Weight Renormalization"));
+        console.log(chalk.dim(`  (Dropping categories below ${(dropThreshold * 100).toFixed(0)}% fire rate)`));
+        console.log(chalk.dim("  " + "─".repeat(72)));
+        console.log(
+          chalk.dim(
+            `  ${"Category".padEnd(14)} ${"Current".padEnd(10)} ${"Suggested"}`,
+          ),
+        );
+        for (const [cat, w] of Object.entries(current)) {
+          const newW = suggested[cat] ?? 0;
+          const tag =
+            newW === 0 ? chalk.red(" ← drop") : newW > w ? chalk.green(" ← boost") : "";
+          console.log(
+            `  ${cat.padEnd(14)} ${w.toFixed(3).padEnd(10)} ${newW.toFixed(3)}${tag}`,
+          );
+        }
+      } else {
+        console.log("");
+        console.log(chalk.dim("  All categories above drop threshold — no renormalization suggested."));
+      }
+      console.log("");
     });
 
   // ── alerts ──
