@@ -44,122 +44,101 @@ export default function ProposalCard({
       ? proposal.executeBy
       : 0n;
 
+  const proposerLabel =
+    addressNames?.[proposal.proposer.toLowerCase()] ||
+    truncateAddress(proposal.proposer);
+  const timerLabel =
+    deadline > 0n ? formatTimeRemaining(deadline) : "—";
+  const idStr = String(proposal.id).padStart(2, "0");
+
   return (
-    <div
-      className="panel"
-      style={{ marginBottom: "1rem" }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: "1rem",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: "14px",
-              color: "#fff",
-              fontWeight: 500,
-              marginBottom: "0.25rem",
-            }}
-          >
-            {title}
-          </div>
-          <div
-            style={{
-              fontSize: "11px",
-              color: "rgba(255,255,255,0.4)",
-              fontFamily: "var(--font-plus-jakarta), sans-serif",
-            }}
-          >
-            by {addressNames?.[proposal.proposer.toLowerCase()] || truncateAddress(proposal.proposer)} · Fee:{" "}
-            {formatBps(proposal.performanceFeeBps)} ·{" "}
-            {isPending ? "Voting" : "Execution"}: {deadline > 0n ? formatTimeRemaining(deadline) : "—"}
-          </div>
-          {truncatedDescription && (
-            <div
-              style={{
-                marginTop: "0.5rem",
-                fontSize: "12px",
-                color: "rgba(255,255,255,0.7)",
-                lineHeight: 1.4,
-              }}
-            >
-              {truncatedDescription}
-            </div>
-          )}
-        </div>
-        <span
-          className="glitch-tag"
-          style={
-            isApproved
-              ? { background: "rgba(46,230,166,0.2)", color: "var(--color-accent)" }
-              : undefined
-          }
-        >
-          {isPending ? "VOTING" : "APPROVED"}
-        </span>
+    <div className="prop-card">
+      {/* Left ID rail */}
+      <div className="prop-card__id">
+        <span className="prop-card__id-label">Prop</span>
+        <span className="prop-card__id-num">#{idStr}</span>
       </div>
 
-      {/* Vote progress bar */}
-      {totalVotes > 0n ? (
-        <div style={{ marginBottom: "1rem" }}>
-          <div className="vote-progress-bar">
-            <div
-              className="vote-progress-for"
-              style={{ width: `${forPct}%` }}
-            />
-            <div
-              className="vote-progress-against"
-              style={{ width: `${againstPct}%` }}
-            />
-            {/* Veto threshold marker removed — vetoThresholdBps is % of total supply,
-                not % of votes cast. Shown as text below instead. */}
+      {/* Body */}
+      <div>
+        <div className="prop-card__head">
+          <div style={{ minWidth: 0 }}>
+            <div className="prop-card__title">{title}</div>
+            <div className="prop-card__meta">
+              <span>
+                <span className="prop-card__meta-key">By</span>
+                <span className="prop-card__meta-val">{proposerLabel}</span>
+              </span>
+              <span>
+                <span className="prop-card__meta-key">Fee</span>
+                <span className="prop-card__meta-val">{formatBps(proposal.performanceFeeBps)}</span>
+              </span>
+              <span>
+                <span className="prop-card__meta-key">{isPending ? "Voting" : "Execution"}</span>
+                <span className="prop-card__meta-val">{timerLabel}</span>
+              </span>
+            </div>
+            {truncatedDescription && (
+              <div className="prop-card__desc font-[family-name:var(--font-plus-jakarta)]">
+                {truncatedDescription}
+              </div>
+            )}
           </div>
-          <div
+          <span
+            className="tag-bracket"
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: "10px",
-              fontFamily: "var(--font-plus-jakarta), sans-serif",
-              color: "rgba(255,255,255,0.4)",
-              marginTop: "4px",
+              flexShrink: 0,
+              color: isApproved ? "var(--color-accent)" : "#eab308",
             }}
           >
-            <span style={{ color: "var(--color-accent)" }}>
-              FOR {forPct.toFixed(1)}%
-            </span>
-            <span>
-              {formatShares(totalVotes, assetDecimals * 2)} shares voted · Veto Threshold: {formatBps(params.vetoThresholdBps)}
-            </span>
-            <span style={{ color: "#ff4d4d" }}>
-              {againstPct.toFixed(1)}% AGAINST
-            </span>
-          </div>
+            {isPending ? "Voting" : "Approved"}
+          </span>
         </div>
-      ) : (
-        <div
-          style={{
-            marginBottom: "1rem",
-            fontSize: "11px",
-            color: "rgba(255,255,255,0.3)",
-            fontFamily: "var(--font-plus-jakarta), sans-serif",
-          }}
-        >
-          No votes yet
-        </div>
-      )}
 
-      {isPending && (
-        <VoteButton
-          governorAddress={governorAddress}
-          proposalId={proposal.id}
-          voteEnd={proposal.voteEnd}
-        />
-      )}
+        {/* Vote progress */}
+        {totalVotes > 0n ? (
+          <div className="prop-card__vote">
+            <div className="prop-card__vote-numbers">
+              <span className="prop-card__vote-pct prop-card__vote-pct--for">
+                {forPct.toFixed(1)}%
+              </span>
+              <span className="prop-card__vote-divider">/</span>
+              <span className="prop-card__vote-pct prop-card__vote-pct--against">
+                {againstPct.toFixed(1)}%
+              </span>
+            </div>
+            <div className="vote-progress-bar">
+              <div
+                className="vote-progress-for"
+                style={{ width: `${forPct}%` }}
+              />
+              <div
+                className="vote-progress-against"
+                style={{ width: `${againstPct}%` }}
+              />
+            </div>
+            <div className="prop-card__vote-foot">
+              <span style={{ color: "var(--color-accent)" }}>For</span>
+              <span>
+                {formatShares(totalVotes, assetDecimals * 2)} shares · Veto ≥ {formatBps(params.vetoThresholdBps)}
+              </span>
+              <span style={{ color: "#ff4d4d" }}>Against</span>
+            </div>
+          </div>
+        ) : (
+          <div className="prop-card__no-votes">{"// No Votes Yet"}</div>
+        )}
+
+        {isPending && (
+          <div style={{ marginTop: "1rem" }}>
+            <VoteButton
+              governorAddress={governorAddress}
+              proposalId={proposal.id}
+              voteEnd={proposal.voteEnd}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

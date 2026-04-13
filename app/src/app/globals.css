@@ -353,6 +353,245 @@ body {
     transparent 75%);
 }
 
+/* ── Proposal Card (order-ticket layout) ──────────────── */
+/* Two-column grid: a left ID rail with the proposal index in
+   monospace, and a body containing title, meta, description,
+   vote-progress, and actions. Reads like a trading desk order
+   ticket. */
+
+.prop-card {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  border: 1px solid var(--color-border-soft);
+  background: rgba(255, 255, 255, 0.012);
+  position: relative;
+  transition: border-color 0.25s ease, background 0.25s ease;
+  margin-bottom: 1rem;
+}
+
+.prop-card:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.prop-card__id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.35);
+  border-right: 1px dashed var(--color-border-soft);
+  padding-right: 1.25rem;
+  padding-top: 0.15rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  min-width: 0;
+  text-align: right;
+}
+
+.prop-card__id-num {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--color-accent);
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.prop-card__id-label {
+  font-size: 9px;
+  letter-spacing: 0.28em;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+}
+
+.prop-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.prop-card__title {
+  font-size: 16px;
+  color: #fff;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.prop-card__meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 1.25rem;
+  margin-top: 0.4rem;
+}
+
+.prop-card__meta-key {
+  opacity: 0.55;
+  margin-right: 0.45em;
+}
+
+.prop-card__meta-val {
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.05em;
+}
+
+.prop-card__desc {
+  margin-top: 0.85rem;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.55;
+  font-family: var(--font-body);
+}
+
+.prop-card__vote {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.prop-card__vote-numbers {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.6rem;
+}
+
+.prop-card__vote-pct {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.prop-card__vote-pct--for { color: var(--color-accent); }
+.prop-card__vote-pct--against { color: #ff4d4d; }
+
+.prop-card__vote-divider {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.prop-card__vote-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 0.6rem;
+}
+
+.prop-card__no-votes {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--color-border-soft);
+}
+
+@media (max-width: 640px) {
+  .prop-card { grid-template-columns: 1fr; }
+  .prop-card__id {
+    border-right: none;
+    border-bottom: 1px dashed var(--color-border-soft);
+    padding-right: 0;
+    padding-bottom: 0.75rem;
+    flex-direction: row;
+    align-items: baseline;
+    text-align: left;
+  }
+}
+
+/* ── Feature Carousel (refined) ─────────────────────────── */
+/* Square buttons, monospace counter, optional slide labels. */
+
+.fc-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-top: 2.25rem;
+  border-top: 1px solid var(--color-border-soft);
+  padding-top: 1.25rem;
+}
+
+.fc-btn {
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: rgba(255, 255, 255, 0.55);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.fc-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: rgba(46, 230, 166, 0.05);
+}
+
+.fc-counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1;
+  text-align: center;
+}
+
+.fc-counter__digits {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.18em;
+}
+
+.fc-counter__digits .fc-counter__current {
+  color: var(--color-accent);
+}
+
+.fc-counter__bar {
+  width: 100%;
+  max-width: 260px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.fc-counter__bar-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--color-accent);
+  transform-origin: left center;
+  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* Horizontal progress rail used by roadmap phases */
 .progress-rail {
   position: relative;
