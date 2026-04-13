@@ -1,12 +1,16 @@
 "use client";
 
 /**
- * EquityCurveChart — TVL over time with a time-window selector and an
- * optional USDC-lending benchmark overlay.
+ * EquityCurveChart — TVL over time with a time-window selector.
  *
  * The server passes the full available curve (typically 7D resolution from
- * the subgraph). We slice client-side for shorter windows and render a
- * flat benchmark line assuming a constant APY (4.5% default).
+ * the subgraph). We slice client-side for shorter windows.
+ *
+ * NOTE: An earlier version included a USDC-lending "benchmark" overlay.
+ * It was removed because (a) it's misleading for non-stablecoin vaults,
+ * (b) without a live oracle the line is an idealized straight ramp that
+ * makes early-stage / flat vaults look uniformly bad, and (c) we don't
+ * yet have a real lending-rate data feed to honestly source it.
  */
 
 import { useRef, useEffect, useState, useMemo } from "react";
@@ -36,10 +40,6 @@ type WindowId = "7D" | "30D" | "90D" | "ALL";
 interface EquityCurveChartProps {
   data: number[];
   hwm: string;
-  /** Annualized benchmark APY (fraction, e.g. 0.045 = 4.5%). */
-  benchmarkApy?: number;
-  /** Disable benchmark overlay. */
-  hideBenchmark?: boolean;
 }
 
 const WINDOWS: { id: WindowId; label: string; days: number | null }[] = [
@@ -52,8 +52,6 @@ const WINDOWS: { id: WindowId; label: string; days: number | null }[] = [
 export default function EquityCurveChart({
   data: rawData,
   hwm,
-  benchmarkApy = 0.045,
-  hideBenchmark = false,
 }: EquityCurveChartProps) {
   const [windowId, setWindowId] = useState<WindowId>("7D");
 
@@ -66,15 +64,6 @@ export default function EquityCurveChart({
     const slice = rawData.slice(-days);
     return slice.length < 2 ? [slice[0] ?? 0, slice[0] ?? 0] : slice;
   }, [rawData, windowId]);
-
-  // Build a flat benchmark growing at a constant daily rate.
-  // Starts at the first windowData point so the curves begin together.
-  const benchmarkData = useMemo(() => {
-    if (hideBenchmark || windowData.length < 2) return null;
-    const start = windowData[0] || 1;
-    const dailyRate = benchmarkApy / 365;
-    return windowData.map((_, i) => start * Math.pow(1 + dailyRate, i));
-  }, [windowData, benchmarkApy, hideBenchmark]);
 
   const chartRef = useRef<ChartJS<"line">>(null);
   const [gradient, setGradient] = useState<CanvasGradient | string>(
@@ -105,21 +94,6 @@ export default function EquityCurveChart({
       pointRadius: 0,
     },
   ];
-
-  if (benchmarkData) {
-    datasets.push({
-      label: `USDC lending (${(benchmarkApy * 100).toFixed(1)}% APY)`,
-      data: benchmarkData,
-      borderColor: "rgba(232, 220, 192, 0.5)",
-      borderWidth: 1,
-      fill: false,
-      backgroundColor: "transparent",
-      tension: 0,
-      pointRadius: 0,
-      // @ts-expect-error chart.js accepts borderDash but types are loose in the types we register
-      borderDash: [4, 4],
-    });
-  }
 
   return (
     <div className="chart-container">
@@ -179,37 +153,6 @@ export default function EquityCurveChart({
           }}
         />
       </div>
-
-      {benchmarkData && (
-        <div
-          style={{
-            marginTop: "0.75rem",
-            display: "flex",
-            gap: "1.25rem",
-            alignItems: "center",
-            fontSize: "11px",
-            fontFamily: "var(--font-mono)",
-            letterSpacing: "0.05em",
-            color: "var(--color-fg-secondary)",
-          }}
-        >
-          <span style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
-            <span style={{ display: "inline-block", width: 14, height: 2, background: "#2EE6A6" }} />
-            Vault NAV
-          </span>
-          <span style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
-            <span
-              style={{
-                display: "inline-block",
-                width: 14,
-                height: 1,
-                borderTop: "1px dashed rgba(232,220,192,0.5)",
-              }}
-            />
-            USDC lending @ {(benchmarkApy * 100).toFixed(1)}% APY (reference)
-          </span>
-        </div>
-      )}
     </div>
   );
 }
