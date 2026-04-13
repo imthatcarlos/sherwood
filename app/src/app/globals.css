@@ -2775,9 +2775,17 @@ select:focus-visible {
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
   margin: 2rem 0;
+  /* On wide screens the hero terminal floats absolutely to the right
+     (see .hero-terminal). Cap width so cards stay in the left column. */
+  max-width: 720px;
 }
 @media (max-width: 768px) {
   .sh-onboarding-split { grid-template-columns: 1fr; }
+}
+/* Stack to single column when terminal floats but viewport is narrow-ish,
+   so cards don't get too cramped beside the terminal. */
+@media (min-width: 1280px) and (max-width: 1500px) {
+  .sh-onboarding-split { grid-template-columns: 1fr; max-width: 480px; }
 }
 .sh-onboarding-card {
   padding: 1.75rem;
