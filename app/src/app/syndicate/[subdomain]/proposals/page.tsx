@@ -3,7 +3,6 @@ import AmbientBackground from "@/components/AmbientBackground";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import SyndicateClient from "@/components/SyndicateClient";
-import ActiveProposal from "@/components/proposals/ActiveProposal";
 import ProposalCard from "@/components/proposals/ProposalCard";
 import ProposalHistory from "@/components/proposals/ProposalHistory";
 import AgentStats from "@/components/proposals/AgentStats";
@@ -17,7 +16,6 @@ import {
 } from "@/lib/governor-data";
 import { formatBps, getAddresses } from "@/lib/contracts";
 import { formatDuration } from "@/lib/governor-data";
-import { fetchPortfolioData } from "@/lib/portfolio-data";
 import type { ActivityEvent } from "@/lib/syndicate-data";
 import { Term } from "@/components/ui/Glossary";
 import type { Address } from "viem";
@@ -299,92 +297,9 @@ export default async function ProposalsPage({
     }
   }
 
-  const activeProposal =
-    governor.proposals.find(
-      (p) => p.computedState === ProposalState.Executed,
-    ) ?? null;
-
-  // Fetch portfolio strategy data if active proposal exists
-  let portfolioAllocations: {
-    allocations: { symbol: string; weightPct: number }[];
-    totalAmount: string;
-    assetSymbol: string;
-  } | null = null;
-
-  let enrichedPortfolio: {
-    allocations: {
-      token: Address;
-      symbol: string;
-      decimals: number;
-      weightPct: number;
-      tokenAmount: string;
-      investedAmount: string;
-      feeTier: number;
-      logo: string | null;
-      marketCap: number | null;
-    }[];
-    totalAmount: string;
-    assetSymbol: string;
-    assetAddress: Address;
-    assetDecimals: number;
-    chainId: number;
-  } | null = null;
-
-  if (activeProposal && liveGovernor) {
-    const portfolioData = await fetchPortfolioData(
-      liveGovernor.governorAddress,
-      activeProposal.id,
-      data.chainId,
-      data.assetDecimals,
-      data.assetSymbol,
-    );
-    if (portfolioData) {
-      portfolioAllocations = {
-        allocations: portfolioData.allocations.map((a) => ({
-          symbol: a.symbol,
-          weightPct: a.targetWeightBps / 100,
-        })),
-        totalAmount: portfolioData.totalAmount,
-        assetSymbol: portfolioData.assetSymbol,
-      };
-
-      // Build enriched data for PortfolioDashboard
-      enrichedPortfolio = {
-        allocations: portfolioData.allocations.map((a) => ({
-          token: a.token,
-          symbol: a.symbol,
-          decimals: a.decimals,
-          weightPct: a.targetWeightBps / 100,
-          tokenAmount: a.tokenAmount,
-          investedAmount: a.investedAmount,
-          feeTier: a.feeTier,
-          logo: a.logo,
-          marketCap: a.marketCap,
-        })),
-        totalAmount: portfolioData.totalAmount,
-        assetSymbol: portfolioData.assetSymbol,
-        assetAddress: portfolioData.assetAddress,
-        assetDecimals: portfolioData.assetDecimals,
-        chainId: data.chainId,
-      };
-    }
-  }
-
-  // Mock portfolio data when using mock governor
-  if (isMock && activeProposal) {
-    portfolioAllocations = {
-      allocations: [
-        { symbol: "JPM", weightPct: 25.0 },
-        { symbol: "NVDA", weightPct: 20.0 },
-        { symbol: "MSFT", weightPct: 18.0 },
-        { symbol: "V", weightPct: 15.0 },
-        { symbol: "AAPL", weightPct: 12.0 },
-        { symbol: "META", weightPct: 10.0 },
-      ],
-      totalAmount: "50,000.00",
-      assetSymbol: data.assetSymbol,
-    };
-  }
+  // Active-strategy + portfolio fetching has moved to the vault page
+  // (see src/lib/active-strategy.ts). This page now focuses on voting
+  // queue + history + agent stats.
 
   const votingQueue = governor.proposals.filter(
     (p) =>
@@ -462,19 +377,9 @@ export default async function ProposalsPage({
             />
           )}
 
-          {/* Active Strategy */}
-          <ActiveProposal
-            proposal={activeProposal}
-            cooldownEnd={governor.cooldownEnd}
-            addressNames={addressNames}
-            assetDecimals={data.assetDecimals}
-            assetSymbol={data.assetSymbol}
-            portfolioAllocations={portfolioAllocations}
-            enrichedPortfolio={enrichedPortfolio}
-            governorAddress={!isMock ? governor.governorAddress : undefined}
-            chainId={!isMock ? data.chainId : undefined}
-            explorerUrl={!isMock ? getAddresses(data.chainId).blockExplorer : undefined}
-          />
+          {/* NOTE: Active Strategy now lives on the Vault tab — that's where
+              depositors first land asking "what is my capital doing?".
+              Proposals page stays focused on voting + history. */}
 
           {/* Voting Queue */}
           {votingQueue.length > 0 && (

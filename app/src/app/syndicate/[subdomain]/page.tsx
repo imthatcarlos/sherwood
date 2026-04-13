@@ -12,11 +12,13 @@ import VaultOverview from "@/components/VaultOverview";
 import AgentRoster from "@/components/AgentRoster";
 import AttestationTimeline from "@/components/AttestationTimeline";
 import LiveFeed from "@/components/LiveFeed";
+import ActiveProposal from "@/components/proposals/ActiveProposal";
 import { getAddresses } from "@/lib/contracts";
 import StrategyActivity from "@/components/StrategyActivity";
 import ReferralBanner from "@/components/ReferralBanner";
 import { RecentlyViewedTracker } from "@/components/RecentlyViewed";
 import { resolveSyndicateBySubdomain } from "@/lib/syndicate-data";
+import { loadActiveStrategy } from "@/lib/active-strategy";
 
 export async function generateMetadata({
   params,
@@ -76,6 +78,17 @@ export default async function SyndicateDetailPage({
   const chainAddrs = getAddresses(data.chainId);
   const hasIdentityRegistry = chainAddrs.identityRegistry !== "0x0000000000000000000000000000000000000000";
   const hasEAS = !!chainAddrs.easExplorer;
+
+  // Load the currently-executing proposal (if any) so the Active Strategy
+  // panel can render at the top of the vault page — where depositors first
+  // land with the question "what's my capital doing right now?".
+  const activeStrategy = await loadActiveStrategy(
+    data.vault,
+    data.chainId,
+    data.assetDecimals,
+    data.assetSymbol,
+    data.activity,
+  );
 
   return (
     <>
@@ -152,6 +165,27 @@ export default async function SyndicateDetailPage({
               </div>
             </div>
           </div>
+
+          {/* Active Strategy — primary "what's my capital doing right now?"
+              panel. Renders only when a proposal is executing; cooldown /
+              idle states are better left off the vault page so the layout
+              doesn't reserve empty space. */}
+          {activeStrategy.activeProposal && activeStrategy.governor && (
+            <div style={{ marginTop: "1.5rem" }}>
+              <ActiveProposal
+                proposal={activeStrategy.activeProposal}
+                cooldownEnd={activeStrategy.governor.cooldownEnd}
+                addressNames={addressNames}
+                assetDecimals={data.assetDecimals}
+                assetSymbol={data.assetSymbol}
+                portfolioAllocations={activeStrategy.portfolioAllocations}
+                enrichedPortfolio={activeStrategy.enrichedPortfolio}
+                governorAddress={activeStrategy.governor.governorAddress}
+                chainId={data.chainId}
+                explorerUrl={chainAddrs.blockExplorer}
+              />
+            </div>
+          )}
 
           {/* Dashboard grid */}
           <div className="grid-dashboard">

@@ -106,6 +106,13 @@ export default function ProposalHistory({
   explorerUrl,
   receipts,
 }: ProposalHistoryProps) {
+  // Governor returns proposals in ascending id order (oldest → newest).
+  // For a history view users expect the reverse — latest activity at the
+  // top. Sort by id desc without mutating the caller's array.
+  const ordered = [...proposals].sort((a, b) =>
+    b.id > a.id ? 1 : b.id < a.id ? -1 : 0,
+  );
+
   return (
     <div className="panel">
       <div className="panel-title">
@@ -115,7 +122,7 @@ export default function ProposalHistory({
         </span> */}
       </div>
 
-      {proposals.length === 0 ? (
+      {ordered.length === 0 ? (
         <div
           style={{
             textAlign: "center",
