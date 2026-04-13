@@ -2957,6 +2957,89 @@ select:focus-visible {
   letter-spacing: 0.15em;
 }
 
+/* ── Mobile quick wins (a11y audit) ───────────────────── */
+
+/* Metrics grid stacks to 1 column on narrow screens so 2-col cards
+   don't get crushed at 320px. */
+@media (max-width: 500px) {
+  .metrics-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Wrap tab buttons and shrink type on phones so the 7D/30D/90D/ALL
+   strip doesn't overflow the chart panel. */
+@media (max-width: 500px) {
+  .sh-tabs {
+    flex-wrap: wrap;
+  }
+  .sh-tab {
+    padding: 0.6rem 0.9rem;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+  }
+}
+
+/* Chart panel height is fixed at 280px — too tall on small phones. */
+@media (max-width: 500px) {
+  .chart-container > div[style*="height: 280px"] {
+    height: 200px !important;
+  }
+}
+
+/* Leaderboard filter bar — stack to column below 640px so 4+ controls
+   don't crush each other. */
+@media (max-width: 640px) {
+  .sh-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  .sh-filter-bar .sh-input,
+  .sh-filter-bar label,
+  .sh-filter-bar select {
+    max-width: none !important;
+    width: 100%;
+  }
+  .sh-filter-bar > span:last-child {
+    margin-left: 0 !important;
+    text-align: center;
+  }
+}
+
+/* Leaderboard table container — allow horizontal scroll on phones so
+   the rightmost Action column isn't lost. */
+@media (max-width: 640px) {
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-container table {
+    min-width: 640px;
+  }
+}
+
+/* Deposit / Withdraw modal input row — stack input above MAX on phones
+   so neither gets cramped at 320px. */
+@media (max-width: 500px) {
+  .deposit-input-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  .deposit-input-row .btn-follow,
+  .deposit-input-row button {
+    align-self: flex-end;
+  }
+}
+
+/* Bump the worst secondary-text contrast offenders. 0.3 fails WCAG AA
+   badly on near-black; 0.5 is the floor for small text. Kept as a
+   utility class so components can opt in without overriding existing
+   inline styles across the codebase. */
+.text-muted-safe { color: rgba(255, 255, 255, 0.6) !important; }
+.text-muted-min  { color: rgba(255, 255, 255, 0.5) !important; }
+
 /* Deep-link arrival flash on leaderboard rows */
 @keyframes lb-row-flash {
   0%   { background: rgba(46, 230, 166, 0.18); box-shadow: inset 0 0 0 1px rgba(46, 230, 166, 0.6); }

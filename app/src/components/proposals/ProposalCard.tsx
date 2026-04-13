@@ -164,6 +164,10 @@ export default function ProposalCard({
           <div className="prop-card__no-votes">{"// No Votes Yet"}</div>
         )}
 
+        {/* Mobile: stack the optimistic vote bar text so percentages
+            remain readable beside a narrow progress bar. Handled via CSS
+            class on .prop-card__vote (globals.css).  */}
+
         {/* Proposal state stepper */}
         <div style={{ marginTop: "0.75rem", marginBottom: "0.5rem" }}>
           <ProposalStepper state={proposal.computedState} />
