@@ -52,6 +52,61 @@ function PnlDelta({ value, raw }: { value: string; raw: number }) {
   return <span className={`pnl-delta pnl-delta--${dir}`}>{label}</span>;
 }
 
+/**
+ * Net-flow trend arrow, computed from the syndicate's lifetime
+ * deposits vs withdrawals. Honest signal — not a fake sparkline.
+ */
+function FlowTrend({ trend }: { trend?: -1 | 0 | 1 }) {
+  if (!trend) return <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>;
+  const color =
+    trend === 1
+      ? "var(--color-accent)"
+      : trend === -1
+        ? "#ff4d4d"
+        : "rgba(255,255,255,0.4)";
+  const arrow = trend === 1 ? "▲" : trend === -1 ? "▼" : "·";
+  const title =
+    trend === 1
+      ? "Net inflows over lifetime"
+      : trend === -1
+        ? "Net outflows over lifetime"
+        : "Balanced flow";
+  return (
+    <span
+      title={title}
+      style={{
+        color,
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+      }}
+    >
+      {arrow}
+    </span>
+  );
+}
+
+function NewBadge({ ageDays }: { ageDays?: number }) {
+  if (ageDays === undefined || ageDays > 7) return null;
+  return (
+    <span
+      title={`Created ${ageDays}d ago`}
+      style={{
+        marginLeft: "0.4rem",
+        fontFamily: "var(--font-mono)",
+        fontSize: 9,
+        letterSpacing: "0.18em",
+        padding: "1px 5px",
+        background: "rgba(46, 230, 166, 0.15)",
+        color: "var(--color-accent)",
+        border: "1px solid rgba(46, 230, 166, 0.35)",
+        verticalAlign: "middle",
+      }}
+    >
+      NEW
+    </span>
+  );
+}
+
 export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
   const [tab, setTab] = useState<TabId>("syndicates");
   const [query, setQuery] = useState("");
@@ -225,6 +280,7 @@ export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
                   <th scope="col">Syndicate</th>
                   <th scope="col">Strategy</th>
                   <th scope="col">TVL</th>
+                  <th scope="col" style={{ width: "40px" }} title="Net deposit flow over lifetime">Flow</th>
                   <th scope="col">Agents</th>
                   <th scope="col">Status</th>
                   <th scope="col">Chain</th>
@@ -245,6 +301,7 @@ export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
                         >
                           {s.name}
                         </Link>
+                        <NewBadge ageDays={s.ageDays} />
                         <span
                           className="block mt-0.5"
                           style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px" }}
@@ -263,6 +320,7 @@ export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
                           </span>
                         )}
                       </td>
+                      <td><FlowTrend trend={s.flowTrend} /></td>
                       <td>{s.agentCount}</td>
                       <td>
                         <span

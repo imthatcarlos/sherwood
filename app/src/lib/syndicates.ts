@@ -58,6 +58,40 @@ export interface SyndicateDisplay {
   proposalCount: number;
   status: "ACTIVE_STRATEGY" | "VOTING" | "IDLE" | "NO_AGENTS";
   chainId: number;
+  /** Cumulative net flow direction. +1 deposits-positive, -1 withdrawals-dominant, 0 unknown. */
+  flowTrend?: -1 | 0 | 1;
+  /** Days since the syndicate was created. Used for the "NEW" badge. */
+  ageDays?: number;
+}
+
+/**
+ * Honest rank-supplemental signals from cheap subgraph fields.
+ * Kept lightweight on purpose — a real per-syndicate equity series would
+ * require N extra queries per leaderboard load.
+ */
+function computeFlowTrend(deposits: string, withdrawals: string): -1 | 0 | 1 {
+  try {
+    const d = BigInt(deposits || "0");
+    const w = BigInt(withdrawals || "0");
+    if (d === 0n && w === 0n) return 0;
+    if (w === 0n) return 1;
+    // Trend up if deposits > 1.1x withdrawals, down if reversed
+    if (d * 10n > w * 11n) return 1;
+    if (w * 10n > d * 11n) return -1;
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+function computeAgeDays(createdAt: string): number {
+  try {
+    const ts = Number(createdAt);
+    if (!ts) return 0;
+    return Math.max(0, Math.floor((Date.now() / 1000 - ts) / 86400));
+  } catch {
+    return 0;
+  }
 }
 
 /** Compute aggregate protocol stats from a list of syndicates. */
@@ -390,6 +424,8 @@ async function fetchViaSubgraph(
         assetSymbol: info.symbol,
         agentCount,
         proposalCount: (s.proposals || []).length,
+        flowTrend: computeFlowTrend(s.totalDeposits, s.totalWithdrawals),
+        ageDays: computeAgeDays(s.createdAt),
         agents: (s.agents || []).map((a) => {
           const stats = agentPnl[a.agentAddress.toLowerCase()] ?? { count: 0, pnl: 0n };
           const pnlAbs = stats.pnl < 0n ? -stats.pnl : stats.pnl;
