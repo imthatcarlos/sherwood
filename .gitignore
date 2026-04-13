@@ -40,3 +40,8 @@ __pycache__/
 
 # Stray files
 =
+
+# Local backtest outputs (kept locally for analysis, not committed)
+baseline-backtest-*
+*.backtest.json
+*.backtest.txt
