@@ -94,6 +94,12 @@ export class MemorySmootherStorage implements SmootherStorage {
 }
 
 export class SignalSmoother {
+  /** In-process mutex chain — serializes load→mutate→save across tokens in
+   *  the same process. Does NOT protect against multiple processes racing
+   *  the same file; for that, the disk storage does atomic replace and
+   *  re-reads the freshest cache inside the mutex. See README / H1 below. */
+  private writeLock: Promise<void> = Promise.resolve();
+
   constructor(
     private storage: SmootherStorage,
     private config: SmootherConfig = DEFAULT_SMOOTHER_CONFIG,
@@ -104,9 +110,44 @@ export class SignalSmoother {
    * averages with confidence penalties for disagreement. Slow signals
    * pass through unchanged. Side effect: appends current readings to the
    * cache and persists.
+   *
+   * Serialized via writeLock: concurrent calls from within the same
+   * process (e.g. parallel per-token smooths) queue on the shared mutex
+   * so each sees the freshest cache. Cross-process concurrency (two agent
+   * processes on the same host) is NOT fully safe — the second-to-save
+   * wins. Document: run one agent per host, or use MemorySmootherStorage
+   * in contexts with multiple simulation runs.
    */
   async smooth(tokenId: string, signals: Signal[], nowMs: number = Date.now()): Promise<Signal[]> {
+    // Queue on the shared mutex
+    const prev = this.writeLock;
+    let release: () => void = () => {};
+    this.writeLock = new Promise<void>((resolve) => { release = resolve; });
+    await prev;
+
+    try {
+      return await this.smoothUnlocked(tokenId, signals, nowMs);
+    } finally {
+      release();
+    }
+  }
+
+  private async smoothUnlocked(tokenId: string, signals: Signal[], nowMs: number): Promise<Signal[]> {
     const cache = await this.storage.load();
+    // M2: sweep stale tokens out of the cache entirely so rotated-out
+    // tokens don't leak JSON size indefinitely. A token is "stale" if
+    // every signal buffer's newest reading is older than maxAgeMs.
+    const cutoff = nowMs - this.config.maxAgeMs;
+    for (const t of Object.keys(cache)) {
+      if (t === tokenId) continue;
+      const buffers = cache[t];
+      if (!buffers) continue;
+      const bufferList = Object.values(buffers);
+      const anyFresh = bufferList.some((b) => b.length > 0 && b[b.length - 1]!.ts >= cutoff);
+      if (!anyFresh) {
+        delete cache[t];
+      }
+    }
     if (!cache[tokenId]) cache[tokenId] = {};
 
     const out: Signal[] = [];

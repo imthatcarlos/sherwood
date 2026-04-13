@@ -329,6 +329,57 @@ describe("computeTradeDecision", () => {
     expect(trendingUpDecision.action).toBe("HOLD");
   });
 
+  it("score == buy threshold fires BUY (symmetric boundary)", () => {
+    // Construct a signal set that scores exactly at the ranging regime's BUY
+    // threshold (0.4). Confirms the >= check fires at the boundary.
+    const signals: Signal[] = [
+      makeSignal("technical", 0.4),
+      makeSignal("sentiment", 0.4),
+      makeSignal("onchain", 0.4),
+      makeSignal("fundamental", 0.4),
+      makeSignal("event", 0.4),
+      makeSignal("smartMoney", 0.4),
+    ];
+    const decision = computeTradeDecision(
+      signals, undefined, undefined, undefined, "ranging",
+    );
+    expect(decision.score).toBeCloseTo(0.4, 5);
+    expect(decision.action).toBe("BUY");
+  });
+
+  it("score == sell threshold fires SELL (symmetric boundary)", () => {
+    const signals: Signal[] = [
+      makeSignal("technical", -0.4),
+      makeSignal("sentiment", -0.4),
+      makeSignal("onchain", -0.4),
+      makeSignal("fundamental", -0.4),
+      makeSignal("event", -0.4),
+      makeSignal("smartMoney", -0.4),
+    ];
+    const decision = computeTradeDecision(
+      signals, undefined, undefined, undefined, "ranging",
+    );
+    expect(decision.score).toBeCloseTo(-0.4, 5);
+    expect(decision.action).toBe("SELL");
+  });
+
+  it("score == strongSell threshold fires STRONG_SELL", () => {
+    const signals: Signal[] = [
+      makeSignal("technical", -0.65),
+      makeSignal("sentiment", -0.65),
+      makeSignal("onchain", -0.65),
+      makeSignal("fundamental", -0.65),
+      makeSignal("event", -0.65),
+      makeSignal("smartMoney", -0.65),
+    ];
+    const decision = computeTradeDecision(
+      signals, undefined, undefined, undefined, "ranging",
+    );
+    // Ranging strongSell = -0.65 exactly
+    expect(decision.score).toBeCloseTo(-0.65, 5);
+    expect(decision.action).toBe("STRONG_SELL");
+  });
+
   it("records thresholds used on the decision for replay", () => {
     const signals: Signal[] = [makeSignal("technical", 0.5)];
     const decision = computeTradeDecision(

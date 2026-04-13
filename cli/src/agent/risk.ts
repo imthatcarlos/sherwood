@@ -57,6 +57,20 @@ export interface RiskConfig {
   riskPerTrade: number;
 }
 
+/**
+ * Default risk config.
+ *
+ * `trailingStopPct` / `breakevenTriggerPct` / `profitLockSteps` default to
+ * 0 / 0 / [] — existing users upgrading the CLI keep prior behavior
+ * (SELL signal + static stop-loss + take-profit + time-stop only).
+ *
+ * To enable active trailing, users explicitly opt in via config:
+ *   sherwood agent config --set trailingStopPct=0.05
+ *   sherwood agent config --set breakevenTriggerPct=0.02
+ *
+ * Recommended aggressive defaults are preserved as RECOMMENDED_TRAILING_CONFIG
+ * below for one-shot enablement.
+ */
 export const DEFAULT_RISK_CONFIG: RiskConfig = {
   maxPortfolioRisk: 0.15,
   maxSinglePosition: 0.10,
@@ -64,19 +78,33 @@ export const DEFAULT_RISK_CONFIG: RiskConfig = {
   maxConcurrentTrades: 8,
   hardStopPercent: 0.12,
   trailingStopAtr: 1.5,
-  trailingStopPct: 0.05,        // 5% trailing by default
-  breakevenTriggerPct: 0.02,    // move to breakeven after +2% gain
-  profitLockSteps: [
-    { trigger: 0.05, lock: 0.02 }, // after +5%, lock in at least +2%
-    { trigger: 0.10, lock: 0.05 }, // after +10%, lock in +5%
-    { trigger: 0.20, lock: 0.10 }, // after +20%, lock in +10%
-  ],
+  trailingStopPct: 0,         // OFF — opt in via config
+  breakevenTriggerPct: 0,     // OFF — opt in via config
+  profitLockSteps: [],        // OFF — opt in via config
   dailyLossLimit: 0.05,
   weeklyLossLimit: 0.10,
   monthlyLossLimit: 0.15,
   maxSlippage: { large: 0.005, mid: 0.015, small: 0.03 },
   riskPerTrade: 0.02,
 };
+
+/**
+ * Opinionated trailing-stop preset.
+ *
+ * To enable all three mechanisms at once:
+ *   sherwood agent config --set trailingStopPct=0.05
+ *   sherwood agent config --set breakevenTriggerPct=0.02
+ *   (profitLockSteps currently requires editing config.json directly)
+ */
+export const RECOMMENDED_TRAILING_CONFIG = {
+  trailingStopPct: 0.05,
+  breakevenTriggerPct: 0.02,
+  profitLockSteps: [
+    { trigger: 0.05, lock: 0.02 },
+    { trigger: 0.10, lock: 0.05 },
+    { trigger: 0.20, lock: 0.10 },
+  ],
+} as const;
 
 const EMPTY_PORTFOLIO: PortfolioState = {
   totalValue: 0,

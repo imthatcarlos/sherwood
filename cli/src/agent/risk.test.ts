@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { RiskManager, DEFAULT_RISK_CONFIG, type Position, type RiskConfig } from "./risk.js";
+import { RiskManager, DEFAULT_RISK_CONFIG, RECOMMENDED_TRAILING_CONFIG, type Position, type RiskConfig } from "./risk.js";
 
 // Helper to create a minimal Position for tests
 function makePosition(overrides: Partial<Position> = {}): Position {
@@ -382,13 +382,36 @@ describe("RiskManager", () => {
   });
 
   describe("updateTrailingStops", () => {
+    // Trailing defaults are OFF. Use the recommended preset for these tests.
+    let trailingRm: RiskManager;
+    beforeEach(() => {
+      trailingRm = new RiskManager({
+        ...DEFAULT_RISK_CONFIG,
+        trailingStopPct: RECOMMENDED_TRAILING_CONFIG.trailingStopPct,
+        breakevenTriggerPct: RECOMMENDED_TRAILING_CONFIG.breakevenTriggerPct,
+        profitLockSteps: [...RECOMMENDED_TRAILING_CONFIG.profitLockSteps],
+      });
+    });
+
+    it("is a no-op with default risk config (opt-in only)", () => {
+      const pos = makePosition({
+        entryPrice: 100,
+        currentPrice: 150,        // +50% gain
+        stopLoss: 90,
+      });
+      // rm (from outer beforeEach) uses DEFAULT_RISK_CONFIG — all trailing
+      // mechanism fields zeroed. Users must explicitly opt in.
+      const [updated] = rm.updateTrailingStops([pos]);
+      expect(updated!.stopLoss).toBe(90);
+    });
+
     it("moves stop to breakeven after +2% gain", () => {
       const pos = makePosition({
         entryPrice: 100,
         currentPrice: 102.5, // +2.5% triggers breakeven
         stopLoss: 90,
       });
-      const [updated] = rm.updateTrailingStops([pos]);
+      const [updated] = trailingRm.updateTrailingStops([pos]);
       // breakeven → 100; percent-trail 5% → 97.375; max = 100
       expect(updated!.stopLoss).toBe(100);
     });
@@ -399,7 +422,7 @@ describe("RiskManager", () => {
         currentPrice: 106,   // +6% triggers [0.05, 0.02]
         stopLoss: 90,
       });
-      const [updated] = rm.updateTrailingStops([pos]);
+      const [updated] = trailingRm.updateTrailingStops([pos]);
       // lock → 102; trail 106*0.95=100.7; max = 102
       expect(updated!.stopLoss).toBe(102);
     });
@@ -410,7 +433,7 @@ describe("RiskManager", () => {
         currentPrice: 111,   // +11% triggers [0.10, 0.05]
         stopLoss: 90,
       });
-      const [updated] = rm.updateTrailingStops([pos]);
+      const [updated] = trailingRm.updateTrailingStops([pos]);
       // lock → 105; trail 111*0.95=105.45; max = 105.45
       expect(updated!.stopLoss).toBeCloseTo(105.45, 2);
     });
@@ -421,7 +444,7 @@ describe("RiskManager", () => {
         currentPrice: 130,   // +30%
         stopLoss: 90,
       });
-      const [updated] = rm.updateTrailingStops([pos]);
+      const [updated] = trailingRm.updateTrailingStops([pos]);
       // lock at +20% → 110; trail = 130*0.95 = 123.5; trail wins
       expect(updated!.stopLoss).toBeCloseTo(123.5, 2);
     });
@@ -432,7 +455,7 @@ describe("RiskManager", () => {
         currentPrice: 101,
         stopLoss: 99,        // already above current trail (101*0.95=95.95)
       });
-      const [updated] = rm.updateTrailingStops([pos]);
+      const [updated] = trailingRm.updateTrailingStops([pos]);
       expect(updated!.stopLoss).toBe(99);
       expect(updated).toBe(pos);
     });
@@ -460,7 +483,7 @@ describe("RiskManager", () => {
         stopLoss: 90,
         trailingStop: undefined,
       });
-      const [updated] = rm.updateTrailingStops([pos]);
+      const [updated] = trailingRm.updateTrailingStops([pos]);
       expect(updated!.trailingStop).toBeDefined();
       expect(updated!.trailingStop).toBe(updated!.stopLoss);
     });

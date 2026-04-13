@@ -340,6 +340,16 @@ export class Backtester {
         if (this.config.buyThreshold !== undefined || this.config.sellThreshold !== undefined) {
           const buy = this.config.buyThreshold ?? decision.thresholds?.buy ?? 0.3;
           const sell = this.config.sellThreshold ?? decision.thresholds?.sell ?? -0.3;
+          // Invariant: buy must strictly exceed sell. Otherwise a score at
+          // the collision point fires BUY (>= runs first) while a symmetric
+          // reading of the same market condition would fire SELL — the
+          // action becomes asymmetrically path-dependent on comparison order.
+          if (buy <= sell) {
+            throw new Error(
+              `Invalid threshold override: buyThreshold (${buy}) must be strictly greater ` +
+              `than sellThreshold (${sell}). Collision would produce ambiguous actions at score == threshold.`,
+            );
+          }
           const strongBuy = buy + 0.3;
           const strongSell = sell - 0.3;
           let action: typeof decision.action;
