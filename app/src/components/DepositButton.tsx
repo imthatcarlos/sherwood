@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useAccount, useReadContract } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import type { Address } from "viem";
-import { SYNDICATE_VAULT_ABI } from "@/lib/contracts";
+import { formatUnits, type Address } from "viem";
+import { ERC20_ABI, SYNDICATE_VAULT_ABI } from "@/lib/contracts";
 import DepositModal from "./DepositModal";
 
 interface DepositButtonProps {
@@ -15,6 +15,7 @@ interface DepositButtonProps {
   assetAddress: Address;
   assetDecimals: number;
   assetSymbol: string;
+  chainId: number;
 }
 
 export default function DepositButton({
@@ -25,6 +26,7 @@ export default function DepositButton({
   assetAddress,
   assetDecimals,
   assetSymbol,
+  chainId,
 }: DepositButtonProps) {
   const { isConnected, address } = useAccount();
   const { openConnectModal } = useConnectModal();
@@ -38,6 +40,23 @@ export default function DepositButton({
     args: address ? [address] : undefined,
     query: { enabled: !!address && !openDeposits },
   });
+
+  // Pre-flight wallet balance — disable the button if the user holds none of
+  // the deposit asset, with a clear inline reason. Avoids opening the modal
+  // just to discover "insufficient funds".
+  const { data: assetBalance } = useReadContract({
+    address: assetAddress,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  });
+  const hasBalance = (assetBalance ?? 0n) > 0n;
+  const balanceDisplay = assetBalance
+    ? parseFloat(formatUnits(assetBalance, assetDecimals)).toLocaleString(undefined, {
+        maximumFractionDigits: assetDecimals <= 6 ? 2 : 4,
+      })
+    : "0";
 
   // Not connected — prompt to connect
   if (!isConnected) {
@@ -54,11 +73,11 @@ export default function DepositButton({
   // Vault paused
   if (paused) {
     return (
-      <div style={{ position: "relative" }}>
+      <div className="btn-disabled-wrap">
         <button className="btn-action" disabled style={{ opacity: 0.4, cursor: "not-allowed" }}>
           [ DEPOSITS PAUSED ]
         </button>
-        <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.35)", marginTop: "4px", textAlign: "center" }}>
+        <div className="btn-disabled-wrap__sub">
           Vault is temporarily paused
         </div>
       </div>
@@ -68,12 +87,31 @@ export default function DepositButton({
   // Whitelist vault — not approved
   if (!openDeposits && isApproved === false) {
     return (
-      <div style={{ position: "relative" }}>
+      <div className="btn-disabled-wrap">
         <button className="btn-action" disabled style={{ opacity: 0.4, cursor: "not-allowed" }}>
           [ APPROVAL REQUIRED ]
         </button>
-        <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.35)", marginTop: "4px", textAlign: "center" }}>
+        <div className="btn-disabled-wrap__sub">
           Vault requires depositor approval
+        </div>
+      </div>
+    );
+  }
+
+  // No balance — disable + suggest acquiring the asset.
+  if (!hasBalance) {
+    return (
+      <div className="btn-disabled-wrap">
+        <button
+          className="btn-action"
+          disabled
+          style={{ opacity: 0.4, cursor: "not-allowed" }}
+          title={`You have no ${assetSymbol} in this wallet`}
+        >
+          [ NO {assetSymbol.toUpperCase()} ]
+        </button>
+        <div className="btn-disabled-wrap__sub">
+          Acquire {assetSymbol} to deposit
         </div>
       </div>
     );
@@ -81,7 +119,11 @@ export default function DepositButton({
 
   return (
     <>
-      <button className="btn-action" onClick={() => setShowDeposit(true)}>
+      <button
+        className="btn-action"
+        onClick={() => setShowDeposit(true)}
+        title={`Wallet balance: ${balanceDisplay} ${assetSymbol}`}
+      >
         [ DEPOSIT ]
       </button>
       {showDeposit && (
@@ -93,6 +135,7 @@ export default function DepositButton({
           assetAddress={assetAddress}
           assetDecimals={assetDecimals}
           assetSymbol={assetSymbol}
+          chainId={chainId}
           onClose={() => setShowDeposit(false)}
         />
       )}

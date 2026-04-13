@@ -1,4 +1,7 @@
+import { formatUnits, type Address } from "viem";
 import { formatBps } from "@/lib/contracts";
+import RedemptionLockStatus from "@/components/RedemptionLockStatus";
+import { Term } from "@/components/ui/Glossary";
 
 interface VaultOverviewProps {
   openDeposits: boolean;
@@ -7,6 +10,8 @@ interface VaultOverviewProps {
   redemptionsLocked: boolean;
   managementFeeBps: bigint;
   assetDecimals: number;
+  vault?: Address;
+  chainId?: number;
 }
 
 export default function VaultOverview({
@@ -16,6 +21,8 @@ export default function VaultOverview({
   redemptionsLocked,
   managementFeeBps,
   assetDecimals,
+  vault,
+  chainId,
 }: VaultOverviewProps) {
   return (
     <div className="panel">
@@ -36,12 +43,17 @@ export default function VaultOverview({
           <div className="metric-val">{formatBps(managementFeeBps)}</div>
         </div>
         <div className="metric-card">
-          <div className="metric-label">Redemptions</div>
-          <div
-            className="metric-val"
-            style={{ color: redemptionsLocked ? "#ff4d4d" : "var(--color-accent)" }}
-          >
-            {redemptionsLocked ? "LOCKED" : "OPEN"}
+          <div className="metric-label">
+            <Term k="redemptions-locked">Redemptions</Term>
+          </div>
+          <div className="metric-val" style={{ fontSize: "0.9rem" }}>
+            {vault && chainId ? (
+              <RedemptionLockStatus vault={vault} chainId={chainId} initialLocked={redemptionsLocked} />
+            ) : (
+              <span style={{ color: redemptionsLocked ? "#ff4d4d" : "var(--color-accent)" }}>
+                {redemptionsLocked ? "LOCKED" : "OPEN"}
+              </span>
+            )}
           </div>
         </div>
         <div className="metric-card">
@@ -59,7 +71,9 @@ export default function VaultOverview({
         <div className="param-row">
           <span className="param-key">Total Shares</span>
           <span className="param-val">
-            {(Number(totalSupply) / 10 ** (assetDecimals * 2)).toLocaleString()}
+            {parseFloat(formatUnits(totalSupply, assetDecimals * 2)).toLocaleString("en-US", {
+              maximumFractionDigits: 2,
+            })}
           </span>
         </div>
       </div>

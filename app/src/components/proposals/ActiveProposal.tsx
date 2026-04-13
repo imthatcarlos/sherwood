@@ -1,11 +1,15 @@
 import {
   type ProposalData,
+  ProposalState,
   formatDuration,
-  formatTimeRemaining,
 } from "@/lib/governor-data";
 import { truncateAddress, formatAsset, formatBps } from "@/lib/contracts";
 import PortfolioAllocation from "./PortfolioAllocation";
 import PortfolioDashboard from "./PortfolioDashboard";
+import ExecutionCallPreview from "./ExecutionCallPreview";
+import { ProposalStepper } from "@/components/ui/ProposalStepper";
+import { Countdown } from "@/components/ui/Countdown";
+import { EmptyState } from "@/components/ui/EmptyState";
 import type { Address } from "viem";
 
 interface PortfolioAllocProps {
@@ -41,6 +45,10 @@ interface ActiveProposalProps {
   assetSymbol: string;
   portfolioAllocations?: PortfolioAllocProps | null;
   enrichedPortfolio?: EnrichedPortfolioProps | null;
+  /** Optional — if provided, renders ExecutionCallPreview. */
+  governorAddress?: Address;
+  chainId?: number;
+  explorerUrl?: string;
 }
 
 export default function ActiveProposal({
@@ -51,6 +59,9 @@ export default function ActiveProposal({
   assetSymbol,
   portfolioAllocations,
   enrichedPortfolio,
+  governorAddress,
+  chainId,
+  explorerUrl,
 }: ActiveProposalProps) {
   const now = BigInt(Math.floor(Date.now() / 1000));
 
@@ -61,26 +72,20 @@ export default function ActiveProposal({
         <div className="panel-title">
           <span>Active Strategy</span>
         </div>
-        <div
-          style={{
-            textAlign: "center",
-            padding: "2rem 0",
-            color: "rgba(255,255,255,0.4)",
-            fontFamily: "var(--font-plus-jakarta), sans-serif",
-            fontSize: "12px",
-          }}
-        >
-          {inCooldown ? (
-            <>
-              <div style={{ marginBottom: "0.5rem" }}>No active strategy</div>
-              <div style={{ color: "#ff4d4d" }}>
-                Cooldown: {formatTimeRemaining(cooldownEnd)}
-              </div>
-            </>
-          ) : (
-            "No active strategy"
-          )}
-        </div>
+        <EmptyState
+          icon="Q.00"
+          title="No active strategy"
+          description={
+            inCooldown
+              ? "Syndicate is in post-settlement cooldown. New proposals can't execute until the cooldown window ends."
+              : "Awaiting the next proposal from an agent in this syndicate."
+          }
+          action={
+            inCooldown ? (
+              <Countdown to={cooldownEnd} label="Cooldown" whenDone="Ready" />
+            ) : null
+          }
+        />
       </div>
     );
   }
@@ -105,6 +110,18 @@ export default function ActiveProposal({
           LIVE
         </span>
       </div>
+
+      {/* Proposal state stepper — gives LPs an at-a-glance view of where we are */}
+      <ProposalStepper
+        state={proposal.computedState}
+        subLabel={
+          proposal.computedState === ProposalState.Executed && strategyEnd > now
+            ? `Settles after duration (${formatDuration(proposal.strategyDuration)})`
+            : proposal.computedState === ProposalState.Executed
+              ? "Ready to settle"
+              : undefined
+        }
+      />
 
       <div style={{ marginBottom: "1rem" }}>
         <div
@@ -147,18 +164,13 @@ export default function ActiveProposal({
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-label">Time Remaining</div>
-          <div
-            className="metric-val"
-            style={{
-              fontSize: "1rem",
-              color:
-                timeLeft > 0n ? "var(--color-accent)" : "#ff4d4d",
-            }}
-          >
-            {timeLeft > 0n
-              ? formatDuration(timeLeft)
-              : "Duration elapsed"}
+          <div className="metric-label">Settles In</div>
+          <div className="metric-val" style={{ fontSize: "1rem" }}>
+            {timeLeft > 0n ? (
+              <Countdown to={strategyEnd} whenDone="Ready to settle" />
+            ) : (
+              <span style={{ color: "var(--color-accent)" }}>Ready to settle</span>
+            )}
           </div>
         </div>
         <div className="metric-card">
@@ -186,6 +198,16 @@ export default function ActiveProposal({
           assetSymbol={portfolioAllocations.assetSymbol}
         />
       ) : null}
+
+      {/* Execution call preview — what contracts are being called on-chain */}
+      {governorAddress && chainId && explorerUrl && (
+        <ExecutionCallPreview
+          governorAddress={governorAddress}
+          proposalId={proposal.id}
+          chainId={chainId}
+          explorerUrl={explorerUrl}
+        />
+      )}
     </div>
   );
 }

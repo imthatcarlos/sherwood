@@ -11,6 +11,10 @@ interface ProposalHistoryProps {
   assetDecimals: number;
   assetSymbol: string;
   addressNames?: Record<string, string>;
+  /** Block-explorer base URL for receipt links (e.g. https://basescan.org). */
+  explorerUrl?: string;
+  /** Map of proposalId → { executeTx?, settleTx? } from the activity feed. */
+  receipts?: Record<string, { executeTx?: string; settleTx?: string }>;
 }
 
 function StateBadge({ state, pnl }: { state: ProposalState; pnl?: bigint }) {
@@ -99,7 +103,16 @@ export default function ProposalHistory({
   assetDecimals,
   assetSymbol,
   addressNames,
+  explorerUrl,
+  receipts,
 }: ProposalHistoryProps) {
+  // Governor returns proposals in ascending id order (oldest → newest).
+  // For a history view users expect the reverse — latest activity at the
+  // top. Sort by id desc without mutating the caller's array.
+  const ordered = [...proposals].sort((a, b) =>
+    b.id > a.id ? 1 : b.id < a.id ? -1 : 0,
+  );
+
   return (
     <div className="panel">
       <div className="panel-title">
@@ -109,7 +122,7 @@ export default function ProposalHistory({
         </span> */}
       </div>
 
-      {proposals.length === 0 ? (
+      {ordered.length === 0 ? (
         <div
           style={{
             textAlign: "center",
@@ -132,6 +145,7 @@ export default function ProposalHistory({
               <th scope="col">P&L</th>
               <th scope="col">Fee</th>
               <th scope="col">Duration</th>
+              {explorerUrl && <th scope="col">Receipt</th>}
             </tr>
           </thead>
           <tbody>
@@ -139,6 +153,7 @@ export default function ProposalHistory({
               const pnlDisplay = p.pnl !== undefined
                 ? formatPnL(p.pnl, assetDecimals, assetSymbol)
                 : null;
+              const r = receipts?.[p.id.toString()];
 
               return (
                 <tr key={p.id.toString()}>
@@ -162,6 +177,43 @@ export default function ProposalHistory({
                   </td>
                   <td>{formatBps(p.performanceFeeBps)}</td>
                   <td>{formatDuration(p.strategyDuration)}</td>
+                  {explorerUrl && (
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {r?.settleTx ? (
+                        <a
+                          href={`${explorerUrl}/tx/${r.settleTx}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="View settlement transaction"
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "10px",
+                            color: "var(--color-accent)",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          settle ↗
+                        </a>
+                      ) : r?.executeTx ? (
+                        <a
+                          href={`${explorerUrl}/tx/${r.executeTx}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="View execution transaction"
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "10px",
+                            color: "rgba(255,255,255,0.45)",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          exec ↗
+                        </a>
+                      ) : (
+                        <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "10px" }}>—</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}

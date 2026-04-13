@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
-import TorusKnotBackground from "@/components/TorusKnotBackground";
+import Link from "next/link";
+import AmbientBackground from "@/components/AmbientBackground";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import SyndicateClient from "@/components/SyndicateClient";
 import { resolveSyndicateBySubdomain } from "@/lib/syndicate-data";
 import AttestationTimeline from "@/components/AttestationTimeline";
 import { truncateAddress, getAddresses } from "@/lib/contracts";
+import { TargetChainProvider } from "@/components/TargetChainContext";
 
 export async function generateMetadata({
   params,
@@ -46,18 +48,8 @@ export default async function AgentsPage({
   const hasIdentityRegistry = getAddresses(data.chainId).identityRegistry !== "0x0000000000000000000000000000000000000000";
 
   return (
-    <>
-      <TorusKnotBackground
-        radius={10}
-        tube={0.2}
-        tubularSegments={128}
-        radialSegments={16}
-        p={3}
-        q={4}
-        opacity={0.15}
-        fogDensity={0.08}
-      />
-      <div className="scanlines" style={{ opacity: 0.2 }} />
+    <TargetChainProvider chainId={data.chainId}>
+      <AmbientBackground />
 
       <div className="layout layout-normal">
         <main className="px-4 md:px-8 lg:px-16 mx-auto w-full max-w-[1400px]">
@@ -127,16 +119,18 @@ export default async function AgentsPage({
                     {/* Header: name + status */}
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <div
-                          className="font-[family-name:var(--font-inter)]"
+                        <Link
+                          href={`/syndicate/${subdomain}/agents/${agent.agentId.toString()}`}
+                          className="font-[family-name:var(--font-inter)] no-underline hover:text-[var(--color-accent)] transition-colors"
                           style={{
                             fontSize: "16px",
                             fontWeight: 600,
                             color: "white",
+                            display: "block",
                           }}
                         >
-                          {displayName}
-                        </div>
+                          {displayName} →
+                        </Link>
                         <div
                           className="font-[family-name:var(--font-plus-jakarta)]"
                           style={{
@@ -198,6 +192,7 @@ export default async function AgentsPage({
                           attestations={agentAttestations}
                           agentNames={agentNames}
                           addressNames={addressNames}
+                          chainId={data.chainId}
                         />
                       </div>
                     )}
@@ -210,6 +205,6 @@ export default async function AgentsPage({
       </div>
 
       <SiteFooter />
-    </>
+    </TargetChainProvider>
   );
 }

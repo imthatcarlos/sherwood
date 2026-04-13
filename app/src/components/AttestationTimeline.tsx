@@ -7,6 +7,9 @@ interface AttestationTimelineProps {
   agentNames?: Record<string, string>;
   /** Map of lowercase address → display name for attester resolution */
   addressNames?: Record<string, string>;
+  /** Chain the attestations belong to — picks the correct EAS explorer.
+   *  Defaults to the primary chain if omitted. */
+  chainId?: number;
 }
 
 function formatTime(unix: number): string {
@@ -41,8 +44,9 @@ export default function AttestationTimeline({
   attestations,
   agentNames,
   addressNames,
+  chainId,
 }: AttestationTimelineProps) {
-  const addresses = getAddresses();
+  const addresses = getAddresses(chainId);
 
   function agentLabel(agentId: bigint): string {
     const idStr = agentId.toString();

@@ -20,7 +20,7 @@ interface SyndicateHeaderProps {
   hideAgentsTab?: boolean;
 }
 
-function InlineCopy({ value }: { value: string }) {
+function InlineCopy({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -41,19 +41,30 @@ function InlineCopy({ value }: { value: string }) {
     setTimeout(() => setCopied(false), 1500);
   }
 
+  const ariaLabel = copied
+    ? `Copied ${label ?? value}`
+    : `Copy ${label ?? value} to clipboard`;
+
   return (
     <button
       onClick={handleCopy}
-      aria-label="Copy to clipboard"
+      aria-label={ariaLabel}
+      type="button"
       style={{
         background: "none",
         border: "none",
-        color: copied ? "var(--color-accent, #4ade80)" : "rgba(255,255,255,0.4)",
+        // 0.4 → 0.6 for WCAG AA; copied state keeps accent color.
+        color: copied ? "var(--color-accent, #4ade80)" : "rgba(255,255,255,0.6)",
         cursor: "pointer",
-        padding: "2px",
+        // Larger tap target — 28x28 is still compact in the metadata row
+        // but far above the previous 18px.
+        padding: "6px",
         fontSize: "13px",
         lineHeight: 1,
         transition: "color 0.15s",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
       title={copied ? "Copied!" : "Copy to clipboard"}
     >
@@ -94,14 +105,10 @@ export default function SyndicateHeader({
           <h1 className="text-3xl sm:text-5xl font-medium tracking-tight text-white font-[family-name:var(--font-inter)]">
             {name}{" "}
             <span
-              className="glitch-tag text-[11px] px-2.5 py-1 align-middle ml-4"
-              style={
-                paused
-                  ? { background: "rgba(255,77,77,0.2)", color: "#ff4d4d" }
-                  : { background: badge.bg, color: badge.color }
-              }
+              className={`tag-bracket align-middle ml-4 ${paused ? "" : ""}`}
+              style={paused ? { color: "#ff4d4d" } : { color: badge.color }}
             >
-              {paused ? "PAUSED" : badge.label}
+              {paused ? "Paused" : badge.label}
             </span>
           </h1>
         </div>
@@ -109,17 +116,21 @@ export default function SyndicateHeader({
       </div>
 
       <div
-        className="font-[family-name:var(--font-plus-jakarta)] text-sm flex flex-wrap items-center gap-x-6 gap-y-2"
-        style={{ color: "rgba(255,255,255,0.4)" }}
+        className="text-sm flex flex-wrap items-center gap-x-6 gap-y-2"
+        style={{ color: "rgba(255,255,255,0.45)" }}
       >
-        <span style={{ color: "var(--color-accent)" }}>
+        <span style={{ color: "var(--color-accent)", fontFamily: "var(--font-jetbrains-mono)", fontSize: "12px", letterSpacing: "0.05em" }}>
           {subdomain}.sherwoodagent.eth
         </span>
-        <span className="flex items-center gap-1">
-          Vault: {truncateAddress(vault)} <InlineCopy value={vault} />
+        <span className="flex items-center gap-1.5" style={{ fontFamily: "var(--font-jetbrains-mono)", fontSize: "11px", letterSpacing: "0.05em" }}>
+          <span style={{ opacity: 0.55, textTransform: "uppercase", letterSpacing: "0.18em" }}>Vault</span>
+          <span style={{ color: "rgba(255,255,255,0.85)" }}>{truncateAddress(vault)}</span>
+          <InlineCopy value={vault} label="vault address" />
         </span>
-        <span className="flex items-center gap-1">
-          Creator: {creatorName || truncateAddress(creator)} <InlineCopy value={creator} />
+        <span className="flex items-center gap-1.5" style={{ fontFamily: "var(--font-jetbrains-mono)", fontSize: "11px", letterSpacing: "0.05em" }}>
+          <span style={{ opacity: 0.55, textTransform: "uppercase", letterSpacing: "0.18em" }}>Creator</span>
+          <span style={{ color: "rgba(255,255,255,0.85)" }}>{creatorName || truncateAddress(creator)}</span>
+          <InlineCopy value={creator} label="creator address" />
         </span>
       </div>
 
