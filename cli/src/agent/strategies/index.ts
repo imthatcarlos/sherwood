@@ -31,7 +31,10 @@ export const DEFAULT_STRATEGIES: Strategy[] = [
   new FundingRateStrategy(),
   new DexFlowStrategy(),
   new MeanReversionStrategy(),
-  new TwitterSentimentStrategy(),
+  // TwitterSentimentStrategy disabled — Twitter API returns 402 (paid tier
+  // required) for most token queries. Re-enable when we have an API path
+  // that doesn't break. The class is still exported so it can be reinstated
+  // by appending `new TwitterSentimentStrategy()` here.
   new HyperliquidFlowStrategy(),
   new MultiTimeframeStrategy(),
 ];

@@ -305,7 +305,10 @@ export class TradingAgent {
     let marketData: any = undefined;
 
     try {
-      const [symbolResult, fundingRateResult, unlockResult, twitterResult] = await Promise.allSettled([
+      // Twitter sentiment fetch removed — API returns 402 (paid tier required)
+      // for most token queries and was spamming logs without producing usable
+      // signal. TwitterSentimentStrategy is also disabled in DEFAULT_STRATEGIES.
+      const [symbolResult, fundingRateResult, unlockResult] = await Promise.allSettled([
         // Resolve token symbol + get market data for strategies
         this.coingecko.getCoinDetails(tokenId).then(async (coinDetails) => {
           const symbol = coinDetails?.symbol?.toUpperCase();
@@ -318,9 +321,6 @@ export class TradingAgent {
 
         // Fetch token unlock estimates (free, from DefiLlama FDV)
         this.tokenUnlocks.getUnlocks(tokenId),
-
-        // Fetch Twitter sentiment data (free tier with auth)
-        this.twitter.getSentiment(tokenId)
       ]);
 
       // Process symbol/market data results
@@ -351,13 +351,8 @@ export class TradingAgent {
         unlockData = unlockResult.value;
       }
 
-      // Process Twitter results
-      let twitterData: StrategyContext['twitterData'] = undefined;
-      if (twitterResult.status === 'fulfilled' && twitterResult.value) {
-        twitterData = twitterResult.value;
-      } else if (twitterResult.status === 'rejected') {
-        console.error(chalk.dim(`  Twitter sentiment failed: ${twitterResult.reason}`));
-      }
+      // Twitter data omitted — strategy disabled (see DEFAULT_STRATEGIES).
+      const twitterData: StrategyContext['twitterData'] = undefined;
 
       // Hyperliquid data already processed in Phase 1
 
