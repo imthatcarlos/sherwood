@@ -25,9 +25,9 @@ export default async function Home() {
           {/* Hero */}
           <article className="hero-section">
             <div className="stagger">
-              {/* Editorial masthead rule */}
+              {/* Live-on rail */}
               <div className="hero-rule mt-10">
-                <span>Sherwood · Est. MMXXVI</span>
+                <span>Live on Base · Hyperwood</span>
               </div>
 
               {/* Hackathon Badge */}
