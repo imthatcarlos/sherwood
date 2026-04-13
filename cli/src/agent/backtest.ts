@@ -11,6 +11,8 @@ import { runStrategies } from './strategies/index.js';
 import type { StrategyContext } from './strategies/types.js';
 import { computeTradeDecision } from './scoring.js';
 import type { TradeDecision } from './scoring.js';
+import { MarketRegimeDetector } from './regime.js';
+import type { MarketRegime } from './regime.js';
 
 export interface BacktestConfig {
   tokenId: string;
@@ -20,6 +22,9 @@ export interface BacktestConfig {
   strategies: string[]; // strategy names to test
   cycle: '1h' | '4h' | '1d';
   verbose?: boolean;   // show detailed decision logs
+  /** When true, classify regime per-candle and apply regime-conditional thresholds.
+   *  Default false → flat ±0.3/±0.6 thresholds (matches old backtest behavior). */
+  useRegime?: boolean;
 }
 
 export interface BacktestTrade {
@@ -52,6 +57,8 @@ export interface WalkForwardConfig {
   stepSize: number;        // e.g. 30 days (how much to advance each fold)
   capital: number;
   strategies: string[];
+  /** Forwarded to per-fold Backtester. Default false. */
+  useRegime?: boolean;
 }
 
 export interface WalkForwardResult {
@@ -254,7 +261,23 @@ export class Backtester {
                                           (fearAndGreed && s.name === 'sentimentContrarian'));
         }
 
-        decision = computeTradeDecision(filtered.length > 0 ? filtered : signals);
+        // Classify regime from the current rolling window (no look-ahead)
+        // when --regime is enabled. The backtester operates on a single
+        // token's candles; for a true cross-asset regime read you'd swap
+        // BTC candles in here, but per-candle BTC/ETH/SOL trends are
+        // highly correlated so the asset's own candles are a fair proxy.
+        let regime: MarketRegime | undefined;
+        if (this.config.useRegime) {
+          regime = MarketRegimeDetector.classifyFromCandles(windowCandles).regime;
+        }
+
+        decision = computeTradeDecision(
+          filtered.length > 0 ? filtered : signals,
+          undefined,
+          undefined,
+          undefined,
+          regime,
+        );
 
         // Verbose logging
         if (this.config.verbose) {
@@ -262,7 +285,8 @@ export class Backtester {
           const signalSummary = activeSignals.map(s =>
             `${s.name}:${s.value >= 0 ? '+' : ''}${s.value.toFixed(2)}`
           ).join(' ');
-          console.log(`${currentDate}: score=${decision.score.toFixed(2)} ${decision.action} (${signalSummary || 'no signals'})`);
+          const regimeTag = regime ? ` [${regime}]` : '';
+          console.log(`${currentDate}: score=${decision.score.toFixed(2)} ${decision.action}${regimeTag} (${signalSummary || 'no signals'})`);
         }
       } catch {
         continue; // skip candle if analysis fails
@@ -396,6 +420,7 @@ export class Backtester {
           strategies: config.strategies,
           cycle: '1d',
           verbose: false, // Don't spam verbose output during walk-forward
+          useRegime: config.useRegime,
         });
         const trainResult = await trainBacktester.run();
 
@@ -408,6 +433,7 @@ export class Backtester {
           strategies: config.strategies,
           cycle: '1d',
           verbose: false, // Don't spam verbose output during walk-forward
+          useRegime: config.useRegime,
         });
         const testResult = await testBacktester.run();
 

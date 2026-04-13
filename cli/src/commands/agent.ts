@@ -563,7 +563,8 @@ export function registerAgentCommands(program: Command): void {
     .option("--train <days>", "Training window in days for walk-forward", "90")
     .option("--test <days>", "Test window in days for walk-forward", "30")
     .option("--verbose", "Show detailed decision logs for each candle")
-    .action(async (token: string, options: { from: string; to: string; strategies: string; capital: string; cycle: string; walkForward?: boolean; train: string; test: string; verbose?: boolean }) => {
+    .option("--regime", "Apply regime-conditional thresholds per-candle (matches live behavior)")
+    .action(async (token: string, options: { from: string; to: string; strategies: string; capital: string; cycle: string; walkForward?: boolean; train: string; test: string; verbose?: boolean; regime?: boolean }) => {
       const capital = parseFloat(options.capital);
       const strategies = options.strategies ? options.strategies.split(",").map((s) => s.trim()) : [];
 
@@ -582,6 +583,7 @@ export function registerAgentCommands(program: Command): void {
           stepSize,
           capital,
           strategies,
+          useRegime: options.regime,
         };
 
         const spinner = ora(`Walk-forward testing ${token} (${trainWindow}d train, ${testWindow}d test)...`).start();
@@ -595,6 +597,7 @@ export function registerAgentCommands(program: Command): void {
             strategies,
             cycle: (options.cycle as BacktestConfig["cycle"]) || "1d",
             verbose: options.verbose,
+            useRegime: options.regime,
           });
           const result = await backtester.walkForwardTest(walkConfig);
           spinner.stop();
@@ -613,6 +616,7 @@ export function registerAgentCommands(program: Command): void {
           strategies,
           cycle: (options.cycle as BacktestConfig["cycle"]) || "1d",
           verbose: options.verbose,
+          useRegime: options.regime,
         };
 
         const spinner = ora(`Backtesting ${token} from ${config.startDate} to ${config.endDate}...`).start();
