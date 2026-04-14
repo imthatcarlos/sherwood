@@ -166,6 +166,7 @@ export class TradeExecutor {
         const position = await this.portfolio.openPosition({
           tokenId,
           symbol: tokenId.toUpperCase(),
+          side: isShort ? 'short' : 'long',
           entryPrice: result.executedPrice,
           currentPrice: result.executedPrice,
           quantity: sizing.quantity,
@@ -218,13 +219,15 @@ export class TradeExecutor {
   /** Dry-run execution — paper trade */
   private async executeDryRun(order: OrderParams, currentPrice: number): Promise<Position> {
     const quantity = order.amountUsd / currentPrice;
+    const sideLabel = order.side === 'sell' ? 'SHORT' : 'BUY';
 
-    console.error(chalk.cyan(`[DRY RUN] Paper trade: BUY ${quantity.toFixed(6)} ${order.tokenId} @ $${currentPrice.toFixed(4)}`));
+    console.error(chalk.cyan(`[DRY RUN] Paper trade: ${sideLabel} ${quantity.toFixed(6)} ${order.tokenId} @ $${currentPrice.toFixed(4)}`));
     console.error(chalk.cyan(`  Size: $${order.amountUsd.toFixed(2)} | SL: $${order.stopLoss.toFixed(4)} | TP: $${order.takeProfit.toFixed(4)}`));
 
     const position = await this.portfolio.openPosition({
       tokenId: order.tokenId,
       symbol: order.tokenId.toUpperCase(),
+      side: order.side === 'sell' ? 'short' : 'long',
       entryPrice: currentPrice,
       currentPrice,
       quantity,

@@ -19,6 +19,8 @@ export interface PortfolioState {
 export interface Position {
   tokenId: string;
   symbol: string;
+  /** 'long' (default for backward compat) or 'short'. */
+  side?: 'long' | 'short';
   entryPrice: number;
   currentPrice: number;
   quantity: number;

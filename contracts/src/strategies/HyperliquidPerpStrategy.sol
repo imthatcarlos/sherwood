@@ -241,9 +241,13 @@ contract HyperliquidPerpStrategy is BaseStrategy {
         // Always attempt cancel + force-close (no-op on HyperCore if no position)
         _cancelCurrentStopLoss();
 
-        // Force-close: IOC sell at minimum price (1) to fill at any market price.
-        // Reduce-only, so it's a no-op if no position exists on HyperCore.
+        // Force-close LONG positions: IOC sell at minimum price (1).
+        // Reduce-only — no-op if no long position exists on HyperCore.
         L1Write.sendLimitOrder(perpAssetIndex, false, 1, type(uint64).max, true, TimeInForce.Ioc, NO_CLOID);
+
+        // Force-close SHORT positions: IOC buy at maximum price.
+        // Reduce-only — no-op if no short position exists on HyperCore.
+        L1Write.sendLimitOrder(perpAssetIndex, true, type(uint64).max, type(uint64).max, true, TimeInForce.Ioc, NO_CLOID);
 
         // Transfer all USD from perp margin back to spot (async)
         L1Write.sendUsdClassTransfer(type(uint64).max, false);

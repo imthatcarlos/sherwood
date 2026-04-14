@@ -236,7 +236,10 @@ export class TradingAgent {
 
     // Check x402 wallet USDC balance once per scan cycle.
     // If wallet is unfunded, skip x402 calls entirely to avoid diluting scores.
-    let x402Available = false;
+    // undefined = x402 not configured (don't exclude categories)
+    // true = x402 configured + wallet funded
+    // false = x402 configured but wallet empty → exclude dead categories
+    let x402Available: boolean | undefined = this.config.useX402 ? false : undefined;
     if (this.config.useX402) {
       x402Available = await isX402WalletFunded();
       if (!x402Available) {

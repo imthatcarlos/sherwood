@@ -90,45 +90,9 @@ export class MarketRegimeDetector {
     const closes = candles.map((c) => c.close);
     const currentPrice = closes[closes.length - 1]!;
 
-    // ── Fast momentum override ──
-    // EMA50/200 + ADX take weeks to register a trend from an intraday move.
-    // BTC scored 0.27 for 12 hours during a +5% pump on Apr 13-14 2026 but
-    // the regime never left "ranging" — the 0.25 trending-up threshold that
-    // would have caught the trade was never activated.
-    //
-    // Fix: check short-term price action. If current close is >3% above
-    // the recent N-candle low, or >3% below the recent high, override to
-    // trending-up / trending-down regardless of EMA/ADX state. This catches
-    // fast moves while they're happening, not after the long-term averages
-    // confirm them.
-    const MOMENTUM_LOOKBACK = 24; // candles (≈24h on daily, 24h on hourly)
-    const MOMENTUM_THRESHOLD = 0.03; // 3% move from recent low/high
-    const recentCandles = candles.slice(-MOMENTUM_LOOKBACK);
-    const recentLow = Math.min(...recentCandles.map((c) => c.low));
-    const recentHigh = Math.max(...recentCandles.map((c) => c.high));
-    const pctAboveLow = recentLow > 0 ? (currentPrice - recentLow) / recentLow : 0;
-    const pctBelowHigh = recentHigh > 0 ? (recentHigh - currentPrice) / recentHigh : 0;
-
-    if (pctAboveLow >= MOMENTUM_THRESHOLD) {
-      return {
-        regime: "trending-up",
-        confidence: Math.min(0.85, 0.5 + pctAboveLow * 5), // scales with move magnitude
-        btcTrend: "up",
-        volatilityLevel: "normal",
-        details: `Momentum override: price +${(pctAboveLow * 100).toFixed(1)}% above ${MOMENTUM_LOOKBACK}-candle low`,
-        strategyAdjustments: this.getStrategyAdjustments("trending-up"),
-      };
-    }
-    if (pctBelowHigh >= MOMENTUM_THRESHOLD) {
-      return {
-        regime: "trending-down",
-        confidence: Math.min(0.85, 0.5 + pctBelowHigh * 5),
-        btcTrend: "down",
-        volatilityLevel: "normal",
-        details: `Momentum override: price -${(pctBelowHigh * 100).toFixed(1)}% below ${MOMENTUM_LOOKBACK}-candle high`,
-        strategyAdjustments: this.getStrategyAdjustments("trending-down"),
-      };
-    }
+    // ── Fast momentum override — shared with analyzeBtc ──
+    const momentumResult = this.checkMomentumOverride(candles, currentPrice);
+    if (momentumResult) return momentumResult;
 
     // ── Standard EMA/ADX regime classification ──
     const ema50 = calculateEMA(closes, 50);
@@ -210,35 +174,9 @@ export class MarketRegimeDetector {
     const closes = candles.map(c => c.close);
     const currentPrice = closes[closes.length - 1]!;
 
-    // ── Fast momentum override (same as classifySync) ──
-    const MOMENTUM_LOOKBACK = 24;
-    const MOMENTUM_THRESHOLD = 0.03;
-    const recentCandles = candles.slice(-MOMENTUM_LOOKBACK);
-    const recentLow = Math.min(...recentCandles.map((c) => c.low));
-    const recentHigh = Math.max(...recentCandles.map((c) => c.high));
-    const pctAboveLow = recentLow > 0 ? (currentPrice - recentLow) / recentLow : 0;
-    const pctBelowHigh = recentHigh > 0 ? (recentHigh - currentPrice) / recentHigh : 0;
-
-    if (pctAboveLow >= MOMENTUM_THRESHOLD) {
-      return {
-        regime: "trending-up",
-        confidence: Math.min(0.85, 0.5 + pctAboveLow * 5),
-        btcTrend: "up",
-        volatilityLevel: "normal",
-        details: `Momentum override: price +${(pctAboveLow * 100).toFixed(1)}% above ${MOMENTUM_LOOKBACK}-candle low`,
-        strategyAdjustments: this.getStrategyAdjustments("trending-up"),
-      };
-    }
-    if (pctBelowHigh >= MOMENTUM_THRESHOLD) {
-      return {
-        regime: "trending-down",
-        confidence: Math.min(0.85, 0.5 + pctBelowHigh * 5),
-        btcTrend: "down",
-        volatilityLevel: "normal",
-        details: `Momentum override: price -${(pctBelowHigh * 100).toFixed(1)}% below ${MOMENTUM_LOOKBACK}-candle high`,
-        strategyAdjustments: this.getStrategyAdjustments("trending-down"),
-      };
-    }
+    // ── Fast momentum override — shared with classifySync ──
+    const momentumResult = this.checkMomentumOverride(candles, currentPrice);
+    if (momentumResult) return momentumResult;
 
     // ── Standard EMA/ADX regime classification ──
     // Calculate EMAs for trend detection
@@ -441,6 +379,51 @@ export class MarketRegimeDetector {
     } catch {
       return "neutral";
     }
+  }
+
+  /**
+   * Fast momentum check — catches intraday trends that EMA/ADX miss.
+   * Returns a RegimeAnalysis if momentum override fires, or null to fall
+   * through to the standard EMA/ADX classification.
+   *
+   * Requirements for trending-up: price >3% above 24-candle low AND in
+   * the upper half of the range (prevents false positives on bounces
+   * within a larger downtrend). Symmetric for trending-down.
+   */
+  private checkMomentumOverride(candles: Candle[], currentPrice: number): RegimeAnalysis | null {
+    const MOMENTUM_LOOKBACK = 24;
+    const MOMENTUM_THRESHOLD = 0.03; // 3%
+    const recentCandles = candles.slice(-MOMENTUM_LOOKBACK);
+    const recentLow = Math.min(...recentCandles.map((c) => c.low));
+    const recentHigh = Math.max(...recentCandles.map((c) => c.high));
+    const pctAboveLow = recentLow > 0 ? (currentPrice - recentLow) / recentLow : 0;
+    const pctBelowHigh = recentHigh > 0 ? (recentHigh - currentPrice) / recentHigh : 0;
+
+    const recentMid = (recentHigh + recentLow) / 2;
+    const inUpperHalf = currentPrice >= recentMid;
+    const inLowerHalf = currentPrice <= recentMid;
+
+    if (pctAboveLow >= MOMENTUM_THRESHOLD && inUpperHalf) {
+      return {
+        regime: "trending-up",
+        confidence: Math.min(0.85, 0.5 + pctAboveLow * 5),
+        btcTrend: "up",
+        volatilityLevel: "normal",
+        details: `Momentum override: price +${(pctAboveLow * 100).toFixed(1)}% above ${MOMENTUM_LOOKBACK}-candle low (upper half)`,
+        strategyAdjustments: this.getStrategyAdjustments("trending-up"),
+      };
+    }
+    if (pctBelowHigh >= MOMENTUM_THRESHOLD && inLowerHalf) {
+      return {
+        regime: "trending-down",
+        confidence: Math.min(0.85, 0.5 + pctBelowHigh * 5),
+        btcTrend: "down",
+        volatilityLevel: "normal",
+        details: `Momentum override: price -${(pctBelowHigh * 100).toFixed(1)}% below ${MOMENTUM_LOOKBACK}-candle high (lower half)`,
+        strategyAdjustments: this.getStrategyAdjustments("trending-down"),
+      };
+    }
+    return null;
   }
 
   private getStrategyAdjustments(regime: MarketRegime): Record<string, number> {

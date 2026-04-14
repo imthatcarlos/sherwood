@@ -177,15 +177,20 @@ export class PortfolioTracker {
     }
 
     const pos = this.state.positions[idx]!;
-    const pnlUsd = (exitPrice - pos.entryPrice) * pos.quantity;
-    const pnlPercent = (exitPrice - pos.entryPrice) / pos.entryPrice;
+    const isShort = pos.side === 'short';
+    const pnlUsd = isShort
+      ? (pos.entryPrice - exitPrice) * pos.quantity
+      : (exitPrice - pos.entryPrice) * pos.quantity;
+    const pnlPercent = isShort
+      ? (pos.entryPrice - exitPrice) / pos.entryPrice
+      : (exitPrice - pos.entryPrice) / pos.entryPrice;
     const duration = Math.floor((Date.now() - pos.entryTimestamp) / 1000);
 
     // Record the trade
     const record: TradeRecord = {
       tokenId: pos.tokenId,
       symbol: pos.symbol,
-      side: 'long',
+      side: pos.side ?? 'long',
       entryPrice: pos.entryPrice,
       exitPrice,
       quantity: pos.quantity,
@@ -224,8 +229,13 @@ export class PortfolioTracker {
       const price = prices[pos.tokenId];
       if (price !== undefined) {
         pos.currentPrice = price;
-        pos.pnlUsd = (price - pos.entryPrice) * pos.quantity;
-        pos.pnlPercent = (price - pos.entryPrice) / pos.entryPrice;
+        const isShort = pos.side === 'short';
+        pos.pnlUsd = isShort
+          ? (pos.entryPrice - price) * pos.quantity
+          : (price - pos.entryPrice) * pos.quantity;
+        pos.pnlPercent = isShort
+          ? (pos.entryPrice - price) / pos.entryPrice
+          : (price - pos.entryPrice) / pos.entryPrice;
       }
     }
 

@@ -475,8 +475,12 @@ export function computeTradeDecision(
   const w = weights ?? DEFAULT_WEIGHTS;
   const thresholds = thresholdsForRegime(regime);
 
-  // FIX 1: When x402 is unavailable, exclude x402-dependent categories entirely.
-  // Their weight is redistributed proportionally to remaining active categories.
+  // FIX 1: When x402 was configured but wallet is unfunded, exclude
+  // x402-dependent categories (smartMoney, event) so their zero-value signals
+  // don't dilute the aggregate. Only when x402Available is explicitly false
+  // (meaning x402 was intended but failed) — undefined means x402 was never
+  // configured, so no exclusion (the agent may have those signals from other
+  // sources, e.g. backtest or manual injection).
   const excludedCategories = new Set<keyof ScoringWeights>();
   if (x402Available === false) {
     for (const cat of X402_CATEGORIES) {
