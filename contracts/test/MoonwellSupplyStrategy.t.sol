@@ -24,6 +24,10 @@ contract MockCToken {
         exchangeRate = rate;
     }
 
+    function exchangeRateStored() external view returns (uint256) {
+        return exchangeRate;
+    }
+
     function mint(uint256 mintAmount) external returns (uint256) {
         underlying.transferFrom(msg.sender, address(this), mintAmount);
         // mTokens = mintAmount * 1e18 / exchangeRate
@@ -301,6 +305,53 @@ contract MoonwellSupplyStrategyTest is Test {
         // Vault got 50_000 * 1.05 = 52_500 back
         // Started with 50_000 (100k - 50k supply)
         assertEq(usdc.balanceOf(vault), 100_000e6 - SUPPLY_AMOUNT + 52_500e6);
+    }
+
+    // ==================== POSITION VALUE ====================
+
+    function test_positionValue_beforeExecute() public view {
+        (uint256 value, bool valid) = strategy.positionValue();
+        assertEq(value, 0);
+        assertFalse(valid);
+    }
+
+    function test_positionValue_afterExecute_noYield() public {
+        vm.prank(vault);
+        usdc.approve(address(strategy), SUPPLY_AMOUNT);
+        vm.prank(vault);
+        strategy.execute();
+
+        (uint256 value, bool valid) = strategy.positionValue();
+        assertTrue(valid);
+        assertEq(value, SUPPLY_AMOUNT); // 1:1 exchange rate, no yield yet
+    }
+
+    function test_positionValue_afterExecute_withYield() public {
+        vm.prank(vault);
+        usdc.approve(address(strategy), SUPPLY_AMOUNT);
+        vm.prank(vault);
+        strategy.execute();
+
+        // Simulate 5% yield
+        mUsdc.setExchangeRate(1.05e18);
+
+        (uint256 value, bool valid) = strategy.positionValue();
+        assertTrue(valid);
+        assertEq(value, (SUPPLY_AMOUNT * 1.05e18) / 1e18);
+    }
+
+    function test_positionValue_afterSettle() public {
+        vm.prank(vault);
+        usdc.approve(address(strategy), SUPPLY_AMOUNT);
+        vm.prank(vault);
+        strategy.execute();
+
+        vm.prank(vault);
+        strategy.settle();
+
+        (uint256 value, bool valid) = strategy.positionValue();
+        assertEq(value, 0);
+        assertFalse(valid);
     }
 
     // ==================== CLONING ====================
