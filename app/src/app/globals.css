@@ -1594,6 +1594,7 @@ select:focus-visible {
   border-bottom: 1px solid var(--color-border);
   font-weight: 400;
   text-align: left;
+  white-space: nowrap;
 }
 
 .table-container td {

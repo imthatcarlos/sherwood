@@ -343,14 +343,6 @@ export default function LeaderboardTabs({
   // the /api/leaderboard route every REFRESH_INTERVAL_MS when the tab is
   // visible. Everything downstream reads from this state, not the prop.
   const [syndicates, setSyndicates] = useState(initialSyndicates);
-  // Mirror the latest syndicates into a ref so the mount-only polling
-  // effect below can read current rankings (for delta detection) without
-  // re-subscribing on every tick — which would otherwise reset the
-  // setInterval timer on every successful fetch.
-  const syndicatesRef = useRef(syndicates);
-  useEffect(() => {
-    syndicatesRef.current = syndicates;
-  }, [syndicates]);
 
   // Compute the deep-link target's page once at mount via lazy initializer
   // so we don't need a setState-in-effect on first render.
@@ -379,11 +371,11 @@ export default function LeaderboardTabs({
 
   // ── Auto-refresh ─────────────────────────────────────────
   // Poll the cached /api/leaderboard route when the tab is visible.
-  // Diff ranks against the previous tick (via syndicatesRef) to flash
-  // the sh-rank-delta chip on rows that moved. Mount-only deps — the
-  // timer must NOT be torn down on every tick (which would happen if
-  // we depended on `syndicates`, since each successful fetch updates
-  // it and invalidates this effect).
+  // Delta detection lives in a separate effect keyed on `syndicates`,
+  // using `renderedOrderRef` to diff the current post-sort order.
+  // This effect has mount-only deps — the timer must NOT be torn down
+  // on every tick (which would happen if we depended on `syndicates`,
+  // since each successful fetch updates it and invalidates this effect).
   useEffect(() => {
     let cancelled = false;
 
@@ -810,10 +802,10 @@ export default function LeaderboardTabs({
                 <col /> {/* TVL — flex */}
                 <col style={{ width: "110px" }} /> {/* Trend (7D) */}
                 <col style={{ width: "64px" }} /> {/* Flow */}
-                <col style={{ width: "80px" }} /> {/* Agents */}
+                <col style={{ width: "96px" }} /> {/* Agents */}
                 <col /> {/* Status — flex */}
                 <col /> {/* Chain — flex */}
-                <col style={{ width: "120px" }} /> {/* Action */}
+                <col style={{ width: "140px" }} /> {/* Action */}
               </colgroup>
               <thead>
                 <tr>
