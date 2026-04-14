@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Tabs } from "@/components/ui/Tabs";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Sparkline } from "@/components/ui/Sparkline";
 import { RecentlyViewedStrip } from "@/components/RecentlyViewed";
 
 const PAGE_SIZE = 25;
@@ -453,6 +454,13 @@ export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
                   <th scope="col">Syndicate</th>
                   <th scope="col">Strategy</th>
                   <th scope="col">TVL</th>
+                  <th
+                    scope="col"
+                    style={{ width: "90px" }}
+                    title="7-day TVL trajectory"
+                  >
+                    Trend (7D)
+                  </th>
                   <th scope="col" style={{ width: "40px" }} title="Net deposit flow over lifetime">Flow</th>
                   <th scope="col">Agents</th>
                   <th scope="col">Status</th>
@@ -510,6 +518,18 @@ export default function LeaderboardTabs({ syndicates }: LeaderboardTabsProps) {
                           <span className="block mt-0.5" style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px" }}>
                             ~{s.tvlUSDDisplay}
                           </span>
+                        )}
+                      </td>
+                      <td>
+                        {s.equityCurve && s.equityCurve.length > 1 ? (
+                          <Sparkline
+                            data={s.equityCurve}
+                            width={80}
+                            height={22}
+                            ariaLabel={`7-day TVL trajectory for ${s.name}`}
+                          />
+                        ) : (
+                          <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>
                         )}
                       </td>
                       <td><FlowTrend trend={s.flowTrend} /></td>
