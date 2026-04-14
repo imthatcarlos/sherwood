@@ -767,7 +767,7 @@ export default function LeaderboardTabs({
                   <th
                     scope="col"
                     style={{ width: "90px" }}
-                    title="7-day TVL trajectory"
+                    title="Estimated from deposits, withdrawals, and settled P&L. Does not reflect unrealized yield or management-fee deductions."
                   >
                     Trend (7D)
                   </th>
