@@ -150,15 +150,21 @@ export class TradeExecutor {
     const state = await this.portfolio.load();
     this.riskManager.updatePortfolio(state);
 
-    // Calculate stop loss and take profit from current price
+    // Calculate stop loss and take profit from current price.
+    // Calibrated for SHORT-TERM trades (1-2 day hold):
+    //   Stop: 3% — tight enough that a failed trade exits quickly
+    //   Take profit: 6% (2:1 R:R) — achievable in 1-2 days on crypto vol
+    //   Time stop: 48h (see risk.ts) — if it hasn't moved, it's dead money
     const isShort = decision.action === 'SELL' || decision.action === 'STRONG_SELL';
-    const stopLossDistance = currentPrice * 0.08; // 8% default stop
+    const STOP_LOSS_PCT = 0.03;   // 3% stop
+    const RR_RATIO = 2.0;         // 2:1 reward/risk → 6% take profit
+    const stopLossDistance = currentPrice * STOP_LOSS_PCT;
     const stopLossPrice = isShort
       ? currentPrice + stopLossDistance      // stop above for shorts
       : currentPrice - stopLossDistance;     // stop below for longs
     const takeProfitPrice = isShort
-      ? currentPrice * (1 - 0.08 * 2.5)    // profit below for shorts
-      : currentPrice * (1 + 0.08 * 2.5);   // profit above for longs
+      ? currentPrice * (1 - STOP_LOSS_PCT * RR_RATIO)    // profit below for shorts
+      : currentPrice * (1 + STOP_LOSS_PCT * RR_RATIO);   // profit above for longs
 
     // Size the position using risk management
     const sizing = this.riskManager.calculatePositionSize(

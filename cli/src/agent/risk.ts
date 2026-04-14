@@ -78,7 +78,7 @@ export const DEFAULT_RISK_CONFIG: RiskConfig = {
   maxSinglePosition: 0.10,
   maxCorrelatedExposure: 0.20,
   maxConcurrentTrades: 8,
-  hardStopPercent: 0.12,
+  hardStopPercent: 0.05,          // 5% hard stop — short-term trades shouldn't bleed past this
   trailingStopAtr: 1.5,
   trailingStopPct: 0,         // OFF — opt in via config
   breakevenTriggerPct: 0,     // OFF — opt in via config
@@ -98,13 +98,17 @@ export const DEFAULT_RISK_CONFIG: RiskConfig = {
  *   sherwood agent config --set breakevenTriggerPct=0.02
  *   (profitLockSteps currently requires editing config.json directly)
  */
+/**
+ * Short-term trailing config (1-2 day holds).
+ * Tighter stops and faster profit-locking than swing trading.
+ */
 export const RECOMMENDED_TRAILING_CONFIG = {
-  trailingStopPct: 0.05,
-  breakevenTriggerPct: 0.02,
+  trailingStopPct: 0.025,           // 2.5% trail — tighter for short-term
+  breakevenTriggerPct: 0.015,       // move to breakeven after +1.5% gain
   profitLockSteps: [
-    { trigger: 0.05, lock: 0.02 },
-    { trigger: 0.10, lock: 0.05 },
-    { trigger: 0.20, lock: 0.10 },
+    { trigger: 0.02, lock: 0.005 }, // after +2%, lock in +0.5%
+    { trigger: 0.04, lock: 0.02 },  // after +4%, lock in +2%
+    { trigger: 0.06, lock: 0.04 },  // after +6%, lock in +4% (near TP)
   ],
 } as const;
 
@@ -423,11 +427,13 @@ export class RiskManager {
         continue;
       }
 
-      // Time-based exit: positions open > 7 days with < 2% profit
-      const holdingDays = (Date.now() - pos.entryTimestamp) / (1000 * 60 * 60 * 24);
-      if (holdingDays > 7 && pnlPercent < 0.02 && pnlPercent > -0.02) {
+      // Time-based exit: short-term strategy — close after 48h if PnL
+      // is flat (<1%). If the trade hasn't moved in 2 days, it's dead money.
+      // Frees capital for better opportunities.
+      const holdingHours = (Date.now() - pos.entryTimestamp) / (1000 * 60 * 60);
+      if (holdingHours > 48 && pnlPercent < 0.01 && pnlPercent > -0.01) {
         toClose.push(updatedPos);
-        reasons[pos.tokenId] = `Time stop: held ${holdingDays.toFixed(0)} days with only ${(pnlPercent * 100).toFixed(1)}% PnL`;
+        reasons[pos.tokenId] = `Time stop: held ${(holdingHours / 24).toFixed(1)} days with only ${(pnlPercent * 100).toFixed(1)}% PnL`;
         continue;
       }
     }
