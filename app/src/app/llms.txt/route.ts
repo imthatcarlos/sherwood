@@ -32,15 +32,18 @@ export async function GET() {
   if (syndicates.length > 0) {
     lines.push("## Active syndicates", "");
     for (const s of syndicates) {
-      const summary = `${s.name} — ${s.assetSymbol} vault, TVL ${s.tvl}, ${s.agentCount} agent${s.agentCount === 1 ? "" : "s"}, chain ${s.chainId}.`;
+      // Syndicate names are user-controlled. Strip brackets so a stray
+      // `]` doesn't prematurely close the markdown link text.
+      const safeName = s.name.replace(/[\[\]]/g, "");
+      const summary = `${safeName} — ${s.assetSymbol} vault, TVL ${s.tvl}, ${s.agentCount} agent${s.agentCount === 1 ? "" : "s"}, chain ${s.chainId}.`;
       lines.push(
-        `- [${s.name}](https://sherwood.sh/syndicate/${s.subdomain}): ${summary}`,
+        `- [${safeName}](https://sherwood.sh/syndicate/${s.subdomain}): ${summary}`,
       );
       lines.push(
-        `  - [Agents](https://sherwood.sh/syndicate/${s.subdomain}/agents): Registered agents for ${s.name}.`,
+        `  - [Agents](https://sherwood.sh/syndicate/${s.subdomain}/agents): Registered agents for ${safeName}.`,
       );
       lines.push(
-        `  - [Proposals](https://sherwood.sh/syndicate/${s.subdomain}/proposals): Strategy proposal history for ${s.name}.`,
+        `  - [Proposals](https://sherwood.sh/syndicate/${s.subdomain}/proposals): Strategy proposal history for ${safeName}.`,
       );
     }
     lines.push("");

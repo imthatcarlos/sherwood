@@ -557,7 +557,9 @@ export default function LeaderboardTabs({
     const stamp = new Date().toISOString().slice(0, 10);
     a.download = `sherwood-leaderboard-${stamp}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Defer revoke — on some browsers the download pipeline hasn't started
+    // by the synchronous tick after click(), which can cancel the download.
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }, [filteredSyndicates]);
 
   // Page slice for syndicates table
