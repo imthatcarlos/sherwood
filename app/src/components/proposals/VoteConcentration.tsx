@@ -13,7 +13,7 @@
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { parseAbiItem, type Address, formatUnits } from "viem";
-import { truncateAddress } from "@/lib/contracts";
+import { truncateAddress, shareDecimals } from "@/lib/contracts";
 import { Term } from "@/components/ui/Glossary";
 
 const VOTE_CAST_EVENT = parseAbiItem(
@@ -175,7 +175,7 @@ export default function VoteConcentration({
                   {supportLabel}
                 </span>
                 <span style={{ color: "var(--color-fg-secondary)", fontSize: 11 }}>
-                  {parseFloat(formatUnits(r.weight, assetDecimals * 2)).toLocaleString(undefined, {
+                  {parseFloat(formatUnits(r.weight, shareDecimals(assetDecimals))).toLocaleString(undefined, {
                     maximumFractionDigits: 2,
                   })}
                 </span>

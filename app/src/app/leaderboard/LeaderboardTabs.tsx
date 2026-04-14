@@ -94,7 +94,7 @@ function StarButton({ active, onClick, label }: { active: boolean; onClick: () =
         border: "none",
         cursor: "pointer",
         padding: "4px",
-        color: active ? "var(--color-accent)" : "rgba(255,255,255,0.3)",
+        color: active ? "var(--color-accent)" : "rgba(255,255,255,0.55)",
         fontSize: "14px",
         lineHeight: 1,
         transition: "color 0.15s ease",
@@ -354,7 +354,9 @@ export default function LeaderboardTabs({
   const [query, setQuery] = useState("");
   const [chain, setChain] = useState<ChainFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [page, setPage] = useState<number>(() => deepLinkPage);
+  // Per-tab page state so switching tabs preserves each tab's position.
+  const [syndicatesPage, setSyndicatesPage] = useState<number>(() => deepLinkPage);
+  const [agentsPage, setAgentsPage] = useState<number>(0);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
   const [flashedKey, setFlashedKey] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>(initialSort.key);
@@ -439,8 +441,12 @@ export default function LeaderboardTabs({
     window.history.replaceState(null, "", url.toString());
   }, [sortKey, sortDir]);
 
-  // Reset page when filters change
-  const resetPage = useCallback(() => setPage(0), []);
+  // Reset both pages when a filter changes, so switching tabs after
+  // narrowing doesn't strand the user on an out-of-range page.
+  const resetPage = useCallback(() => {
+    setSyndicatesPage(0);
+    setAgentsPage(0);
+  }, []);
 
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
@@ -563,11 +569,14 @@ export default function LeaderboardTabs({
   }, [filteredSyndicates]);
 
   // Page slice for syndicates table
-  const totalPages = Math.max(1, Math.ceil(filteredSyndicates.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages - 1);
+  const syndicatesTotalPages = Math.max(
+    1,
+    Math.ceil(filteredSyndicates.length / PAGE_SIZE),
+  );
+  const safeSyndicatesPage = Math.min(syndicatesPage, syndicatesTotalPages - 1);
   const pagedSyndicates = filteredSyndicates.slice(
-    safePage * PAGE_SIZE,
-    safePage * PAGE_SIZE + PAGE_SIZE,
+    safeSyndicatesPage * PAGE_SIZE,
+    safeSyndicatesPage * PAGE_SIZE + PAGE_SIZE,
   );
 
   const filteredAgents = useMemo(() => {
@@ -585,6 +594,18 @@ export default function LeaderboardTabs({
       return true;
     });
   }, [agents, chain, query]);
+
+  // Page slice for agents table — mirrors the syndicates pagination so
+  // a 100+ agent leaderboard doesn't blow up the DOM.
+  const agentsTotalPages = Math.max(
+    1,
+    Math.ceil(filteredAgents.length / PAGE_SIZE),
+  );
+  const safeAgentsPage = Math.min(agentsPage, agentsTotalPages - 1);
+  const pagedAgents = filteredAgents.slice(
+    safeAgentsPage * PAGE_SIZE,
+    safeAgentsPage * PAGE_SIZE + PAGE_SIZE,
+  );
 
   const activeChainIds = Array.from(new Set(syndicates.map((s) => s.chainId)));
 
@@ -825,7 +846,7 @@ export default function LeaderboardTabs({
                   const badge = CHAIN_BADGES[s.chainId];
                   const statusMeta = STATUS_COLORS[s.status] || STATUS_COLORS.IDLE;
                   // Absolute rank index — page offset + position in current page
-                  const rankIdx = safePage * PAGE_SIZE + i;
+                  const rankIdx = safeSyndicatesPage * PAGE_SIZE + i;
                   const watchKey = `${s.chainId}:${s.id}`;
                   const rowKey = `${s.chainId}-${s.id}`;
                   const isFlashed = flashedKey === rowKey;
@@ -856,7 +877,7 @@ export default function LeaderboardTabs({
                         <NewBadge ageDays={s.ageDays} />
                         <span
                           className="block mt-0.5"
-                          style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px" }}
+                          style={{ color: "rgba(255,255,255,0.55)", fontSize: "11px" }}
                         >
                           {s.subdomain}.sherwoodagent.eth
                         </span>
@@ -867,7 +888,7 @@ export default function LeaderboardTabs({
                       <td className="apy-highlight">
                         {s.tvl}
                         {s.tvlUSDDisplay && !s.tvl.startsWith("$") && (
-                          <span className="block mt-0.5" style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px" }}>
+                          <span className="block mt-0.5" style={{ color: "rgba(255,255,255,0.6)", fontSize: "10px" }}>
                             ~{s.tvlUSDDisplay}
                           </span>
                         )}
@@ -918,50 +939,13 @@ export default function LeaderboardTabs({
             </table>
           )}
 
-          {/* Pagination footer */}
-          {filteredSyndicates.length > PAGE_SIZE && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "0.85rem 1rem",
-                borderTop: "1px solid var(--color-border-soft)",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-fg-secondary)",
-                letterSpacing: "0.1em",
-              }}
-            >
-              <span>
-                {safePage * PAGE_SIZE + 1}
-                {"–"}
-                {Math.min((safePage + 1) * PAGE_SIZE, filteredSyndicates.length)}{" "}
-                of {filteredSyndicates.length}
-              </span>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <button
-                  type="button"
-                  className="sh-btn sh-btn--secondary sh-btn--sm"
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  disabled={safePage === 0}
-                >
-                  ← Prev
-                </button>
-                <span style={{ padding: "0 0.5rem" }}>
-                  Page {safePage + 1} / {totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="sh-btn sh-btn--secondary sh-btn--sm"
-                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                  disabled={safePage >= totalPages - 1}
-                >
-                  Next →
-                </button>
-              </div>
-            </div>
-          )}
+          <PaginationFooter
+            page={safeSyndicatesPage}
+            totalPages={syndicatesTotalPages}
+            totalCount={filteredSyndicates.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setSyndicatesPage}
+          />
         </div>
       )}
 
@@ -992,11 +976,13 @@ export default function LeaderboardTabs({
                 </tr>
               </thead>
               <tbody>
-                {filteredAgents.map((a, i) => {
+                {pagedAgents.map((a, i) => {
                   const badge = CHAIN_BADGES[a.chainId];
+                  // Absolute rank index — page offset + position in current page
+                  const rankIdx = safeAgentsPage * PAGE_SIZE + i;
                   return (
-                    <tr key={`${a.agentAddress}-${a.syndicateSubdomain}`} className={i === 0 ? "lb-row-top1" : undefined}>
-                      <td><RankCell index={i} /></td>
+                    <tr key={`${a.agentAddress}-${a.syndicateSubdomain}`} className={rankIdx === 0 ? "lb-row-top1" : undefined}>
+                      <td><RankCell index={rankIdx} /></td>
                       <td>
                         <span className="text-white font-medium">
                           {a.agentName || truncateAddress(a.agentAddress)}
@@ -1004,7 +990,7 @@ export default function LeaderboardTabs({
                         <span
                           className="block mt-0.5"
                           style={{
-                            color: a.agentName ? "rgba(255,255,255,0.3)" : "var(--color-accent)",
+                            color: a.agentName ? "rgba(255,255,255,0.55)" : "var(--color-accent)",
                             fontSize: "10px",
                             opacity: a.agentName ? 1 : 0.7,
                           }}
@@ -1023,7 +1009,7 @@ export default function LeaderboardTabs({
                         </Link>
                         <span
                           className="block mt-0.5"
-                          style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px" }}
+                          style={{ color: "rgba(255,255,255,0.55)", fontSize: "11px" }}
                         >
                           {a.syndicateSubdomain}.sherwoodagent.eth
                         </span>
@@ -1046,8 +1032,76 @@ export default function LeaderboardTabs({
               </tbody>
             </table>
           )}
+
+          <PaginationFooter
+            page={safeAgentsPage}
+            totalPages={agentsTotalPages}
+            totalCount={filteredAgents.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setAgentsPage}
+          />
         </div>
       )}
+    </div>
+  );
+}
+
+/** Shared page-nav footer for both leaderboard tabs. Renders nothing when
+ *  the result set fits on a single page. */
+function PaginationFooter({
+  page,
+  totalPages,
+  totalCount,
+  pageSize,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  totalCount: number;
+  pageSize: number;
+  onPageChange: (next: number) => void;
+}) {
+  if (totalCount <= pageSize) return null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "0.85rem 1rem",
+        borderTop: "1px solid var(--color-border-soft)",
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        color: "var(--color-fg-secondary)",
+        letterSpacing: "0.1em",
+      }}
+    >
+      <span>
+        {page * pageSize + 1}
+        {"–"}
+        {Math.min((page + 1) * pageSize, totalCount)} of {totalCount}
+      </span>
+      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        <button
+          type="button"
+          className="sh-btn sh-btn--secondary sh-btn--sm"
+          onClick={() => onPageChange(Math.max(0, page - 1))}
+          disabled={page === 0}
+        >
+          ← Prev
+        </button>
+        <span style={{ padding: "0 0.5rem" }}>
+          Page {page + 1} / {totalPages}
+        </span>
+        <button
+          type="button"
+          className="sh-btn sh-btn--secondary sh-btn--sm"
+          onClick={() => onPageChange(Math.min(totalPages - 1, page + 1))}
+          disabled={page >= totalPages - 1}
+        >
+          Next →
+        </button>
+      </div>
     </div>
   );
 }
