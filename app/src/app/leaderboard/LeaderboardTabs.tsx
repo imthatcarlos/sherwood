@@ -734,10 +734,28 @@ export default function LeaderboardTabs({
             />
           ) : (
             <table>
+              {/* Lock column widths via colgroup so header + body align
+                  deterministically regardless of content (empty Star
+                  header, varying Trend sparklines vs "—" fallback, etc.).
+                  Under auto table-layout, cell widths drift based on
+                  max content per column, which was flagged in review. */}
+              <colgroup>
+                <col style={{ width: "44px" }} /> {/* Watchlist star */}
+                <col style={{ width: "64px" }} /> {/* Rank */}
+                <col /> {/* Syndicate — flex */}
+                <col /> {/* Strategy — flex */}
+                <col /> {/* TVL — flex */}
+                <col style={{ width: "110px" }} /> {/* Trend (7D) */}
+                <col style={{ width: "64px" }} /> {/* Flow */}
+                <col style={{ width: "80px" }} /> {/* Agents */}
+                <col /> {/* Status — flex */}
+                <col /> {/* Chain — flex */}
+                <col style={{ width: "120px" }} /> {/* Action */}
+              </colgroup>
               <thead>
                 <tr>
-                  <th scope="col" style={{ width: "32px" }} aria-label="Watchlist"></th>
-                  <th scope="col" style={{ width: "40px" }}>Rank</th>
+                  <th scope="col" aria-label="Watchlist"></th>
+                  <th scope="col">Rank</th>
                   <th
                     scope="col"
                     aria-sort={
@@ -775,12 +793,11 @@ export default function LeaderboardTabs({
                   </th>
                   <th
                     scope="col"
-                    style={{ width: "90px" }}
                     title="Estimated from deposits, withdrawals, and settled P&L. Does not reflect unrealized yield or management-fee deductions."
                   >
                     Trend (7D)
                   </th>
-                  <th scope="col" style={{ width: "40px" }} title="Net deposit flow over lifetime">Flow</th>
+                  <th scope="col" title="Net deposit flow over lifetime">Flow</th>
                   <th
                     scope="col"
                     aria-sort={
