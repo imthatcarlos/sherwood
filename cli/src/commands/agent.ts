@@ -47,6 +47,7 @@ function makeConfig(overrides?: Partial<AgentConfig>): AgentConfig {
     maxPositionPct: 5,
     maxRiskPct: 20,
     useX402: true, // Paid signals (Nansen + Messari) on by default — opt out with --no-x402
+    x402TopN: 3,   // Only run x402 on top 3 tokens by free-signal score — saves ~$1.12/run
     ...overrides,
   };
 }

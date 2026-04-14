@@ -55,6 +55,11 @@ export interface AgentConfig {
   weightProfile?: string;
   /** When true, includes paid x402 data (Nansen smart-money, Messari fundamentals) in analysis. */
   useX402?: boolean;
+  /** Only run x402 paid signals on the top N tokens by free-signal score.
+   *  Remaining tokens use free signals only. Reduces x402 cost from ~$1.60/run
+   *  (10 tokens × $0.16) to ~$0.48/run (3 tokens × $0.16).
+   *  Set to 0 or undefined to run x402 on all tokens (old behavior). */
+  x402TopN?: number;
   /** When true, smooth fast/noisy signals (HL flow, smartMoney, dexFlow, fundingRate)
    *  with a rolling 3-reading average before scoring. Reduces single-scan flicker.
    *  Default false. */
@@ -106,7 +111,7 @@ export class TradingAgent {
   }
 
   /** Analyze a single token — gather all data and score. */
-  async analyzeToken(tokenId: string): Promise<TokenAnalysis> {
+  async analyzeToken(tokenId: string, opts?: { skipX402?: boolean }): Promise<TokenAnalysis> {
     const signals: Signal[] = [];
     let technicalSignals: TechnicalSignals | undefined;
     let fearAndGreedValue: number | undefined;
@@ -281,8 +286,9 @@ export class TradingAgent {
     // undefined = x402 not configured (don't exclude categories)
     // true = x402 configured + wallet funded
     // false = x402 configured but wallet empty → exclude dead categories
-    let x402Available: boolean | undefined = this.config.useX402 ? false : undefined;
-    if (this.config.useX402) {
+    const x402Enabled = this.config.useX402 && !opts?.skipX402;
+    let x402Available: boolean | undefined = x402Enabled ? false : undefined;
+    if (x402Enabled) {
       x402Available = await isX402WalletFunded();
       if (!x402Available) {
         console.error(chalk.yellow(`  x402 wallet has insufficient USDC — skipping paid signals (smartMoney, event) for this cycle`));
@@ -290,7 +296,7 @@ export class TradingAgent {
     }
 
     // Phase 2: Parallel research data fetching (Nansen + Messari) if x402 enabled AND funded
-    if (this.config.useX402 && x402Available) {
+    if (x402Enabled && x402Available) {
       const [nansenResult, messariResult] = await Promise.allSettled([
         // 4. Smart-money & on-chain data (via Nansen x402)
         getResearchProvider("nansen").query({ type: "smart-money", target: tokenId }),
@@ -542,14 +548,53 @@ export class TradingAgent {
     this.config.tokens = tokens;
   }
 
-  /** Analyze all watchlist tokens. */
+  /** Analyze all watchlist tokens.
+   *
+   *  When `x402TopN` is set and x402 is enabled, uses a two-pass approach:
+   *  1. Score ALL tokens with free signals only (no x402 cost)
+   *  2. Re-score the top N tokens by free-signal score WITH x402 paid data
+   *
+   *  This reduces x402 cost from ~$0.16×10 = $1.60/run to ~$0.16×3 = $0.48/run
+   *  while concentrating paid data on the tokens most likely to fire trades.
+   */
   async analyzeAll(): Promise<TokenAnalysis[]> {
-    const results: TokenAnalysis[] = [];
-    for (const token of this.config.tokens) {
-      const result = await this.analyzeToken(token);
-      results.push(result);
+    const topN = this.config.x402TopN;
+    const shouldTwoPass = this.config.useX402 && topN && topN > 0 && topN < this.config.tokens.length;
+
+    if (!shouldTwoPass) {
+      // Original single-pass: analyze all tokens with whatever x402 config says
+      const results: TokenAnalysis[] = [];
+      for (const token of this.config.tokens) {
+        const result = await this.analyzeToken(token);
+        results.push(result);
+      }
+      return results;
     }
-    return results;
+
+    // Pass 1: all tokens with free signals only
+    console.error(chalk.dim(`  x402 top-${topN} mode: scoring all ${this.config.tokens.length} tokens with free signals first...`));
+    const freeResults: TokenAnalysis[] = [];
+    for (const token of this.config.tokens) {
+      const result = await this.analyzeToken(token, { skipX402: true });
+      freeResults.push(result);
+    }
+
+    // Sort by absolute score descending — top N get the x402 enrichment
+    const ranked = [...freeResults].sort(
+      (a, b) => Math.abs(b.decision.score) - Math.abs(a.decision.score),
+    );
+    const topTokens = new Set(ranked.slice(0, topN).map((r) => r.token));
+    console.error(chalk.dim(`  x402 enriching top ${topN}: ${[...topTokens].join(', ')}`));
+
+    // Pass 2: re-analyze top N with x402 enabled
+    const enrichedMap = new Map<string, TokenAnalysis>();
+    for (const token of topTokens) {
+      const enriched = await this.analyzeToken(token);
+      enrichedMap.set(token, enriched);
+    }
+
+    // Merge: use enriched results for top N, free results for the rest
+    return freeResults.map((r) => enrichedMap.get(r.token) ?? r);
   }
 
   /** Analyze all tokens and generate alerts for state changes. */
