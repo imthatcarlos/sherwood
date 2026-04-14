@@ -13,16 +13,14 @@ export const revalidate = 30;
 export async function GET() {
   const { ranked } = await getRankedSyndicates();
 
-  // BigInts don't serialize by default — stringify them so JSON.parse on
-  // the client receives plain strings. Only `agentCount` can surface as a
-  // bigint in this view (carried through from the subgraph rows), but
-  // SyndicateDisplay widens it to `number`; still, guard generically.
-  return NextResponse.json(
-    ranked,
-    {
-      headers: {
-        "Cache-Control": "public, max-age=30, s-maxage=30",
-      },
+  // SyndicateDisplay is JSON-safe as of today: all onchain bigints are
+  // widened to `number` or formatted to `string` upstream in syndicates.ts.
+  // If a future field carries a raw bigint through, NextResponse.json
+  // will throw — wire a replacer here (or widen at the source) at that
+  // point rather than silently serializing "[object Object]".
+  return NextResponse.json(ranked, {
+    headers: {
+      "Cache-Control": "public, max-age=30, s-maxage=30",
     },
-  );
+  });
 }
