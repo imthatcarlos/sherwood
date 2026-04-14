@@ -48,6 +48,32 @@ export class TradeExecutor {
     this.portfolio = portfolio;
   }
 
+  /** Map HL asset index → CoinGecko token IDs that trade that perp.
+   *  When the agent scans 10 tokens but the strategy clone only trades
+   *  one perp (e.g. BTC), we only execute when the signal comes from a
+   *  token that matches the strategy's asset. Other tokens' BUY signals
+   *  are ignored at the execution layer (still logged for observability). */
+  private static readonly ASSET_INDEX_TO_TOKENS: Record<number, Set<string>> = {
+    0: new Set(["bitcoin"]),
+    1: new Set(["ethereum"]),
+    2: new Set(["solana"]),           // SOL-USD
+    3: new Set(["ethereum"]),         // ETH-USD (legacy index)
+    4: new Set(["arbitrum"]),
+    6: new Set(["dogecoin"]),
+    8: new Set(["chainlink"]),
+    10: new Set(["aave"]),
+    11: new Set(["uniswap"]),
+    23: new Set(["ripple"]),
+    28: new Set(["polkadot"]),
+    35: new Set(["avalanche"]),
+    131: new Set(["hyperliquid"]),
+    144: new Set(["zcash"]),
+    148: new Set(["bittensor"]),
+    265: new Set(["worldcoin-wld"]),
+    343: new Set(["fartcoin"]),
+    373: new Set(["fetch-ai"]),
+  };
+
   /** Execute a trade based on a decision */
   async execute(
     decision: TradeDecision,
@@ -98,6 +124,20 @@ export class TradeExecutor {
         error: `Action ${decision.action} does not trigger execution`,
         dryRun: this.config.dryRun,
       };
+    }
+
+    // Token→asset filter: only execute if the signal token matches the
+    // strategy clone's perp asset. Prevents AAVE BUY from opening a BTC
+    // long when the strategy clone is configured for asset-index 0.
+    if (this.config.mode === 'hyperliquid-perp' && this.config.assetIndex !== undefined) {
+      const allowedTokens = TradeExecutor.ASSET_INDEX_TO_TOKENS[this.config.assetIndex];
+      if (allowedTokens && !allowedTokens.has(tokenId)) {
+        return {
+          success: false,
+          error: `Token ${tokenId} doesn't match strategy asset index ${this.config.assetIndex} — skipping execution (signal logged for observability)`,
+          dryRun: this.config.dryRun,
+        };
+      }
     }
 
     // Load portfolio to get current state

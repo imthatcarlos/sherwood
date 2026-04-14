@@ -225,7 +225,7 @@ export class RiskManager {
     }
 
     const riskPct = maxRiskPercent ?? this.config.riskPerTrade;
-    const riskUsd = portfolioValue * riskPct;
+    let riskUsd = portfolioValue * riskPct;
     const riskPerUnit = Math.abs(entryPrice - stopLossPrice);
 
     if (riskPerUnit <= 0) {
@@ -233,8 +233,21 @@ export class RiskManager {
     }
 
     // positionSize = (portfolioValue * maxRiskPercent) / (entryPrice - stopLossPrice)
-    const quantity = riskUsd / riskPerUnit;
-    const sizeUsd = quantity * entryPrice;
+    let quantity = riskUsd / riskPerUnit;
+    let sizeUsd = quantity * entryPrice;
+
+    // Minimum position floor: Hyperliquid requires ~$10+ notional per order.
+    // For small vaults (<$1000) the standard 2% risk produces sub-minimum
+    // sizes. Scale up to at least $15 notional (with 50% safety buffer over
+    // HL's ~$10 minimum) if the vault can afford it. Never exceed
+    // maxSinglePosition cap — that's handled below.
+    const MIN_POSITION_USD = 15;
+    if (sizeUsd < MIN_POSITION_USD && portfolioValue >= MIN_POSITION_USD * 2) {
+      const scale = MIN_POSITION_USD / sizeUsd;
+      sizeUsd = MIN_POSITION_USD;
+      quantity = sizeUsd / entryPrice;
+      riskUsd *= scale;
+    }
 
     // Cap at max single position size
     const maxSizeUsd = portfolioValue * this.config.maxSinglePosition;
