@@ -295,77 +295,97 @@ export class TradingAgent {
       }
     }
 
-    // Phase 2: Parallel research data fetching (Nansen + Messari) if x402 enabled AND funded
+    // Phase 2: Nansen x402 research data (Messari dropped — low value for majors)
+    //
+    // Two Nansen calls in parallel:
+    //   1. Smart-money netflows (multi-chain: ethereum, solana, base, L2s)
+    //      — was previously Base-only, returning empty for BTC/ETH/SOL
+    //   2. Hyperliquid smart-money perp trades — same venue we trade on,
+    //      shows what Funds/Smart Traders are doing right now
     if (x402Enabled && x402Available) {
-      const [nansenResult, messariResult] = await Promise.allSettled([
-        // 4. Smart-money & on-chain data (via Nansen x402)
-        getResearchProvider("nansen").query({ type: "smart-money", target: tokenId }),
+      // Map tokenId to HL symbol for perp-trades query
+      const hlSymbolMap: Record<string, string> = {
+        bitcoin: "BTC", ethereum: "ETH", solana: "SOL",
+        arbitrum: "ARB", aave: "AAVE", uniswap: "UNI",
+        dogecoin: "DOGE", ripple: "XRP", hyperliquid: "HYPE",
+        "worldcoin-wld": "WLD", bittensor: "TAO", zcash: "ZEC",
+        fartcoin: "FARTCOIN", pepe: "PEPE", polkadot: "DOT",
+      };
+      const hlSymbol = hlSymbolMap[tokenId] ?? tokenId.toUpperCase();
 
-        // 5. Fundamentals & events (via Messari x402)
-        getResearchProvider("messari").query({ type: "token", target: tokenId })
+      const nansenProvider = getResearchProvider("nansen") as import("../providers/research/nansen.js").NansenProvider;
+
+      const [netflowResult, hlPerpResult] = await Promise.allSettled([
+        // 4. Smart-money netflows (multi-chain)
+        nansenProvider.query({ type: "smart-money", target: tokenId }),
+        // 5. HL smart-money perp trades (same venue we trade)
+        nansenProvider.queryHyperliquidSmartMoney(hlSymbol),
       ]);
 
-      // Process Nansen results
-      if (nansenResult.status === 'fulfilled') {
-        const smResult = nansenResult.value;
+      // Process netflow results
+      if (netflowResult.status === 'fulfilled') {
+        const smResult = netflowResult.value;
         nansenData = smResult.data;
         const flows = smResult.data.flows as Array<Record<string, unknown>> | undefined;
         if (flows && flows.length > 0) {
-          // Interpret net flow: negative = leaving exchanges = bullish
-          const netflow = flows.reduce((sum, f) => sum + (Number(f.netflow ?? f.net_flow ?? 0)), 0);
+          // Aggregate net_flow_24h_usd across all chains for this token
+          const netflow24h = flows.reduce((sum, f) => sum + (Number(f.net_flow_24h_usd ?? 0)), 0);
+          const traderCount = flows.reduce((sum, f) => sum + (Number(f.trader_count ?? 0)), 0);
           signals.push(scoreOnChain({
-            exchangeNetFlow: netflow,
-            whaleAccumulating: netflow < 0,
+            exchangeNetFlow: netflow24h,
+            whaleAccumulating: netflow24h < 0,
+            activeAddressesGrowth: traderCount > 10 ? 0.2 : traderCount > 5 ? 0.1 : 0,
           }));
+          console.error(chalk.dim(`  x402 Nansen netflow: ${flows.length} chain(s), net $${(netflow24h / 1e6).toFixed(1)}M 24h, cost ${smResult.costUsdc} USDC`));
         } else {
           signals.push(scoreOnChain({}));
+          console.error(chalk.dim(`  x402 Nansen netflow: no flows for ${tokenId}, cost ${smResult.costUsdc} USDC`));
         }
-        console.error(chalk.dim(`  x402 Nansen smart-money: cost ${smResult.costUsdc} USDC`));
       } else {
-        console.error(chalk.dim(`  x402 Nansen smart-money unavailable: ${nansenResult.reason} — using free data only`));
+        console.error(chalk.dim(`  x402 Nansen netflow unavailable: ${netflowResult.reason}`));
         signals.push(scoreOnChain({}));
       }
 
-      // Process Messari results
-      if (messariResult.status === 'fulfilled') {
-        const tokenResult = messariResult.value;
-        messariData = tokenResult.data;
-        const d = tokenResult.data as Record<string, unknown>;
-        const metrics = d.metrics as Record<string, unknown> | undefined;
-        const profile = d.profile as Record<string, unknown> | undefined;
+      // Process HL perp trades — derive a smartMoney signal from recent trade direction
+      if (hlPerpResult.status === 'fulfilled') {
+        const hlResult = hlPerpResult.value;
+        const trades = hlResult.data.trades as Array<Record<string, unknown>> | undefined;
+        if (trades && trades.length > 0) {
+          // Count longs vs shorts among smart money's recent trades
+          let longValueUsd = 0;
+          let shortValueUsd = 0;
+          for (const t of trades) {
+            const val = Number(t.value_usd ?? 0);
+            const side = String(t.side ?? '').toLowerCase();
+            if (side === 'long') longValueUsd += val;
+            else if (side === 'short') shortValueUsd += val;
+          }
+          const totalValue = longValueUsd + shortValueUsd;
+          const longRatio = totalValue > 0 ? longValueUsd / totalValue : 0.5;
+          // longRatio 0.7+ = smart money heavily long = bullish
+          // longRatio 0.3- = smart money heavily short = bearish
+          const smBias = (longRatio - 0.5) * 2; // -1 to +1
 
-        // Extract fundamental metrics from Messari data (replaces TVL-based fundamental if present)
-        const mcapToTvl = metrics
-          ? Number((metrics as Record<string, unknown>).mcap_to_tvl ?? 0) || undefined
-          : undefined;
-
-        // Remove any previously-pushed fundamental signal (from phase 1 TVL) to avoid duplicates
-        const existingFundIdx = signals.findIndex(s => s.name === "fundamental");
-        if (existingFundIdx >= 0) signals.splice(existingFundIdx, 1);
-
-        if (mcapToTvl || metrics) {
-          signals.push(scoreFundamental({ mcapToTvl }));
+          // Push as a smartMoney signal with high confidence (same-venue data)
+          signals.push({
+            name: 'smartMoney',
+            value: smBias * 0.8, // scale to ±0.8 max
+            confidence: Math.min(0.85, 0.4 + (trades.length / 20) * 0.4),
+            source: 'Nansen HL Smart Money',
+            details: `${trades.length} trades: $${(longValueUsd / 1e6).toFixed(1)}M long / $${(shortValueUsd / 1e6).toFixed(1)}M short (${(longRatio * 100).toFixed(0)}% long)`,
+          });
+          console.error(chalk.dim(`  x402 Nansen HL perps: ${trades.length} trades, ${(longRatio * 100).toFixed(0)}% long bias, cost ${hlResult.costUsdc} USDC`));
         } else {
-          signals.push(scoreFundamental({}));
+          console.error(chalk.dim(`  x402 Nansen HL perps: no recent trades for ${hlSymbol}`));
         }
-
-        // Use profile/category data as an event signal
-        const hasPositiveCatalyst = profile
-          ? Boolean((profile as Record<string, unknown>).is_verified || (profile as Record<string, unknown>).tag_names)
-          : false;
-        signals.push(scoreEvent({ positiveEvent: hasPositiveCatalyst || undefined }));
-
-        console.error(chalk.dim(`  x402 Messari token: cost ${tokenResult.costUsdc} USDC`));
       } else {
-        console.error(chalk.dim(`  x402 Messari unavailable: ${messariResult.reason} — using free data only`));
-        // Fall back: fundamental was already pushed from TVL above only if no TVL
-        if (!signals.some(s => s.name === "fundamental")) {
-          signals.push(scoreFundamental({}));
-        }
-        signals.push(scoreEvent({}));
+        console.error(chalk.dim(`  x402 Nansen HL perps unavailable: ${hlPerpResult.reason}`));
       }
+
+      // Push event signal (no Messari — use free path)
+      signals.push(scoreEvent({}));
     } else {
-      // Only push fundamental if not already pushed from TVL data (phase 1)
+      // Free path only
       if (!signals.some(s => s.name === "fundamental")) {
         signals.push(scoreFundamental({}));
       }

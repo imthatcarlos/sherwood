@@ -26,6 +26,7 @@ export const NANSEN_COST_ESTIMATE: Record<string, string> = {
   token: "~$0.01",
   market: "~$0.01",
   "smart-money": "~$0.06",
+  "hl-perp-trades": "~$0.06",
   wallet: "~$0.01",
 };
 
@@ -154,27 +155,44 @@ export class NansenProvider implements ResearchProvider {
   /**
    * Smart Money Net Flow — capital flow analysis from labeled wallets.
    * Endpoint: POST /api/v1/smart-money/netflow
-   * Cost: ~$0.05 (premium tier)
+   * Cost: ~$0.06 (premium tier)
    *
-   * The netflow endpoint only accepts `token_address` filters (not `token_symbol`).
-   * If the target is a symbol, we resolve it to an address via the token screener first.
+   * Queries across all major chains (ethereum, solana, base, arbitrum, etc.)
+   * using the token's symbol for filtering. Previously hardcoded to ["base"]
+   * which returned empty flows for BTC/ETH/SOL — those tokens don't
+   * meaningfully trade on Base.
+   *
+   * Response includes net_flow_1h/24h/7d/30d in USD per token+chain,
+   * plus trader_count (active smart money wallets in 30d window).
    */
   private async smartMoneyNetflow(
     target: string,
   ): Promise<ResearchResult> {
     const fetchWithPay = await getX402Fetch();
 
-    // Resolve symbol → address if needed (token screener is $0.01)
-    const tokenAddress = await this.resolveTokenAddress(target);
+    // Map CoinGecko token IDs to symbols for the filter
+    const symbolMap: Record<string, string> = {
+      bitcoin: "BTC", ethereum: "ETH", solana: "SOL",
+      arbitrum: "ARB", aave: "AAVE", uniswap: "UNI",
+      chainlink: "LINK", dogecoin: "DOGE", ripple: "XRP",
+      polkadot: "DOT", avalanche: "AVAX", near: "NEAR",
+      sui: "SUI", aptos: "APT", hyperliquid: "HYPE",
+      worldcoin: "WLD", "worldcoin-wld": "WLD",
+      bittensor: "TAO", zcash: "ZEC", fartcoin: "FARTCOIN",
+      pepe: "PEPE", pendle: "PENDLE", jupiter: "JUP",
+    };
+    const symbol = symbolMap[target.toLowerCase()] ?? target.toUpperCase();
 
     const body: Record<string, unknown> = {
-      chains: ["base"],
-      pagination: { page: 1, records_per_page: 10 },
+      // Query all supported smart-money chains — the API returns per-chain
+      // rows so we get flows across ethereum, solana, base, L2s, etc.
+      chains: ["ethereum", "solana", "base", "arbitrum", "optimism", "polygon", "avalanche", "bnb"],
+      filters: {
+        token_symbol: [symbol],
+      },
+      order_by: [{ field: "net_flow_24h_usd", direction: "DESC" }],
+      pagination: { page: 1, per_page: 10 },
     };
-
-    if (tokenAddress) {
-      body.filters = { token_address: [tokenAddress] };
-    }
 
     const res = await fetchWithPay(`${BASE_URL}/api/v1/smart-money/netflow`, {
       method: "POST",
@@ -196,6 +214,55 @@ export class NansenProvider implements ResearchProvider {
       queryType: "smart-money",
       target,
       data: { flows: json.data ?? [], count: (json.data ?? []).length },
+      costUsdc,
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+  }
+
+  /**
+   * Hyperliquid Smart Money Perp Trades — what smart wallets are trading
+   * on Hyperliquid perps right now.
+   * Endpoint: POST /api/v1/smart-money/perp-trades
+   * Cost: ~$0.06 (premium tier, estimated)
+   *
+   * Returns granular trade data: direction (Long/Short), size, price, action
+   * (Buy - Add Long, Sell - Open Short, etc.), trader labels (Fund, Smart Trader).
+   * Directly relevant — same venue + instrument we trade.
+   */
+  async queryHyperliquidSmartMoney(
+    tokenSymbol: string,
+  ): Promise<ResearchResult> {
+    const fetchWithPay = await getX402Fetch();
+
+    const body = {
+      filters: {
+        include_smart_money_labels: ["Fund", "Smart Trader", "Smart HL Perps Trader"],
+        token_symbol: tokenSymbol,
+        value_usd: { min: 50000 }, // only meaningful-size trades
+      },
+      only_new_positions: false,
+      pagination: { page: 1, per_page: 20 },
+      order_by: [{ field: "block_timestamp", direction: "DESC" }],
+    };
+
+    const res = await fetchWithPay(`${BASE_URL}/api/v1/smart-money/perp-trades`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Nansen HL perp-trades query failed: ${res.status} ${res.statusText}`);
+    }
+
+    const json = (await res.json()) as { data?: unknown[] };
+    const costUsdc = this.extractCost(res, "smart-money");
+
+    return {
+      provider: "nansen",
+      queryType: "hl-perp-trades",
+      target: tokenSymbol,
+      data: { trades: json.data ?? [], count: (json.data ?? []).length },
       costUsdc,
       timestamp: Math.floor(Date.now() / 1000),
     };
