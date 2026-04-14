@@ -50,9 +50,9 @@ contract HyperliquidPerpStrategy is BaseStrategy {
     uint8 constant ACTION_UPDATE_MIN_RETURN = 0;
     uint8 constant ACTION_OPEN_LONG = 1;
     uint8 constant ACTION_CLOSE_POSITION = 2;
-    uint8 constant ACTION_UPDATE_STOP_LOSS = 3;       // reduce-only sell (for longs)
+    uint8 constant ACTION_UPDATE_STOP_LOSS = 3; // reduce-only sell (for longs)
     uint8 constant ACTION_OPEN_SHORT = 4;
-    uint8 constant ACTION_UPDATE_STOP_LOSS_SHORT = 5;  // reduce-only buy (for shorts)
+    uint8 constant ACTION_UPDATE_STOP_LOSS_SHORT = 5; // reduce-only buy (for shorts)
 
     // ── CLOID constant for stop-loss tracking ──
     // Single fixed CLOID — only one GTC stop-loss is ever live at a time.
@@ -223,9 +223,7 @@ contract HyperliquidPerpStrategy is BaseStrategy {
             L1Write.sendLimitOrder(perpAssetIndex, false, limitPx, sz, false, TimeInForce.Ioc, NO_CLOID);
 
             // Place GTC stop loss (reduce-only buy to close short) with fixed CLOID
-            L1Write.sendLimitOrder(
-                perpAssetIndex, true, stopLossPx, stopLossSz, true, TimeInForce.Gtc, STOP_LOSS_CLOID
-            );
+            L1Write.sendLimitOrder(perpAssetIndex, true, stopLossPx, stopLossSz, true, TimeInForce.Gtc, STOP_LOSS_CLOID);
             hasActiveStopLoss = true;
 
             emit PositionOpened(perpAssetIndex, false, limitPx, sz, leverage);
@@ -259,7 +257,9 @@ contract HyperliquidPerpStrategy is BaseStrategy {
 
         // Force-close SHORT positions: IOC buy at maximum price.
         // Reduce-only — no-op if no short position exists on HyperCore.
-        L1Write.sendLimitOrder(perpAssetIndex, true, type(uint64).max, type(uint64).max, true, TimeInForce.Ioc, NO_CLOID);
+        L1Write.sendLimitOrder(
+            perpAssetIndex, true, type(uint64).max, type(uint64).max, true, TimeInForce.Ioc, NO_CLOID
+        );
 
         // Transfer all USD from perp margin back to spot (async)
         L1Write.sendUsdClassTransfer(type(uint64).max, false);
