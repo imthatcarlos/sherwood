@@ -48,31 +48,38 @@ export class TradeExecutor {
     this.portfolio = portfolio;
   }
 
-  /** Map HL asset index → CoinGecko token IDs that trade that perp.
-   *  When the agent scans 10 tokens but the strategy clone only trades
-   *  one perp (e.g. BTC), we only execute when the signal comes from a
-   *  token that matches the strategy's asset. Other tokens' BUY signals
-   *  are ignored at the execution layer (still logged for observability). */
-  private static readonly ASSET_INDEX_TO_TOKENS: Record<number, Set<string>> = {
-    0: new Set(["bitcoin"]),
-    1: new Set(["ethereum"]),
-    2: new Set(["solana"]),           // SOL-USD
-    3: new Set(["ethereum"]),         // ETH-USD (legacy index)
-    4: new Set(["arbitrum"]),
-    6: new Set(["dogecoin"]),
-    8: new Set(["chainlink"]),
-    10: new Set(["aave"]),
-    11: new Set(["uniswap"]),
-    23: new Set(["ripple"]),
-    28: new Set(["polkadot"]),
-    35: new Set(["avalanche"]),
-    131: new Set(["hyperliquid"]),
-    144: new Set(["zcash"]),
-    148: new Set(["bittensor"]),
-    265: new Set(["worldcoin-wld"]),
-    343: new Set(["fartcoin"]),
-    373: new Set(["fetch-ai"]),
+  /** CoinGecko token ID → Hyperliquid perp asset index.
+   *  Used by multi-asset execution to resolve which HL perp to trade
+   *  when a signal fires. One strategy clone can trade any of these. */
+  private static readonly TOKEN_TO_ASSET_INDEX: Record<string, number> = {
+    bitcoin: 0,
+    ethereum: 1,
+    solana: 2,
+    arbitrum: 4,
+    dogecoin: 6,
+    chainlink: 8,
+    aave: 10,
+    uniswap: 11,
+    ripple: 23,
+    polkadot: 28,
+    avalanche: 35,
+    hyperliquid: 131,
+    zcash: 144,
+    bittensor: 148,
+    "worldcoin-wld": 265,
+    fartcoin: 343,
+    "fetch-ai": 373,
+    pepe: 166,
+    pendle: 249,
+    sui: 116,
+    near: 71,
+    aptos: 83,
   };
+
+  /** Resolve a CoinGecko token ID to its HL perp asset index. */
+  static resolveAssetIndex(tokenId: string): number | undefined {
+    return TradeExecutor.TOKEN_TO_ASSET_INDEX[tokenId];
+  }
 
   /** Execute a trade based on a decision */
   async execute(
@@ -126,15 +133,14 @@ export class TradeExecutor {
       };
     }
 
-    // Token→asset filter: only execute if the signal token matches the
-    // strategy clone's perp asset. Prevents AAVE BUY from opening a BTC
-    // long when the strategy clone is configured for asset-index 0.
-    if (this.config.mode === 'hyperliquid-perp' && this.config.assetIndex !== undefined) {
-      const allowedTokens = TradeExecutor.ASSET_INDEX_TO_TOKENS[this.config.assetIndex];
-      if (allowedTokens && !allowedTokens.has(tokenId)) {
+    // Resolve token → HL asset index for multi-asset execution.
+    // If the token doesn't have a known HL perp, skip execution.
+    if (this.config.mode === 'hyperliquid-perp') {
+      const resolvedIndex = TradeExecutor.resolveAssetIndex(tokenId);
+      if (resolvedIndex === undefined) {
         return {
           success: false,
-          error: `Token ${tokenId} doesn't match strategy asset index ${this.config.assetIndex} — skipping execution (signal logged for observability)`,
+          error: `Token ${tokenId} has no known Hyperliquid perp asset index — skipping execution`,
           dryRun: this.config.dryRun,
         };
       }
@@ -305,6 +311,10 @@ export class TradeExecutor {
       transport: http(),
     });
 
+    // Resolve token → HL asset index for multi-asset execution
+    const assetIndex = TradeExecutor.resolveAssetIndex(order.tokenId)
+      ?? this.config.assetIndex ?? 3; // fallback to config or ETH
+
     // limitPx: slightly above/below market for IOC (1% slippage buffer)
     const isShort = order.side === 'sell';
     const limitPx = isShort
@@ -312,17 +322,17 @@ export class TradeExecutor {
       : priceToUint64(currentPrice * 1.01);  // above market for buy IOC
     // sz: token quantity — fetch asset-specific szDecimals from Hyperliquid meta API
     const quantity = order.amountUsd / currentPrice;
-    const assetIndex = this.config.assetIndex ?? 3; // default ETH
     const szDec = await getSzDecimals(assetIndex);
     const sz = sizeToUint64(quantity, szDec);
     const stopLossPx = priceToUint64(order.stopLoss);
     const stopLossSz = sz;
 
-    // Encode action: ACTION_OPEN_LONG=1 or ACTION_OPEN_SHORT=4
-    const action = isShort ? 4 : 1;
+    // Use multi-asset actions (6/7) that include assetIndex in calldata.
+    // One strategy clone can now trade any HL perp asset.
+    const action = isShort ? 7 : 6; // ACTION_OPEN_SHORT_MULTI / ACTION_OPEN_LONG_MULTI
     const actionData = encodeAbiParameters(
-      [{ type: 'uint8' }, { type: 'uint64' }, { type: 'uint64' }, { type: 'uint64' }, { type: 'uint64' }],
-      [action, limitPx, sz, stopLossPx, stopLossSz],
+      [{ type: 'uint8' }, { type: 'uint32' }, { type: 'uint64' }, { type: 'uint64' }, { type: 'uint64' }, { type: 'uint64' }],
+      [action, assetIndex, limitPx, sz, stopLossPx, stopLossSz],
     );
 
     const txData = encodeFunctionData({

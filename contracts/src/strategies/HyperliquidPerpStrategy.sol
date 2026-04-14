@@ -47,12 +47,17 @@ contract HyperliquidPerpStrategy is BaseStrategy {
     error PositionTooLarge(uint256 actual, uint256 max);
 
     // ── Action types ──
+    // Legacy single-asset actions (use perpAssetIndex from storage):
     uint8 constant ACTION_UPDATE_MIN_RETURN = 0;
     uint8 constant ACTION_OPEN_LONG = 1;
     uint8 constant ACTION_CLOSE_POSITION = 2;
     uint8 constant ACTION_UPDATE_STOP_LOSS = 3; // reduce-only sell (for longs)
     uint8 constant ACTION_OPEN_SHORT = 4;
     uint8 constant ACTION_UPDATE_STOP_LOSS_SHORT = 5; // reduce-only buy (for shorts)
+    // Multi-asset actions (assetIndex in calldata — one clone trades any perp):
+    uint8 constant ACTION_OPEN_LONG_MULTI = 6; // (action, assetIndex, limitPx, sz, stopLossPx, stopLossSz)
+    uint8 constant ACTION_OPEN_SHORT_MULTI = 7; // same encoding
+    uint8 constant ACTION_CLOSE_MULTI = 8; // (action, assetIndex, limitPx, sz)
 
     // ── CLOID constant for stop-loss tracking ──
     // Single fixed CLOID — only one GTC stop-loss is ever live at a time.
@@ -245,6 +250,44 @@ contract HyperliquidPerpStrategy is BaseStrategy {
             hasActiveStopLoss = true;
 
             emit StopLossUpdated(triggerPx);
+        } else if (action == ACTION_OPEN_LONG_MULTI || action == ACTION_OPEN_SHORT_MULTI) {
+            // Multi-asset open: assetIndex is in the calldata, not storage.
+            // Decode: (action, assetIndex, limitPx, sz, stopLossPx, stopLossSz)
+            (, uint32 ai, uint64 limitPx, uint64 sz, uint64 stopLossPx, uint64 stopLossSz) =
+                abi.decode(data, (uint8, uint32, uint64, uint64, uint64, uint64));
+
+            // Set leverage on HyperCore for this asset (idempotent per asset on HyperCore)
+            L1Write.sendUpdateLeverage(ai, true, leverage);
+
+            // On-chain position size check
+            uint256 approxUsd = uint256(sz) * uint256(limitPx) / 1e6;
+            if (approxUsd > maxPositionSize) revert PositionTooLarge(approxUsd, maxPositionSize);
+
+            _cancelCurrentStopLoss();
+
+            bool isBuy = (action == ACTION_OPEN_LONG_MULTI);
+            // IOC entry order
+            L1Write.sendLimitOrder(ai, isBuy, limitPx, sz, false, TimeInForce.Ioc, NO_CLOID);
+            // GTC stop-loss (reduce-only, opposite direction)
+            L1Write.sendLimitOrder(ai, !isBuy, stopLossPx, stopLossSz, true, TimeInForce.Gtc, STOP_LOSS_CLOID);
+            hasActiveStopLoss = true;
+
+            // Update tracked asset so _settle() closes the right position
+            perpAssetIndex = ai;
+
+            emit PositionOpened(ai, isBuy, limitPx, sz, leverage);
+            emit StopLossUpdated(stopLossPx);
+        } else if (action == ACTION_CLOSE_MULTI) {
+            // Multi-asset close: assetIndex in calldata.
+            // Decode: (action, assetIndex, limitPx, sz)
+            (, uint32 ai, uint64 limitPx, uint64 sz) = abi.decode(data, (uint8, uint32, uint64, uint64));
+
+            _cancelCurrentStopLoss();
+
+            // Reduce-only close on the specified asset
+            L1Write.sendLimitOrder(ai, false, limitPx, sz, true, TimeInForce.Ioc, NO_CLOID);
+
+            emit PositionClosed(ai, limitPx, sz);
         } else {
             revert InvalidAction();
         }
