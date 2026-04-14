@@ -49,10 +49,13 @@ export const DEFAULT_WEIGHTS: ScoringWeights = {
  */
 export const WEIGHT_PROFILES: Record<string, ScoringWeights> = {
   default: DEFAULT_WEIGHTS,
-  majors:    { smartMoney: 0.30, technical: 0.30, sentiment: 0.20, onchain: 0.20, fundamental: 0.00, event: 0.00 },
-  altcoin:   { smartMoney: 0.20, technical: 0.15, sentiment: 0.15, onchain: 0.15, fundamental: 0.20, event: 0.15 },
-  sentHeavy: { smartMoney: 0.10, technical: 0.15, sentiment: 0.40, onchain: 0.15, fundamental: 0.10, event: 0.10 },
-  techHeavy: { smartMoney: 0.10, technical: 0.40, sentiment: 0.15, onchain: 0.15, fundamental: 0.10, event: 0.10 },
+  // Majors (BTC/ETH/SOL): no TVL/event data, sentiment removed as constant bias.
+  // 4 active categories: smartMoney (Nansen HL perps), technical (momentum + breakout + multiTF),
+  // sentiment (sentimentContrarian only), onchain (fundingRate + HL flow + dexFlow).
+  majors:    { smartMoney: 0.25, technical: 0.35, sentiment: 0.15, onchain: 0.25, fundamental: 0.00, event: 0.00 },
+  // Altcoins: keep fundamental (TVL data exists) and event.
+  altcoin:   { smartMoney: 0.20, technical: 0.25, sentiment: 0.15, onchain: 0.20, fundamental: 0.10, event: 0.10 },
+  // sentHeavy/techHeavy removed — unvalidated, added parameter complexity without evidence of benefit
 };
 
 /** Tokens that get the "majors" profile when auto-selection is enabled. */
