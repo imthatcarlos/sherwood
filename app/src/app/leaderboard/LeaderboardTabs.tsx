@@ -309,6 +309,14 @@ export default function LeaderboardTabs({
   // the /api/leaderboard route every REFRESH_INTERVAL_MS when the tab is
   // visible. Everything downstream reads from this state, not the prop.
   const [syndicates, setSyndicates] = useState(initialSyndicates);
+  // Mirror the latest syndicates into a ref so the mount-only polling
+  // effect below can read current rankings (for delta detection) without
+  // re-subscribing on every tick — which would otherwise reset the
+  // setInterval timer on every successful fetch.
+  const syndicatesRef = useRef(syndicates);
+  useEffect(() => {
+    syndicatesRef.current = syndicates;
+  }, [syndicates]);
 
   // Compute the deep-link target's page once at mount via lazy initializer
   // so we don't need a setState-in-effect on first render.
@@ -335,10 +343,12 @@ export default function LeaderboardTabs({
 
   // ── Auto-refresh ─────────────────────────────────────────
   // Poll the cached /api/leaderboard route when the tab is visible.
-  // Diff ranks against the previous tick to flash the sh-rank-delta chip
-  // on rows that moved.
+  // Diff ranks against the previous tick (via syndicatesRef) to flash
+  // the sh-rank-delta chip on rows that moved. Mount-only deps — the
+  // timer must NOT be torn down on every tick (which would happen if
+  // we depended on `syndicates`, since each successful fetch updates
+  // it and invalidates this effect).
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
     async function tick() {
@@ -351,15 +361,18 @@ export default function LeaderboardTabs({
         const next = (await res.json()) as RankedSyndicate[];
         if (cancelled) return;
 
-        // Rank-change detection by syndicate key (chainId-id).
+        // Rank-change detection by syndicate key (chainId-id). Reads from
+        // the ref so we always compare against the immediately-previous
+        // tick, not a stale closure.
+        const prev = syndicatesRef.current;
         const prevIdx = new Map<string, number>();
-        syndicates.forEach((s, i) => prevIdx.set(`${s.chainId}-${s.id}`, i));
+        prev.forEach((s, i) => prevIdx.set(`${s.chainId}-${s.id}`, i));
         const deltas: Record<string, "up" | "down"> = {};
         next.forEach((s, i) => {
           const key = `${s.chainId}-${s.id}`;
-          const prev = prevIdx.get(key);
-          if (prev !== undefined && prev !== i) {
-            deltas[key] = i < prev ? "up" : "down";
+          const p = prevIdx.get(key);
+          if (p !== undefined && p !== i) {
+            deltas[key] = i < p ? "up" : "down";
           }
         });
 
@@ -375,7 +388,7 @@ export default function LeaderboardTabs({
       }
     }
 
-    timer = setInterval(tick, REFRESH_INTERVAL_MS);
+    const timer = setInterval(tick, REFRESH_INTERVAL_MS);
 
     // Immediate refresh when the tab becomes visible again.
     const onVis = () => {
@@ -385,10 +398,10 @@ export default function LeaderboardTabs({
 
     return () => {
       cancelled = true;
-      if (timer) clearInterval(timer);
+      clearInterval(timer);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [syndicates]);
+  }, []);
 
   // ── URL sort sync ────────────────────────────────────────
   // Keep ?sort= in sync with sort state so links are shareable.
