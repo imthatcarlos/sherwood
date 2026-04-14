@@ -106,7 +106,7 @@ export default function HeroVideo() {
           position: "absolute",
           inset: 0,
           background:
-            "linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.6) 50%, rgba(5,5,5,1) 100%)",
+            "linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.6) 50%, rgba(0,0,0,1) 100%)",
         }}
       />
     </div>

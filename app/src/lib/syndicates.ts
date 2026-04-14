@@ -103,11 +103,12 @@ export function computeProtocolStats(syndicates: SyndicateDisplay[]) {
     if (s.assetSymbol === "USDC" || s.assetSymbol === "USDT") return sum + s.tvlRaw;
     return sum;
   }, 0);
+  const fractionDigits = totalTVL < 1000 ? 2 : 0;
   const totalTVLFormatted = totalTVL.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   });
   return {
     syndicateCount: syndicates.length,

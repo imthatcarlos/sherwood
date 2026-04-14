@@ -41,6 +41,8 @@ interface VoterRow {
 // HyperEVM is shorter). Bounded for predictable RPC cost; older votes
 // aren't shown.
 const BLOCK_WINDOW = 60_000n;
+// Max blocks per getLogs request — public RPCs (Base, etc.) reject wider ranges.
+const CHUNK_SIZE = 2_000n;
 
 export default function VoteConcentration({
   governorAddress,
@@ -63,14 +65,28 @@ export default function VoteConcentration({
         setLoading(true);
         setErrored(false);
         const head = await client.getBlockNumber();
-        const fromBlock = head > BLOCK_WINDOW ? head - BLOCK_WINDOW : 0n;
+        const windowStart = head > BLOCK_WINDOW ? head - BLOCK_WINDOW : 0n;
+
+        // Chunk the range to stay within public RPC block-range limits.
+        const firstChunkTo = windowStart + CHUNK_SIZE > head ? head : windowStart + CHUNK_SIZE;
         const logs = await client.getLogs({
           address: governorAddress,
           event: VOTE_CAST_EVENT,
           args: { proposalId },
-          fromBlock,
-          toBlock: head,
+          fromBlock: windowStart,
+          toBlock: firstChunkTo,
         });
+        for (let from = firstChunkTo + 1n; from <= head; from += CHUNK_SIZE + 1n) {
+          const to = from + CHUNK_SIZE > head ? head : from + CHUNK_SIZE;
+          const chunk = await client.getLogs({
+            address: governorAddress,
+            event: VOTE_CAST_EVENT,
+            args: { proposalId },
+            fromBlock: from,
+            toBlock: to,
+          });
+          logs.push(...chunk);
+        }
 
         // Aggregate by voter (last vote wins per voter — governors disallow
         // re-voting but we sum defensively in case of test-net oddities).
