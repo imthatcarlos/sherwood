@@ -20,6 +20,8 @@ import { RecentlyViewedTracker } from "@/components/RecentlyViewed";
 import { TargetChainProvider } from "@/components/TargetChainContext";
 import { resolveSyndicateBySubdomain } from "@/lib/syndicate-data";
 import { loadActiveStrategy } from "@/lib/active-strategy";
+import JsonLd from "@/components/JsonLd";
+import { buildSyndicateLd, buildBreadcrumbLd } from "@/lib/structured-data";
 
 export async function generateMetadata({
   params,
@@ -91,9 +93,30 @@ export default async function SyndicateDetailPage({
     data.activity,
   );
 
+  const tvlDisplay = data.display?.tvl;
+
   return (
     <TargetChainProvider chainId={data.chainId}>
       <AmbientBackground />
+
+      <JsonLd
+        data={buildSyndicateLd({
+          subdomain,
+          name,
+          description: data.metadata?.description || undefined,
+          tvl: tvlDisplay,
+          agentCount: Number(data.agentCount),
+          assetSymbol: data.assetSymbol,
+          chainId: data.chainId,
+        })}
+      />
+      <JsonLd
+        data={buildBreadcrumbLd([
+          { name: "Home", path: "/" },
+          { name: "Leaderboard", path: "/leaderboard" },
+          { name, path: `/syndicate/${subdomain}` },
+        ])}
+      />
 
       <div className="layout layout-normal">
         <main className="px-4 md:px-8 lg:px-16 mx-auto w-full max-w-[1400px]">

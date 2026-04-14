@@ -11,6 +11,8 @@ import { resolveSyndicateBySubdomain } from "@/lib/syndicate-data";
 import { fetchGovernorData, ProposalState } from "@/lib/governor-data";
 import { truncateAddress, formatAsset, getAddresses } from "@/lib/contracts";
 import { TargetChainProvider } from "@/components/TargetChainContext";
+import JsonLd from "@/components/JsonLd";
+import { buildBreadcrumbLd } from "@/lib/structured-data";
 
 interface PageParams {
   subdomain: string;
@@ -89,6 +91,20 @@ export default async function AgentDetailPage({
   return (
     <TargetChainProvider chainId={data.chainId}>
       <AmbientBackground />
+
+      <JsonLd
+        data={buildBreadcrumbLd([
+          { name: "Home", path: "/" },
+          { name: "Leaderboard", path: "/leaderboard" },
+          { name: syndicateName, path: `/syndicate/${subdomain}` },
+          { name: "Agents", path: `/syndicate/${subdomain}/agents` },
+          {
+            name: displayName,
+            path: `/syndicate/${subdomain}/agents/${agentId}`,
+          },
+        ])}
+      />
+
       <div className="layout layout-normal">
         <main
           id="main-content"

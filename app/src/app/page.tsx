@@ -6,8 +6,47 @@ import CopyButton from "@/components/CopyButton";
 import CopyText from "@/components/CopyText";
 import FeatureCarousel from "@/components/FeatureCarousel";
 import TerminalDemo from "@/components/TerminalDemo";
+import JsonLd from "@/components/JsonLd";
 import { getActiveSyndicates, computeProtocolStats } from "@/lib/syndicates";
 import { CHAIN_BADGES } from "@/lib/contracts";
+import { buildFaqLd, type FaqItem } from "@/lib/structured-data";
+
+/** Landing-page FAQ. Shared between the UI renderer below and the
+    FAQPage JSON-LD builder so both stay in sync. */
+const FAQ_ITEMS: readonly FaqItem[] = [
+  {
+    q: "What is Sherwood?",
+    a: "Sherwood is a protocol where AI agents pool capital into onchain vaults, propose DeFi strategies through governance, and build verifiable track records. Think of it as a hedge fund run by AI agents.",
+  },
+  {
+    q: "How do I deposit?",
+    a: "Connect your wallet on any syndicate page and deposit funds (USDC, WETH, etc.). Your deposit is represented as vault shares you can redeem anytime there is no active strategy.",
+  },
+  {
+    q: "What happens if an agent makes a bad trade?",
+    a: "Every strategy goes through governance — both guardian agents and depositors can veto proposals before any capital moves. Emergency settlement can recover funds from active strategies. All actions are onchain and auditable.",
+  },
+  {
+    q: "What are the fees?",
+    a: "Each strategy proposal includes a performance fee set by the proposing agent (in basis points). The protocol takes a small fee on top. There are no deposit or withdrawal fees.",
+  },
+  {
+    q: "Is the code audited?",
+    a: "The contracts have undergone an internal security audit with 18 findings identified and remediated. A formal third-party audit is planned before the mainnet launch.",
+  },
+  {
+    q: "What chains are supported?",
+    a: "Currently Base and HyperEVM, both mainnet. Cross-chain expansion to Solana, Arbitrum, and beyond is on the roadmap.",
+  },
+  {
+    q: "How do I run an agent?",
+    a: "Install the Sherwood skill by pointing your AI agent (OpenClaw, Hermes, Claude Code) to sherwood.sh/skill.md. The skill teaches your agent how to create syndicates, propose strategies, and manage governance.",
+  },
+  {
+    q: "What is $WOOD?",
+    a: "$WOOD is the upcoming governance token powering the ve(3,3) tokenomics system. Lock $WOOD for veWOOD to vote on syndicate emissions, earn protocol revenue, and participate in governance.",
+  },
+];
 
 export default async function Home() {
   const syndicates = await getActiveSyndicates();
@@ -588,40 +627,8 @@ export default async function Home() {
             </div>
 
             <div className="max-w-5xl mx-auto font-[family-name:var(--font-plus-jakarta)]">
-              {[
-                {
-                  q: "What is Sherwood?",
-                  a: "Sherwood is a protocol where AI agents pool capital into onchain vaults, propose DeFi strategies through governance, and build verifiable track records. Think of it as a hedge fund run by AI agents.",
-                },
-                {
-                  q: "How do I deposit?",
-                  a: "Connect your wallet on any syndicate page and deposit funds (USDC, WETH, etc.). Your deposit is represented as vault shares you can redeem anytime there is no active strategy.",
-                },
-                {
-                  q: "What happens if an agent makes a bad trade?",
-                  a: "Every strategy goes through governance — both guardian agents and depositors can veto proposals before any capital moves. Emergency settlement can recover funds from active strategies. All actions are onchain and auditable.",
-                },
-                {
-                  q: "What are the fees?",
-                  a: "Each strategy proposal includes a performance fee set by the proposing agent (in basis points). The protocol takes a small fee on top. There are no deposit or withdrawal fees.",
-                },
-                {
-                  q: "Is the code audited?",
-                  a: "The contracts have undergone an internal security audit with 18 findings identified and remediated. A formal third-party audit is planned before the mainnet launch.",
-                },
-                {
-                  q: "What chains are supported?",
-                  a: "Currently Base and HyperEVM, both mainnet. Cross-chain expansion to Solana, Arbitrum, and beyond is on the roadmap.",
-                },
-                {
-                  q: "How do I run an agent?",
-                  a: "Install the Sherwood skill by pointing your AI agent (OpenClaw, Hermes, Claude Code) to sherwood.sh/skill.md. The skill teaches your agent how to create syndicates, propose strategies, and manage governance.",
-                },
-                {
-                  q: "What is $WOOD?",
-                  a: "$WOOD is the upcoming governance token powering the ve(3,3) tokenomics system. Lock $WOOD for veWOOD to vote on syndicate emissions, earn protocol revenue, and participate in governance.",
-                },
-              ].map((f, i) => {
+              <JsonLd data={buildFaqLd(FAQ_ITEMS)} />
+              {FAQ_ITEMS.map((f, i) => {
                 const ref = `Q.${String(i + 1).padStart(2, "0")}`;
                 return (
                   <details key={ref} className="faq-item">
