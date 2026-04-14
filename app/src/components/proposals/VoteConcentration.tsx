@@ -43,6 +43,8 @@ interface VoterRow {
 const BLOCK_WINDOW = 60_000n;
 // Max blocks per getLogs request — public RPCs (Base, etc.) reject wider ranges.
 const CHUNK_SIZE = 2_000n;
+// Parallel requests per batch — keeps RPC-friendly while cutting wall-clock time.
+const CONCURRENCY = 5;
 
 export default function VoteConcentration({
   governorAddress,
@@ -67,25 +69,31 @@ export default function VoteConcentration({
         const head = await client.getBlockNumber();
         const windowStart = head > BLOCK_WINDOW ? head - BLOCK_WINDOW : 0n;
 
-        // Chunk the range to stay within public RPC block-range limits.
-        const firstChunkTo = windowStart + CHUNK_SIZE > head ? head : windowStart + CHUNK_SIZE;
-        const logs = await client.getLogs({
-          address: governorAddress,
-          event: VOTE_CAST_EVENT,
-          args: { proposalId },
-          fromBlock: windowStart,
-          toBlock: firstChunkTo,
-        });
-        for (let from = firstChunkTo + 1n; from <= head; from += CHUNK_SIZE + 1n) {
+        // Build chunk ranges to stay within public RPC block-range limits.
+        const ranges: { from: bigint; to: bigint }[] = [];
+        for (let from = windowStart; from <= head; from += CHUNK_SIZE + 1n) {
           const to = from + CHUNK_SIZE > head ? head : from + CHUNK_SIZE;
-          const chunk = await client.getLogs({
-            address: governorAddress,
-            event: VOTE_CAST_EVENT,
-            args: { proposalId },
-            fromBlock: from,
-            toBlock: to,
-          });
-          logs.push(...chunk);
+          ranges.push({ from, to });
+        }
+
+        // Fetch in parallel batches (CONCURRENCY at a time), aborting on unmount.
+        type LogEntry = Awaited<ReturnType<typeof client.getLogs<typeof VOTE_CAST_EVENT>>>[number];
+        const logs: LogEntry[] = [];
+        for (let i = 0; i < ranges.length; i += CONCURRENCY) {
+          if (cancelled) return;
+          const batch = ranges.slice(i, i + CONCURRENCY);
+          const results = await Promise.all(
+            batch.map((r) =>
+              client.getLogs({
+                address: governorAddress,
+                event: VOTE_CAST_EVENT,
+                args: { proposalId },
+                fromBlock: r.from,
+                toBlock: r.to,
+              }),
+            ),
+          );
+          for (const chunk of results) logs.push(...chunk);
         }
 
         // Aggregate by voter (last vote wins per voter — governors disallow
