@@ -815,6 +815,8 @@ select:focus-visible {
 .hero-terminal {
   display: block;
   margin: 2rem auto 4rem;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .hero-terminal .terminal-demo {
@@ -2177,7 +2179,10 @@ select:focus-visible {
   line-height: 1.7;
   height: 360px;
   overflow-y: scroll;
+  overflow-x: hidden;
   scrollbar-width: none;
+  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 .terminal-body::-webkit-scrollbar {
