@@ -385,29 +385,10 @@ export default function LeaderboardTabs({
         if (!res.ok) return;
         const next = (await res.json()) as RankedSyndicate[];
         if (cancelled) return;
-
-        // Rank-change detection by syndicate key (chainId-id). Reads from
-        // the ref so we always compare against the immediately-previous
-        // tick, not a stale closure.
-        const prev = syndicatesRef.current;
-        const prevIdx = new Map<string, number>();
-        prev.forEach((s, i) => prevIdx.set(`${s.chainId}-${s.id}`, i));
-        const deltas: Record<string, "up" | "down"> = {};
-        next.forEach((s, i) => {
-          const key = `${s.chainId}-${s.id}`;
-          const p = prevIdx.get(key);
-          if (p !== undefined && p !== i) {
-            deltas[key] = i < p ? "up" : "down";
-          }
-        });
-
+        // Delta detection lives in a separate effect so it sees the
+        // currently-rendered (post-sort/filter) order rather than the
+        // raw TVL-desc API response.
         setSyndicates(next);
-        if (Object.keys(deltas).length > 0) {
-          setRankDeltas(deltas);
-          setTimeout(() => {
-            if (!cancelled) setRankDeltas({});
-          }, RANK_FLASH_MS);
-        }
       } catch {
         // Network hiccups are silent — the prior data is still visible.
       }
@@ -510,6 +491,40 @@ export default function LeaderboardTabs({
     });
     return filtered.sort((a, b) => compareSyndicates(a, b, sortKey, sortDir));
   }, [syndicates, chain, status, query, showWatchlistOnly, watchlist, sortKey, sortDir]);
+
+  // ── Rank-change flash ────────────────────────────────────
+  // Compute deltas off the *rendered* order (post-sort/filter) so the
+  // "up/down" arrow tracks the row's current-view position, not its
+  // rank in the TVL-desc API response. Effect fires only on `syndicates`
+  // change (auto-refresh), so the closure captures the filteredSyndicates
+  // that was just derived from the new syndicates value. Toggling the
+  // user's sort/filter does NOT retrigger this effect → no phantom flashes.
+  const renderedOrderRef = useRef<string[] | null>(null);
+  useEffect(() => {
+    const current = filteredSyndicates.map((s) => `${s.chainId}-${s.id}`);
+    const prev = renderedOrderRef.current;
+    renderedOrderRef.current = current;
+    if (prev === null) return; // skip first render — no "previous" yet
+    const prevIdx = new Map<string, number>();
+    prev.forEach((k, i) => prevIdx.set(k, i));
+    const deltas: Record<string, "up" | "down"> = {};
+    current.forEach((k, i) => {
+      const p = prevIdx.get(k);
+      if (p !== undefined && p !== i) {
+        deltas[k] = i < p ? "up" : "down";
+      }
+    });
+    if (Object.keys(deltas).length > 0) {
+      setRankDeltas(deltas);
+      const timer = setTimeout(() => setRankDeltas({}), RANK_FLASH_MS);
+      return () => clearTimeout(timer);
+    }
+    // Intentionally omit filteredSyndicates: we want to capture its
+    // current value only on the render triggered by a new `syndicates`
+    // tick. Re-running on sort/filter churn would flash rows that didn't
+    // actually move — the whole point of this fix.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syndicates]);
 
   // Toggle handler for sortable column headers.
   const toggleSort = useCallback(
