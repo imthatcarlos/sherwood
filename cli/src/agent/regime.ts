@@ -42,7 +42,7 @@ export class MarketRegimeDetector {
 
   /**
    * Detect current market regime using BTC candles.
-   * Returns cached result if less than 15 minutes old.
+   * Returns cached result if less than 5 minutes old.
    */
   async detect(btcCandles: Candle[]): Promise<RegimeAnalysis> {
     // Check cache first
@@ -50,7 +50,10 @@ export class MarketRegimeDetector {
       const cached = await this.loadCache();
       const now = Date.now();
       const cacheAge = now - cached.timestamp;
-      const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+      // 5-minute TTL — cycles run every ~25min, but a 15min cache lagged real
+      // regime shifts by up to a full cycle. 5min keeps the cache useful for
+      // back-to-back short scans while staying close to live state.
+      const CACHE_DURATION = 5 * 60 * 1000;
 
       if (cacheAge < CACHE_DURATION) {
         return cached.analysis;

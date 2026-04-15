@@ -31,7 +31,7 @@ export interface CycleResult {
   timestamp: number;
   duration: number;
   tokensAnalyzed: number;
-  signals: Array<{ token: string; score: number; action: string }>;
+  signals: Array<{ token: string; score: number; action: string; regime?: string }>;
   tradesExecuted: number;
   exitsProcessed: number;
   portfolioValue: number;
@@ -230,7 +230,7 @@ export class AgentLoop {
 
     for (const result of results) {
       const { action, score } = result.decision;
-      signals.push({ token: result.token, score, action });
+      signals.push({ token: result.token, score, action, regime: result.regime?.regime });
 
       // Only execute on BUY/SELL signals
       if (action === 'STRONG_BUY' || action === 'BUY' || action === 'SELL' || action === 'STRONG_SELL') {
