@@ -29,8 +29,13 @@
 contracts/      Foundry — Solidity smart contracts
 cli/            TypeScript CLI (viem, Commander)
 app/            Next.js dashboard
+cron/           Hermes Agent skills + jobs template for paper-trading + monitoring
 mintlify-docs/  Mintlify documentation site (git submodule → docs.sherwood.sh)
 ```
+
+For background paper-trading + vault/proposal/chat monitoring via cron, see
+`cron/README.md`. The four shipped skills are agent-runtime-agnostic
+(SKILL.md format) and `cron/install.sh` registers them with Hermes.
 
 ## Documentation
 
