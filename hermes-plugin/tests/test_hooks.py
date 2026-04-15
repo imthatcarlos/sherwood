@@ -62,3 +62,104 @@ async def test_session_end_stops_all():
     end = on_session_end_factory(sup)
     await end()
     sup.stop_all.assert_awaited_once()
+
+
+from unittest.mock import AsyncMock
+
+from sherwood_monitor.hooks import make_pre_tool_call_hook
+from sherwood_monitor.risk import RiskVerdict
+
+
+def _state_fetcher(result):
+    async def fetch(sub):
+        return result
+    return fetch
+
+
+@pytest.mark.asyncio
+async def test_pre_tool_call_passes_through_non_sherwood_commands():
+    fetch = _state_fetcher({"vault_aum_usd": 100_000, "current_exposure_usd": 0, "allowed_protocols": ["moonwell"]})
+    hook = make_pre_tool_call_hook(state_fetcher=fetch)
+    result = await hook(tool_name="bash", params={"command": "ls -la"})
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_pre_tool_call_passes_through_non_terminal_tools():
+    fetch = _state_fetcher({"vault_aum_usd": 100_000, "current_exposure_usd": 0, "allowed_protocols": ["moonwell"]})
+    hook = make_pre_tool_call_hook(state_fetcher=fetch)
+    result = await hook(
+        tool_name="web_search", params={"command": "sherwood proposal create alpha --size-usd 5000"}
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_pre_tool_call_blocks_oversized_proposal():
+    fetch = _state_fetcher({"vault_aum_usd": 100_000, "current_exposure_usd": 0, "allowed_protocols": ["moonwell"]})
+    hook = make_pre_tool_call_hook(state_fetcher=fetch)
+    result = await hook(
+        tool_name="bash",
+        params={
+            "command": "sherwood proposal create alpha --size-usd 30000 --protocol moonwell"
+        },
+    )
+    assert result == {"blocked": True, "reason": result["reason"]}
+    assert "position" in result["reason"].lower()
+
+
+@pytest.mark.asyncio
+async def test_pre_tool_call_allows_compliant_proposal():
+    fetch = _state_fetcher({"vault_aum_usd": 100_000, "current_exposure_usd": 0, "allowed_protocols": ["moonwell"]})
+    hook = make_pre_tool_call_hook(state_fetcher=fetch)
+    result = await hook(
+        tool_name="bash",
+        params={
+            "command": "sherwood proposal create alpha --size-usd 5000 --protocol moonwell"
+        },
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_pre_tool_call_blocks_disallowed_protocol():
+    fetch = _state_fetcher({"vault_aum_usd": 100_000, "current_exposure_usd": 0, "allowed_protocols": ["moonwell"]})
+    hook = make_pre_tool_call_hook(state_fetcher=fetch)
+    result = await hook(
+        tool_name="bash",
+        params={
+            "command": "sherwood proposal create alpha --size-usd 5000 --protocol unknown"
+        },
+    )
+    assert result is not None
+    assert result["blocked"] is True
+    assert "mandate" in result["reason"].lower()
+
+
+@pytest.mark.asyncio
+async def test_pre_tool_call_strategy_propose_pattern():
+    fetch = _state_fetcher({"vault_aum_usd": 100_000, "current_exposure_usd": 0, "allowed_protocols": ["moonwell"]})
+    hook = make_pre_tool_call_hook(state_fetcher=fetch)
+    result = await hook(
+        tool_name="terminal",
+        params={
+            "command": "sherwood strategy propose alpha --size-usd 5000 --protocol moonwell"
+        },
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_pre_tool_call_swallows_fetcher_exception():
+    async def fetch(sub):
+        raise RuntimeError("rpc down")
+
+    hook = make_pre_tool_call_hook(state_fetcher=fetch)
+    result = await hook(
+        tool_name="bash",
+        params={
+            "command": "sherwood proposal create alpha --size-usd 5000 --protocol moonwell"
+        },
+    )
+    # On fetcher error, pass through (don't block agent if we can't verify)
+    assert result is None

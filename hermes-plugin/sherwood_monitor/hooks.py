@@ -4,9 +4,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import shlex
 from typing import Any, Awaitable, Callable
 
 from .config import Config
+from .risk import ProposeParams, evaluate_propose
 from .supervisor import Supervisor
 
 _log = logging.getLogger(__name__)
@@ -69,3 +72,78 @@ def on_session_end_factory(supervisor: Supervisor) -> Callable[[], Awaitable[Non
         await supervisor.stop_all()
 
     return on_session_end
+
+
+# Match `sherwood proposal create <sub>` or `sherwood strategy propose <sub>`
+_SHERWOOD_PROPOSE_RE = re.compile(
+    r"\bsherwood\s+(?:strategy\s+propose|proposal\s+create)\s+(\S+)"
+)
+_TERMINAL_TOOLS = {"bash", "terminal", "shell"}
+
+StateFetcher = Callable[[str], Awaitable[dict]]
+
+
+def _parse_propose_command(command: str) -> tuple[str, float, str] | None:
+    """Return (subdomain, size_usd, protocol) or None if not a propose command."""
+    m = _SHERWOOD_PROPOSE_RE.search(command)
+    if not m:
+        return None
+    subdomain = m.group(1)
+
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+
+    size_usd = 0.0
+    protocol = ""
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok == "--size-usd" and i + 1 < len(tokens):
+            try:
+                size_usd = float(tokens[i + 1])
+            except ValueError:
+                pass
+            i += 2
+            continue
+        if tok == "--protocol" and i + 1 < len(tokens):
+            protocol = tokens[i + 1]
+            i += 2
+            continue
+        i += 1
+
+    return subdomain, size_usd, protocol
+
+
+def make_pre_tool_call_hook(state_fetcher: StateFetcher):
+    async def hook(tool_name: str = "", params: dict | None = None, **_: Any):
+        if tool_name not in _TERMINAL_TOOLS:
+            return None
+        command = (params or {}).get("command", "")
+        parsed = _parse_propose_command(command)
+        if parsed is None:
+            return None
+        subdomain, size_usd, protocol = parsed
+
+        try:
+            state = await state_fetcher(subdomain)
+        except Exception as exc:
+            _log.warning("state fetch failed for %s: %s — allowing", subdomain, exc)
+            return None
+
+        verdict = evaluate_propose(
+            ProposeParams(
+                subdomain=subdomain,
+                proposed_size_usd=size_usd,
+                current_exposure_usd=float(state.get("current_exposure_usd", 0)),
+                vault_aum_usd=float(state.get("vault_aum_usd", 0)),
+                protocol=protocol,
+                allowed_protocols=list(state.get("allowed_protocols", [])),
+            )
+        )
+        if not verdict.ok:
+            return {"blocked": True, "reason": verdict.reason}
+        return None
+
+    return hook
