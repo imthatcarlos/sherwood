@@ -146,7 +146,28 @@ export async function runCalibration(opts: CalibratorOptions): Promise<Calibrati
       continue;
     }
 
-    // Now replay all 128 configs using cached data (no API calls!)
+    // Pre-compute strategy signals + regime ONCE per candle (this is the
+    // network-bound work — most strategies hit their own APIs). Each subsequent
+    // simulate() call replays only the scoring math against these cached
+    // signals, turning a multi-hour calibration into seconds.
+    log(`  Precomputing signals for ${candles.length} candles...`);
+    let precomputed: Awaited<ReturnType<Backtester['precomputeSignals']>>;
+    try {
+      precomputed = await baseBt.precomputeSignals(candles, fearAndGreedData);
+      const valid = precomputed.filter((p) => p !== null).length;
+      log(`  Precomputed ${valid} candle signal sets`);
+    } catch (err) {
+      log(`  SKIP ${tokenId}: precompute failed: ${(err as Error).message}`);
+      for (const cfg of configs) {
+        const key = configKey(cfg);
+        resultMap.get(key)!.tokenResults.push({
+          tokenId, totalReturn: 0, sharpeRatio: 0, maxDrawdown: 0, winRate: 0, numTrades: 0,
+        });
+      }
+      continue;
+    }
+
+    // Now replay all configs using cached signals (zero API calls!)
     log(`  Running ${configs.length} configs on ${tokenId}...`);
     for (let ci = 0; ci < configs.length; ci++) {
       const cfg = configs[ci]!;
@@ -166,8 +187,8 @@ export async function runCalibration(opts: CalibratorOptions): Promise<Calibrati
           sellThreshold: cfg.sellThreshold,
         });
 
-        // Use simulate() directly — no API calls
-        const result = await bt.simulate(candles, fearAndGreedData);
+        // Use simulate() with precomputed signals — pure of network IO
+        const result = await bt.simulate(candles, fearAndGreedData, precomputed);
 
         resultMap.get(key)!.tokenResults.push({
           tokenId,
@@ -183,7 +204,7 @@ export async function runCalibration(opts: CalibratorOptions): Promise<Calibrati
         });
       }
 
-      if ((ci + 1) % 32 === 0) {
+      if ((ci + 1) % 50 === 0) {
         log(`  ${tokenId}: ${ci + 1}/${configs.length} configs done`);
       }
     }
@@ -210,8 +231,13 @@ export async function runCalibration(opts: CalibratorOptions): Promise<Calibrati
     results.push(entry);
   }
 
-  // Sort by avgSharpe desc, avgReturn desc
+  // Sort: 0-trade configs sink to the bottom (vacuously "safe" — sharpe=0
+  // ties at the top otherwise, masking real winners). Among configs that
+  // actually trade, sort by avgSharpe desc, then avgReturn desc.
   results.sort((a, b) => {
+    const aZero = a.totalTrades === 0;
+    const bZero = b.totalTrades === 0;
+    if (aZero !== bZero) return aZero ? 1 : -1;
     if (Math.abs(b.avgSharpe - a.avgSharpe) > 0.001) return b.avgSharpe - a.avgSharpe;
     return b.avgReturn - a.avgReturn;
   });

@@ -218,13 +218,119 @@ export class Backtester {
   }
 
   /**
+   * Per-candle precomputed inputs for `simulate()`. Lets callers (notably the
+   * calibrator) gather strategy signals + regime ONCE per candle, then replay
+   * the scoring + position math against many weight/threshold configurations
+   * without re-running the (network-bound) strategy stack each time.
+   *
+   * Aligned by index to `allCandles`. Entries with index < windowSize or with
+   * insufficient data are stored as null.
+   */
+  static precomputedCandle = {} as { signals: import('./scoring.js').Signal[]; regime?: MarketRegime };
+
+  /**
+   * Pre-compute per-candle strategy signals and regime classification.
+   * Called once per token by the calibrator; result is fed back into
+   * `simulate(..., precomputed)` to skip the network-bound strategy stack.
+   *
+   * Filters signals to BACKTEST_STRATEGIES (the calibrator does not vary
+   * `config.strategies`). Regime is always computed and returned —
+   * `simulate()` will only consume it when `config.useRegime` is set.
+   */
+  async precomputeSignals(
+    allCandles: Candle[],
+    fearAndGreedData: Record<string, number>,
+  ): Promise<Array<{ signals: import('./scoring.js').Signal[]; regime: MarketRegime } | null>> {
+    const stepSize = this.config.cycle === '1h' ? 1 : this.config.cycle === '4h' ? 4 : 24;
+    const step = Math.max(1, Math.floor(stepSize / 24));
+    const windowSize = 30;
+
+    const out: Array<{ signals: import('./scoring.js').Signal[]; regime: MarketRegime } | null> =
+      new Array(allCandles.length).fill(null);
+
+    for (let i = windowSize; i < allCandles.length; i += step) {
+      const windowCandles = allCandles.slice(Math.max(0, i - 200), i);
+      if (windowCandles.length < windowSize) continue;
+      const currentCandle = allCandles[i]!;
+      const currentDate = new Date(currentCandle.timestamp).toISOString().split('T')[0]!;
+      const currentPrice = currentCandle.close;
+
+      try {
+        const technicals = getLatestSignals(windowCandles);
+
+        let fearAndGreed: { value: number; classification: string } | undefined;
+        const fgValue = fearAndGreedData[currentDate];
+        if (fgValue !== undefined) {
+          const classification = fgValue < 25 ? 'Extreme Fear' :
+                                 fgValue < 40 ? 'Fear' :
+                                 fgValue < 60 ? 'Neutral' :
+                                 fgValue < 75 ? 'Greed' : 'Extreme Greed';
+          fearAndGreed = { value: fgValue, classification };
+        }
+
+        const ctx: StrategyContext = {
+          tokenId: this.config.tokenId,
+          candles: windowCandles,
+          technicals,
+          fearAndGreed,
+        };
+
+        const rawSignals = await runStrategies(ctx);
+
+        // Same momentum injection as simulate()
+        if (windowCandles.length >= 24) {
+          const recent = windowCandles.slice(-24);
+          const recentLow = Math.min(...recent.map((c) => c.low));
+          const recentHigh = Math.max(...recent.map((c) => c.high));
+          const pctFromLow = recentLow > 0 ? (currentPrice - recentLow) / recentLow : 0;
+          const pctFromHigh = recentHigh > 0 ? (recentHigh - currentPrice) / recentHigh : 0;
+
+          let momentumValue = 0;
+          if (pctFromHigh < 0.01) momentumValue = Math.min(0.6, pctFromLow * 5);
+          else if (pctFromLow < 0.01) momentumValue = -Math.min(0.6, pctFromHigh * 5);
+          else if (recentHigh > recentLow) {
+            const rangePosition = (currentPrice - recentLow) / (recentHigh - recentLow);
+            momentumValue = (rangePosition - 0.5) * 0.4;
+          }
+
+          if (Math.abs(momentumValue) > 0.02) {
+            rawSignals.push({
+              name: 'momentum',
+              value: momentumValue,
+              confidence: Math.min(0.7, 0.3 + Math.abs(momentumValue)),
+              source: 'Price Momentum',
+              details: `Backtest momentum`,
+            });
+          }
+        }
+
+        // Calibrator path: filter to BACKTEST_STRATEGIES (config.strategies is [])
+        const filtered = rawSignals.filter((s) => BACKTEST_STRATEGIES.includes(s.name));
+        const regime = MarketRegimeDetector.classifyFromCandles(windowCandles).regime;
+
+        out[i] = { signals: filtered.length > 0 ? filtered : rawSignals, regime };
+      } catch {
+        out[i] = null; // skip — same as simulate()
+      }
+    }
+
+    return out;
+  }
+
+  /**
    * Run the simulation loop on pre-fetched data. Pure of network IO.
    * The calibrator uses this directly after fetchData() to replay many
    * config permutations without re-fetching per permutation.
+   *
+   * When `precomputed` is supplied, the inner per-candle strategy stack
+   * (network-bound) is skipped and the cached signals/regime are used
+   * instead. Smoothing is also skipped on the precomputed path — the
+   * caller is responsible for applying it before precomputing if needed.
    */
   async simulate(
     allCandles: Candle[],
     fearAndGreedData: Record<string, number>,
+    precomputed?: Array<{ signals: import('./scoring.js').Signal[]; regime: MarketRegime } | null>,
   ): Promise<BacktestResult> {
     // 2. Determine step size based on cycle
     const stepSize = this.config.cycle === '1h' ? 1 : this.config.cycle === '4h' ? 4 : 24;
@@ -290,89 +396,101 @@ export class Backtester {
       // Compute indicators using only historical data
       let decision: TradeDecision;
       try {
-        const technicals = getLatestSignals(windowCandles);
-
-        // Add Fear & Greed data for the current date if available
-        let fearAndGreed: { value: number; classification: string } | undefined;
-        const fgValue = fearAndGreedData[currentDate];
-        if (fgValue !== undefined) {
-          const classification = fgValue < 25 ? 'Extreme Fear' :
-                                 fgValue < 40 ? 'Fear' :
-                                 fgValue < 60 ? 'Neutral' :
-                                 fgValue < 75 ? 'Greed' : 'Extreme Greed';
-          fearAndGreed = { value: fgValue, classification };
-        }
-
-        const ctx: StrategyContext = {
-          tokenId: this.config.tokenId,
-          candles: windowCandles,
-          technicals,
-          fearAndGreed,
-        };
-
-        // Run strategies
-        let signals = await runStrategies(ctx);
-
-        // Add momentum signal (same logic as live in index.ts — computed from candles)
-        if (windowCandles.length >= 24) {
-          const recent = windowCandles.slice(-24);
-          const recentLow = Math.min(...recent.map((c) => c.low));
-          const recentHigh = Math.max(...recent.map((c) => c.high));
-          const pctFromLow = recentLow > 0 ? (currentPrice - recentLow) / recentLow : 0;
-          const pctFromHigh = recentHigh > 0 ? (recentHigh - currentPrice) / recentHigh : 0;
-
-          let momentumValue = 0;
-          if (pctFromHigh < 0.01) {
-            momentumValue = Math.min(0.6, pctFromLow * 5);
-          } else if (pctFromLow < 0.01) {
-            momentumValue = -Math.min(0.6, pctFromHigh * 5);
-          } else if (recentHigh > recentLow) {
-            const rangePosition = (currentPrice - recentLow) / (recentHigh - recentLow);
-            momentumValue = (rangePosition - 0.5) * 0.4;
-          }
-
-          if (Math.abs(momentumValue) > 0.02) {
-            signals.push({
-              name: 'momentum',
-              value: momentumValue,
-              confidence: Math.min(0.7, 0.3 + Math.abs(momentumValue)),
-              source: 'Price Momentum',
-              details: `Backtest momentum`,
-            });
-          }
-        }
-
-        // Optional smoothing — uses per-simulation in-memory buffer so each
-        // candle adds to a rolling window matching live behavior.
-        if (smoother) {
-          signals = await smoother.smooth(this.config.tokenId, signals, currentCandle.timestamp);
-        }
-
-        // Filter strategies: if user specified strategies, honor their choice
-        // Otherwise, filter to candle-based strategies only
-        let filtered = signals;
-        if (this.config.strategies.length > 0) {
-          // User specified strategies — use their selection
-          filtered = signals.filter((s) => this.config.strategies.some(
-            (name) => s.name.toLowerCase().includes(name.toLowerCase()),
-          ));
-        } else {
-          // No user selection — filter to candle-based strategies only
-          filtered = signals.filter((s) => BACKTEST_STRATEGIES.includes(s.name));
-        }
-
-        // Classify regime from the current rolling window (no look-ahead)
-        // when --regime is enabled. The backtester operates on a single
-        // token's candles; for a true cross-asset regime read you'd swap
-        // BTC candles in here, but per-candle BTC/ETH/SOL trends are
-        // highly correlated so the asset's own candles are a fair proxy.
+        let filtered: import('./scoring.js').Signal[];
         let regime: MarketRegime | undefined;
-        if (this.config.useRegime) {
-          regime = MarketRegimeDetector.classifyFromCandles(windowCandles).regime;
+
+        if (precomputed) {
+          // Fast path — use cached signals + regime from a prior precomputeSignals() pass.
+          // Skips the network-bound runStrategies call. Used by the calibrator to replay
+          // hundreds of weight/threshold combinations against the same token in seconds.
+          const entry = precomputed[i];
+          if (!entry) continue;
+          filtered = entry.signals;
+          regime = this.config.useRegime ? entry.regime : undefined;
+        } else {
+          const technicals = getLatestSignals(windowCandles);
+
+          // Add Fear & Greed data for the current date if available
+          let fearAndGreed: { value: number; classification: string } | undefined;
+          const fgValue = fearAndGreedData[currentDate];
+          if (fgValue !== undefined) {
+            const classification = fgValue < 25 ? 'Extreme Fear' :
+                                   fgValue < 40 ? 'Fear' :
+                                   fgValue < 60 ? 'Neutral' :
+                                   fgValue < 75 ? 'Greed' : 'Extreme Greed';
+            fearAndGreed = { value: fgValue, classification };
+          }
+
+          const ctx: StrategyContext = {
+            tokenId: this.config.tokenId,
+            candles: windowCandles,
+            technicals,
+            fearAndGreed,
+          };
+
+          // Run strategies
+          let signals = await runStrategies(ctx);
+
+          // Add momentum signal (same logic as live in index.ts — computed from candles)
+          if (windowCandles.length >= 24) {
+            const recent = windowCandles.slice(-24);
+            const recentLow = Math.min(...recent.map((c) => c.low));
+            const recentHigh = Math.max(...recent.map((c) => c.high));
+            const pctFromLow = recentLow > 0 ? (currentPrice - recentLow) / recentLow : 0;
+            const pctFromHigh = recentHigh > 0 ? (recentHigh - currentPrice) / recentHigh : 0;
+
+            let momentumValue = 0;
+            if (pctFromHigh < 0.01) {
+              momentumValue = Math.min(0.6, pctFromLow * 5);
+            } else if (pctFromLow < 0.01) {
+              momentumValue = -Math.min(0.6, pctFromHigh * 5);
+            } else if (recentHigh > recentLow) {
+              const rangePosition = (currentPrice - recentLow) / (recentHigh - recentLow);
+              momentumValue = (rangePosition - 0.5) * 0.4;
+            }
+
+            if (Math.abs(momentumValue) > 0.02) {
+              signals.push({
+                name: 'momentum',
+                value: momentumValue,
+                confidence: Math.min(0.7, 0.3 + Math.abs(momentumValue)),
+                source: 'Price Momentum',
+                details: `Backtest momentum`,
+              });
+            }
+          }
+
+          // Optional smoothing — uses per-simulation in-memory buffer so each
+          // candle adds to a rolling window matching live behavior.
+          if (smoother) {
+            signals = await smoother.smooth(this.config.tokenId, signals, currentCandle.timestamp);
+          }
+
+          // Filter strategies: if user specified strategies, honor their choice
+          // Otherwise, filter to candle-based strategies only
+          if (this.config.strategies.length > 0) {
+            // User specified strategies — use their selection
+            filtered = signals.filter((s) => this.config.strategies.some(
+              (name) => s.name.toLowerCase().includes(name.toLowerCase()),
+            ));
+          } else {
+            // No user selection — filter to candle-based strategies only
+            filtered = signals.filter((s) => BACKTEST_STRATEGIES.includes(s.name));
+          }
+          if (filtered.length === 0) filtered = signals;
+
+          // Classify regime from the current rolling window (no look-ahead)
+          // when --regime is enabled. The backtester operates on a single
+          // token's candles; for a true cross-asset regime read you'd swap
+          // BTC candles in here, but per-candle BTC/ETH/SOL trends are
+          // highly correlated so the asset's own candles are a fair proxy.
+          if (this.config.useRegime) {
+            regime = MarketRegimeDetector.classifyFromCandles(windowCandles).regime;
+          }
         }
 
         decision = computeTradeDecision(
-          filtered.length > 0 ? filtered : signals,
+          filtered,
           this.config.customWeights,
           undefined,
           undefined,
