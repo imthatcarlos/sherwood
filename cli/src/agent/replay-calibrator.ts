@@ -56,6 +56,10 @@ export interface ReplayCalibratorOptions {
   capital?: number;
   /** Filter to specific tokens; defaults to all tokens in the dataset. */
   tokens?: string[];
+  /** Only replay rows captured within the last N days. Useful after a scoring
+   *  change to avoid contaminating calibration with stale signal values from
+   *  the prior code path. Default: replay all rows in the file. */
+  lastDays?: number;
   onProgress?: (msg: string) => void;
   /** Whether to honor the regime field on each row when applying thresholds.
    *  Defaults to true — rows record the regime that gated the original
@@ -292,8 +296,15 @@ export async function runHistoryReplay(
   const useRegime = options.useRegime ?? true;
 
   log(`Loading ${historyPath}...`);
-  const allRows = await loadSignalHistory(historyPath);
+  let allRows = await loadSignalHistory(historyPath);
   log(`Loaded ${allRows.length} rows`);
+
+  if (options.lastDays !== undefined && options.lastDays > 0) {
+    const cutoff = Date.now() - options.lastDays * 24 * 60 * 60 * 1000;
+    const before = allRows.length;
+    allRows = allRows.filter((r) => Date.parse(r.timestamp) >= cutoff);
+    log(`Filtered to last ${options.lastDays}d: ${allRows.length} rows (dropped ${before - allRows.length})`);
+  }
 
   const grouped = groupByToken(allRows);
   let tokens = options.tokens ?? Array.from(grouped.keys());

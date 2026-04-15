@@ -688,8 +688,9 @@ export function registerAgentCommands(program: Command): void {
     .option("--capital <amount>", "Initial capital per token in USD", "10000")
     .option("--top <n>", "Show top N configs in the ranked table", "20")
     .option("--from-history [path]", "Replay against signal-history.jsonl (true production signal stack including HL/funding/dexFlow). Path defaults to ~/.sherwood/agent/signal-history.jsonl")
+    .option("--last <days>", "Replay only rows captured within the last N days (use after a scoring change to ignore stale captures). Replay path only.")
     .option("--no-regime", "When using --from-history, ignore the regime field on each row (use DEFAULT_THRESHOLDS instead)")
-    .action(async (options: { tokens?: string; days: string; capital: string; top: string; fromHistory?: string | boolean; regime: boolean }) => {
+    .action(async (options: { tokens?: string; days: string; capital: string; top: string; fromHistory?: string | boolean; last?: string; regime: boolean }) => {
       const topN = parseInt(options.top, 10);
 
       // ── Replay path: signal-history.jsonl ──
@@ -698,11 +699,23 @@ export function registerAgentCommands(program: Command): void {
         const tokens = options.tokens
           ? options.tokens.split(",").map((t) => t.trim()).filter(Boolean)
           : undefined; // default = all tokens in dataset
-        console.log(chalk.bold(`\n  Replaying calibration against signal-history.jsonl...\n`));
+
+        let lastDays: number | undefined;
+        if (options.last !== undefined) {
+          lastDays = parseFloat(options.last);
+          if (!Number.isFinite(lastDays) || lastDays <= 0) {
+            console.error(chalk.red(`Invalid --last: ${options.last} (expected positive number of days)`));
+            process.exitCode = 1;
+            return;
+          }
+        }
+
+        console.log(chalk.bold(`\n  Replaying calibration against signal-history.jsonl${lastDays ? ` (last ${lastDays}d)` : ''}...\n`));
         try {
           const results = await runHistoryReplay({
             historyPath,
             tokens,
+            lastDays,
             useRegime: options.regime,
             onProgress: (msg) => console.log(chalk.dim(`  ${msg}`)),
           });
