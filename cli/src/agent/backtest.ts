@@ -233,7 +233,17 @@ export class Backtester {
 
     // 3. Simulate trading
     let capital = this.config.initialCapital;
-    let position: { entryPrice: number; entryDate: string; signal: string; highWaterMark: number; entryTimestamp: number } | null = null;
+    // `extremePrice` tracks the high-water mark for longs and the low-water
+    // mark for shorts — i.e. the most favorable price seen since entry, used
+    // for trailing-stop calculations.
+    let position: {
+      side: 'long' | 'short';
+      entryPrice: number;
+      entryDate: string;
+      signal: string;
+      extremePrice: number;
+      entryTimestamp: number;
+    } | null = null;
     // Per-simulation in-memory smoother (no disk IO). Maintains rolling
     // buffers across candles so smoothing reflects the same window logic
     // as live runs.
@@ -269,9 +279,11 @@ export class Backtester {
       // Skip if insufficient data for indicators
       if (windowCandles.length < windowSize) continue;
 
-      // Track equity
+      // Track equity (direction-aware: shorts profit when price falls)
       const equity = position
-        ? capital * (currentPrice / position.entryPrice)
+        ? capital * (1 + (position.side === 'short'
+            ? (position.entryPrice - currentPrice) / position.entryPrice
+            : (currentPrice - position.entryPrice) / position.entryPrice))
         : capital;
       equityCurve.push({ date: currentDate, value: equity });
 
@@ -416,27 +428,45 @@ export class Backtester {
       const TIME_STOP_HOURS = 48;    // 48h dead-money exit
       const TRAIL_PCT = this.config.trailingStopPct ?? 0.025; // 2.5% trail
 
+      // Open a long on BUY/STRONG_BUY or a short on SELL/STRONG_SELL
+      // (only when flat — pyramid logic lives in the live executor).
       if (!position && (decision.action === 'BUY' || decision.action === 'STRONG_BUY')) {
         position = {
+          side: 'long',
           entryPrice: currentPrice,
           entryDate: currentDate,
           signal: decision.action,
-          highWaterMark: currentPrice,
+          extremePrice: currentPrice,
+          entryTimestamp: currentCandle.timestamp,
+        };
+      } else if (!position && (decision.action === 'SELL' || decision.action === 'STRONG_SELL')) {
+        position = {
+          side: 'short',
+          entryPrice: currentPrice,
+          entryDate: currentDate,
+          signal: decision.action,
+          extremePrice: currentPrice, // for shorts this becomes a low-water mark
           entryTimestamp: currentCandle.timestamp,
         };
       } else if (position) {
-        // Update high-water mark
-        if (currentPrice > position.highWaterMark) {
-          position.highWaterMark = currentPrice;
+        const isShort = position.side === 'short';
+        // Track best favorable price: highest for longs, lowest for shorts
+        if (isShort) {
+          if (currentPrice < position.extremePrice) position.extremePrice = currentPrice;
+        } else {
+          if (currentPrice > position.extremePrice) position.extremePrice = currentPrice;
         }
 
-        const pnlPercent = (currentPrice - position.entryPrice) / position.entryPrice;
+        // Direction-aware PnL (shorts profit when price falls)
+        const pnlPercent = isShort
+          ? (position.entryPrice - currentPrice) / position.entryPrice
+          : (currentPrice - position.entryPrice) / position.entryPrice;
         const holdingHours = (currentCandle.timestamp - position.entryTimestamp) / (1000 * 60 * 60);
 
         // Check ALL exit conditions (priority order)
         let exitReason: string | null = null;
 
-        // 1. Stop loss (3%)
+        // 1. Stop loss (3%) — pnlPercent is already direction-aware
         if (pnlPercent <= -STOP_LOSS_PCT) {
           exitReason = `STOP_LOSS (${(pnlPercent * 100).toFixed(1)}%)`;
         }
@@ -444,16 +474,21 @@ export class Backtester {
         else if (pnlPercent >= TAKE_PROFIT_PCT) {
           exitReason = `TAKE_PROFIT (+${(pnlPercent * 100).toFixed(1)}%)`;
         }
-        // 3. Trailing stop
-        else if (TRAIL_PCT > 0 && currentPrice <= position.highWaterMark * (1 - TRAIL_PCT)) {
-          exitReason = `TRAILING_STOP (HWM $${position.highWaterMark.toFixed(2)}, -${(TRAIL_PCT * 100).toFixed(1)}%)`;
+        // 3. Trailing stop — for longs, exit if price drops X% from high;
+        //    for shorts, exit if price rises X% from low.
+        else if (TRAIL_PCT > 0 && (isShort
+          ? currentPrice >= position.extremePrice * (1 + TRAIL_PCT)
+          : currentPrice <= position.extremePrice * (1 - TRAIL_PCT))) {
+          exitReason = `TRAILING_STOP (extreme $${position.extremePrice.toFixed(2)}, ${isShort ? '+' : '-'}${(TRAIL_PCT * 100).toFixed(1)}%)`;
         }
         // 4. Time stop (48h with <1% PnL)
         else if (holdingHours > TIME_STOP_HOURS && Math.abs(pnlPercent) < 0.01) {
           exitReason = `TIME_STOP (${(holdingHours / 24).toFixed(1)}d, ${(pnlPercent * 100).toFixed(1)}%)`;
         }
-        // 5. Signal-based SELL
-        else if (decision.action === 'SELL' || decision.action === 'STRONG_SELL') {
+        // 5. Signal-flip exit: longs flip on SELL, shorts flip on BUY
+        else if (isShort
+          ? (decision.action === 'BUY' || decision.action === 'STRONG_BUY')
+          : (decision.action === 'SELL' || decision.action === 'STRONG_SELL')) {
           exitReason = decision.action;
         }
 
@@ -466,19 +501,21 @@ export class Backtester {
             entryPrice: position.entryPrice,
             exitPrice: currentPrice,
             pnlPercent,
-            signal: `${position.signal} → ${exitReason}`,
+            signal: `${position.signal}${isShort ? ' [SHORT]' : ''} → ${exitReason}`,
           });
           position = null;
         }
       }
     }
 
-    // Close any remaining position at last price
+    // Close any remaining position at last price (direction-aware)
     if (position && allCandles.length > 0) {
       const lastCandle = allCandles[allCandles.length - 1]!;
       const lastPrice = lastCandle.close;
       const lastDate = new Date(lastCandle.timestamp).toISOString().split('T')[0]!;
-      const pnlPercent = (lastPrice - position.entryPrice) / position.entryPrice;
+      const pnlPercent = position.side === 'short'
+        ? (position.entryPrice - lastPrice) / position.entryPrice
+        : (lastPrice - position.entryPrice) / position.entryPrice;
       capital *= (1 + pnlPercent);
       returns.push(pnlPercent);
 
@@ -488,7 +525,7 @@ export class Backtester {
         entryPrice: position.entryPrice,
         exitPrice: lastPrice,
         pnlPercent,
-        signal: `${position.signal} → CLOSE`,
+        signal: `${position.signal}${position.side === 'short' ? ' [SHORT]' : ''} → CLOSE`,
       });
     }
 

@@ -23,8 +23,10 @@ export const WEIGHT_PROFILES: Record<string, ScoringWeights> = {
   flowBased:  { smartMoney: 0.20, technical: 0.15, sentiment: 0.10, onchain: 0.35, fundamental: 0.10, event: 0.10 },
 };
 
-export const BUY_THRESHOLDS = [0.2, 0.3, 0.4, 0.5];
-export const SELL_THRESHOLDS = [-0.2, -0.3, -0.4, -0.5];
+// Added 0.25 / -0.25 so the calibrator can validate the lowered ranging-regime
+// BUY threshold against historical data. Grid is now 8 profiles × 5 × 5 = 200.
+export const BUY_THRESHOLDS = [0.2, 0.25, 0.3, 0.4, 0.5];
+export const SELL_THRESHOLDS = [-0.2, -0.25, -0.3, -0.4, -0.5];
 
 export const DEFAULT_CALIBRATION_TOKENS = [
   "bitcoin", "ethereum", "solana", "aave", "uniswap", "chainlink", "arbitrum",
