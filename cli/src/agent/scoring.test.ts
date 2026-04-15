@@ -286,13 +286,13 @@ describe("computeTradeDecision", () => {
     expect(trendingUpDecision.thresholds?.buy).toBe(0.25);
   });
 
-  it("ranging regime demands higher conviction than default", () => {
+  it("ranging regime fires BUY at the lowered 0.25 threshold", () => {
     // Use 3 categories so convergence bonus doesn't fire (needs >=4).
-    // Score ~0.35 → BUY under ranging (0.30 threshold).
+    // Score ~0.27 → BUY under ranging (0.25 threshold). Was HOLD under prior 0.30.
     const signals: Signal[] = [
-      makeSignal("technical", 0.35),
-      makeSignal("sentiment", 0.35),
-      makeSignal("onchain", 0.35),
+      makeSignal("technical", 0.27),
+      makeSignal("sentiment", 0.27),
+      makeSignal("onchain", 0.27),
     ];
     const rangingDecision = computeTradeDecision(
       signals,
@@ -301,10 +301,11 @@ describe("computeTradeDecision", () => {
       undefined,
       "ranging",
     );
-    expect(rangingDecision.score).toBeGreaterThan(0.3);
-    expect(rangingDecision.score).toBeLessThan(0.4);
+    expect(rangingDecision.score).toBeGreaterThan(0.25);
+    expect(rangingDecision.score).toBeLessThan(0.3);
     expect(rangingDecision.action).toBe("BUY");
-    expect(rangingDecision.thresholds?.buy).toBe(0.3);
+    expect(rangingDecision.thresholds?.buy).toBe(0.25);
+    expect(rangingDecision.thresholds?.sell).toBe(-0.25);
   });
 
   it("trending-up is asymmetric — harder to SELL than default", () => {

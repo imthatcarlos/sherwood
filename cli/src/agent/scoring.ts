@@ -117,7 +117,11 @@ export const DEFAULT_THRESHOLDS: ActionThresholds = {
 export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
   "trending-up": { strongBuy: 0.55, buy: 0.25, sell: -0.40, strongSell: -0.70 },
   "trending-down": { strongBuy: 0.70, buy: 0.40, sell: -0.25, strongSell: -0.55 },
-  "ranging":        { strongBuy: 0.55, buy: 0.30, sell: -0.30, strongSell: -0.55 },
+  // Ranging BUY lowered 0.30 → 0.25 to match trending-up. Production cycles
+  // showed scores capping at 0.27 for hours at a time during ranging regimes,
+  // missing real entries (BTC 0.272, DOGE 0.266, AAVE 0.266 all HOLD'd).
+  // Symmetric SELL lowered to -0.25 to keep the band balanced.
+  "ranging":        { strongBuy: 0.55, buy: 0.25, sell: -0.25, strongSell: -0.55 },
   "high-volatility":{ strongBuy: 0.70, buy: 0.45, sell: -0.45, strongSell: -0.70 },
   "low-volatility": { strongBuy: 0.60, buy: 0.30, sell: -0.30, strongSell: -0.60 },
 };
