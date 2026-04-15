@@ -347,8 +347,8 @@ export class TradingAgent {
 
           // Push as a smartMoney signal. Scale to ±0.5 max (not ±0.8) —
           // a single Nansen snapshot shouldn't dominate the entire score.
-          // At weight 0.30 (majors profile), ±0.5 contributes ±0.15 to
-          // aggregate — meaningful but not a veto over 5 other categories.
+          // At smartMoney weight 0.15 (majors profile), ±0.5 contributes
+          // ±0.075 to aggregate — meaningful but well below sentiment/onchain.
           signals.push({
             name: 'smartMoney',
             value: smBias * 0.5,

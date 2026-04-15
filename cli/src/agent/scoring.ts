@@ -25,13 +25,20 @@ export interface ScoringWeights {
   event: number;
 }
 
+// Replay calibration over 5 days × 15 tokens / 1817 production observations
+// ranked the `contrarian` profile (sentiment 0.40) #1 with Sharpe 1.354,
+// while the prior `default` (sentiment 0.20) ranked 21st with Sharpe 0.296.
+// Rebalanced to lift sentiment, cut the most-lagging signals (technical),
+// and reduce smartMoney since x402 Nansen is often unfunded in practice.
+// `onchain` slightly boosted — HL flow + fundingRate are the highest-firing
+// live categories. Sums to 1.00.
 export const DEFAULT_WEIGHTS: ScoringWeights = {
-  smartMoney: 0.25,
-  technical: 0.20,
-  sentiment: 0.20,
-  onchain: 0.15,
+  smartMoney: 0.15,
+  technical: 0.10,
+  sentiment: 0.40,
+  onchain: 0.20,
   fundamental: 0.10,
-  event: 0.10,
+  event: 0.05,
 };
 
 /**
@@ -49,16 +56,18 @@ export const DEFAULT_WEIGHTS: ScoringWeights = {
  */
 export const WEIGHT_PROFILES: Record<string, ScoringWeights> = {
   default: DEFAULT_WEIGHTS,
-  // Majors (BTC/ETH/SOL): no TVL/event data, sentiment removed as constant bias.
-  // 4 active categories: smartMoney (Nansen HL perps), technical (momentum + breakout + multiTF),
-  // sentiment (sentimentContrarian only), onchain (fundingRate + HL flow + dexFlow).
-  // Technical weight reduced from 0.35 to 0.20 — it's the most lagging signal
-  // (MACD 26-period, EMA 50/200) and consistently cancels real-time bullish
-  // signals. Redistributed to onchain (funding rate, HL flow — real-time) and
-  // sentiment (sentimentContrarian — daily F&G, less laggy than technicals).
-  majors:    { smartMoney: 0.25, technical: 0.20, sentiment: 0.20, onchain: 0.35, fundamental: 0.00, event: 0.00 },
-  // Altcoins: keep fundamental (TVL data exists) and event.
-  altcoin:   { smartMoney: 0.20, technical: 0.25, sentiment: 0.15, onchain: 0.20, fundamental: 0.10, event: 0.10 },
+  // Majors (BTC/ETH/SOL): no TVL/event data. 4 active categories.
+  // Same rebalance rationale as DEFAULT_WEIGHTS — replay calibration showed
+  // sentiment-heavy profiles dominating production-stack data; this profile
+  // concentrates the freed-up weight into sentiment + onchain (the two
+  // categories that produce directional opinions on majors). Technical and
+  // smartMoney shrink because both are lagging or unfunded in practice.
+  majors:    { smartMoney: 0.15, technical: 0.10, sentiment: 0.40, onchain: 0.35, fundamental: 0.00, event: 0.00 },
+  // Altcoins: keep fundamental (TVL data exists) and event. Sentiment lifted
+  // here too but less aggressively — altcoins respond more to TVL/flow than
+  // majors, and the sentimentContrarian extremes-only fix means sentiment
+  // weight is dormant most of the time.
+  altcoin:   { smartMoney: 0.15, technical: 0.15, sentiment: 0.30, onchain: 0.20, fundamental: 0.10, event: 0.10 },
   // sentHeavy/techHeavy removed — unvalidated, added parameter complexity without evidence of benefit
 };
 
