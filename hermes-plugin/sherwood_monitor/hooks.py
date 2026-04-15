@@ -9,6 +9,7 @@ import shlex
 from typing import Any, Awaitable, Callable
 
 from .config import Config
+from .memory import MemoryWriter, write_settlement
 from .risk import ProposeParams, evaluate_propose
 from .supervisor import Supervisor
 
@@ -144,6 +145,39 @@ def make_pre_tool_call_hook(state_fetcher: StateFetcher):
         )
         if not verdict.ok:
             return {"blocked": True, "reason": verdict.reason}
+        return None
+
+    return hook
+
+
+_SHERWOOD_SETTLE_RE = re.compile(
+    r"\bsherwood\s+proposal\s+(execute|settle)\s+(\S+)"
+)
+
+
+def make_post_tool_call_hook(memory_writer: MemoryWriter):
+    async def hook(
+        tool_name: str = "",
+        params: dict | None = None,
+        result: Any = None,
+        **_: Any,
+    ):
+        if tool_name not in _TERMINAL_TOOLS:
+            return None
+        command = (params or {}).get("command", "")
+        m = _SHERWOOD_SETTLE_RE.search(command)
+        if not m:
+            return None
+        action = m.group(1)
+        subdomain = m.group(2)
+        result_str = result if isinstance(result, str) else json.dumps(result)
+        write_settlement(
+            memory_writer,
+            subdomain=subdomain,
+            action=action,
+            command=command,
+            result_json=result_str,
+        )
         return None
 
     return hook

@@ -163,3 +163,57 @@ async def test_pre_tool_call_swallows_fetcher_exception():
     )
     # On fetcher error, pass through (don't block agent if we can't verify)
     assert result is None
+
+
+from sherwood_monitor.hooks import make_post_tool_call_hook
+
+
+@pytest.mark.asyncio
+async def test_post_tool_call_writes_memory_on_execute():
+    writer = MagicMock()
+    hook = make_post_tool_call_hook(memory_writer=writer)
+    await hook(
+        tool_name="bash",
+        params={"command": "sherwood proposal execute alpha 42"},
+        result='{"tx": "0xabc", "proposalId": 42}',
+    )
+    writer.assert_called_once()
+    assert writer.call_args.args[0]["action"] == "execute"
+
+
+@pytest.mark.asyncio
+async def test_post_tool_call_writes_memory_on_settle():
+    writer = MagicMock()
+    hook = make_post_tool_call_hook(memory_writer=writer)
+    await hook(
+        tool_name="bash",
+        params={"command": "sherwood proposal settle alpha 42"},
+        result='{"tx": "0xdef", "proposalId": 42, "pnl": "500000000"}',
+    )
+    writer.assert_called_once()
+    assert writer.call_args.args[0]["action"] == "settle"
+    assert writer.call_args.args[0]["pnl_usd"] == 500.0
+
+
+@pytest.mark.asyncio
+async def test_post_tool_call_skips_other_commands():
+    writer = MagicMock()
+    hook = make_post_tool_call_hook(memory_writer=writer)
+    await hook(
+        tool_name="bash",
+        params={"command": "ls -la"},
+        result="total 0\n",
+    )
+    writer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_post_tool_call_swallows_writer_error():
+    writer = MagicMock(side_effect=RuntimeError("oom"))
+    hook = make_post_tool_call_hook(memory_writer=writer)
+    # Must not raise
+    await hook(
+        tool_name="bash",
+        params={"command": "sherwood proposal execute alpha 42"},
+        result='{"tx": "0xabc"}',
+    )
