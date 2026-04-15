@@ -32,6 +32,7 @@ import { Reporter } from "../agent/reporter.js";
 import { Backtester } from "../agent/backtest.js";
 import type { BacktestConfig, WalkForwardConfig } from "../agent/backtest.js";
 import { runCalibration, formatCalibrationTable, DEFAULT_CALIBRATION_TOKENS } from "../agent/calibrator.js";
+import { runHistoryReplay } from "../agent/replay-calibrator.js";
 import { AlertFormatter } from "../agent/alert-formatter.js";
 import { ExecutionPipeline, DEFAULT_SCALED_SIZING } from "../agent/execution-pipeline.js";
 import { auditSignalHistory, suggestRenormalizedWeights, diffAudits } from "../agent/signal-audit.js";
@@ -686,13 +687,41 @@ export function registerAgentCommands(program: Command): void {
     .option("--days <n>", "Lookback window in days", "60")
     .option("--capital <amount>", "Initial capital per token in USD", "10000")
     .option("--top <n>", "Show top N configs in the ranked table", "20")
-    .action(async (options: { tokens?: string; days: string; capital: string; top: string }) => {
+    .option("--from-history [path]", "Replay against signal-history.jsonl (true production signal stack including HL/funding/dexFlow). Path defaults to ~/.sherwood/agent/signal-history.jsonl")
+    .option("--no-regime", "When using --from-history, ignore the regime field on each row (use DEFAULT_THRESHOLDS instead)")
+    .action(async (options: { tokens?: string; days: string; capital: string; top: string; fromHistory?: string | boolean; regime: boolean }) => {
+      const topN = parseInt(options.top, 10);
+
+      // ── Replay path: signal-history.jsonl ──
+      if (options.fromHistory) {
+        const historyPath = typeof options.fromHistory === 'string' ? options.fromHistory : undefined;
+        const tokens = options.tokens
+          ? options.tokens.split(",").map((t) => t.trim()).filter(Boolean)
+          : undefined; // default = all tokens in dataset
+        console.log(chalk.bold(`\n  Replaying calibration against signal-history.jsonl...\n`));
+        try {
+          const results = await runHistoryReplay({
+            historyPath,
+            tokens,
+            useRegime: options.regime,
+            onProgress: (msg) => console.log(chalk.dim(`  ${msg}`)),
+          });
+          console.log(formatCalibrationTable(results, topN));
+          console.log(chalk.dim(`  Source: signal-history replay (production signal stack)`));
+          console.log(chalk.dim(`  Saved: ~/.sherwood/agent/replay-calibration-results.json\n`));
+        } catch (err) {
+          console.error(chalk.red(`\n  Replay calibration failed: ${(err as Error).message}\n`));
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      // ── Candle path: re-fetch from CoinGecko, recompute signals ──
       const tokens = options.tokens
         ? options.tokens.split(",").map((t) => t.trim()).filter(Boolean)
         : DEFAULT_CALIBRATION_TOKENS;
       const days = parseInt(options.days, 10);
       const capital = parseFloat(options.capital);
-      const topN = parseInt(options.top, 10);
 
       if (!Number.isFinite(days) || days <= 0) {
         console.error(chalk.red(`Invalid --days: ${options.days}`));
@@ -705,7 +734,7 @@ export function registerAgentCommands(program: Command): void {
         return;
       }
 
-      console.log(chalk.bold(`\n  Calibrating ${tokens.length} tokens over ${days}d (200 configs per token)...\n`));
+      console.log(chalk.bold(`\n  Calibrating ${tokens.length} tokens over ${days}d (candle-based, 200 configs per token)...\n`));
       try {
         const results = await runCalibration({
           tokens,
