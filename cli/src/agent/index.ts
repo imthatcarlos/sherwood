@@ -205,7 +205,7 @@ export class TradingAgent {
           momentumDetails = `Price -${(pctFromHigh * 100).toFixed(1)}% from 24-candle high, near lows`;
         }
         // Mid-range: proportional to position within range
-        else {
+        else if (recentHigh > recentLow) {
           const rangePosition = (currentClose - recentLow) / (recentHigh - recentLow); // 0=low, 1=high
           momentumValue = (rangePosition - 0.5) * 0.4; // -0.2 to +0.2
           momentumDetails = `Mid-range (${(rangePosition * 100).toFixed(0)}th percentile of 24-candle range)`;

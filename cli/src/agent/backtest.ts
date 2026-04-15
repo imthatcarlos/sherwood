@@ -251,12 +251,10 @@ export class Backtester {
       if (this.config.strategies.length > 0) {
         console.log(chalk.dim(`  Using user-specified strategies: ${this.config.strategies.join(', ')}`));
       } else {
-        const availableStrategies = [...BACKTEST_STRATEGIES];
+        console.log(chalk.dim(`  Using backtest strategies: ${BACKTEST_STRATEGIES.join(', ')} + momentum`));
         if (Object.keys(fearAndGreedData).length > 0) {
-          availableStrategies.push('sentimentContrarian');
+          console.log(chalk.dim(`  Fear & Greed data available — sentimentContrarian active`));
         }
-        console.log(chalk.dim(`  Using candle-based strategies: ${availableStrategies.join(', ')}`));
-        console.log(chalk.dim(`  Filtered out external data strategies to prevent zero-signal noise`));
       }
       console.log();
     }
@@ -316,7 +314,7 @@ export class Backtester {
             momentumValue = Math.min(0.6, pctFromLow * 5);
           } else if (pctFromLow < 0.01) {
             momentumValue = -Math.min(0.6, pctFromHigh * 5);
-          } else {
+          } else if (recentHigh > recentLow) {
             const rangePosition = (currentPrice - recentLow) / (recentHigh - recentLow);
             momentumValue = (rangePosition - 0.5) * 0.4;
           }
