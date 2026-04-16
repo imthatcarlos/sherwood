@@ -282,6 +282,7 @@ export class TradeExecutor {
               stopLoss: order.stopLoss,
               takeProfit: order.takeProfit,
               strategy: decision.signals[0]?.source ?? 'agent',
+              atrAtEntry: this.lastAtr,
             });
         return { success: true, position, dryRun: false };
       } catch (err) {
@@ -350,6 +351,7 @@ export class TradeExecutor {
       stopLoss: order.stopLoss,
       takeProfit: order.takeProfit,
       strategy: 'paper',
+      atrAtEntry: this.lastAtr,
     });
 
     return position;

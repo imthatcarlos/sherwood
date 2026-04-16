@@ -40,6 +40,12 @@ export interface Position {
   /** Timestamp of the most recent add (or initial entry).
    *  Used to enforce minimum spacing between adds. */
   lastAddTimestamp?: number;
+  /** ATR-14 at the time of entry. Used for per-position trailing stop
+   *  distance (1.0×ATR) and breakeven trigger calibration. */
+  atrAtEntry?: number;
+  /** Whether the 50% partial-profit exit has been taken. Prevents
+   *  re-triggering on subsequent cycles. */
+  partialTaken?: boolean;
 }
 
 export interface RiskConfig {
@@ -71,16 +77,14 @@ export interface RiskConfig {
 /**
  * Default risk config.
  *
- * `trailingStopPct` / `breakevenTriggerPct` / `profitLockSteps` default to
- * 0 / 0 / [] — existing users upgrading the CLI keep prior behavior
- * (SELL signal + static stop-loss + take-profit + time-stop only).
+ * `trailingStopPct` / `breakevenTriggerPct` / `profitLockSteps` are now ON
+ * by default based on paper-trading analysis showing active trailing
+ * significantly improves risk-adjusted returns. These match
+ * RECOMMENDED_TRAILING_CONFIG (minus the third profit-lock step).
  *
- * To enable active trailing, users explicitly opt in via config:
- *   sherwood agent config --set trailingStopPct=0.05
- *   sherwood agent config --set breakevenTriggerPct=0.02
- *
- * Recommended aggressive defaults are preserved as RECOMMENDED_TRAILING_CONFIG
- * below for one-shot enablement.
+ * Override via config:
+ *   sherwood agent config --set trailingStopPct=0
+ *   sherwood agent config --set breakevenTriggerPct=0
  */
 export const DEFAULT_RISK_CONFIG: RiskConfig = {
   maxPortfolioRisk: 0.15,
@@ -89,9 +93,12 @@ export const DEFAULT_RISK_CONFIG: RiskConfig = {
   maxConcurrentTrades: 5,
   hardStopPercent: 0.05,          // 5% hard stop — short-term trades shouldn't bleed past this
   trailingStopAtr: 1.5,
-  trailingStopPct: 0,         // OFF — opt in via config
-  breakevenTriggerPct: 0,     // OFF — opt in via config
-  profitLockSteps: [],        // OFF — opt in via config
+  trailingStopPct: 0.025,              // 2.5% fallback trail (overridden per-position by ATR when available)
+  breakevenTriggerPct: 0.015,          // move to breakeven after +1.5% gain
+  profitLockSteps: [
+    { trigger: 0.02, lock: 0.005 },   // after +2%, lock in +0.5%
+    { trigger: 0.04, lock: 0.02 },    // after +4%, lock in +2%
+  ],
   dailyLossLimit: 0.05,
   weeklyLossLimit: 0.10,
   monthlyLossLimit: 0.15,

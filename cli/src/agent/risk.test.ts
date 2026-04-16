@@ -475,16 +475,17 @@ describe("RiskManager", () => {
       });
     });
 
-    it("is a no-op with default risk config (opt-in only)", () => {
+    it("applies trailing/breakeven/profit-lock with default risk config (ON by default)", () => {
       const pos = makePosition({
         entryPrice: 100,
         currentPrice: 150,        // +50% gain
         stopLoss: 90,
       });
-      // rm (from outer beforeEach) uses DEFAULT_RISK_CONFIG — all trailing
-      // mechanism fields zeroed. Users must explicitly opt in.
+      // rm uses DEFAULT_RISK_CONFIG — trailing is now ON by default.
+      // At +50% all profit-lock steps trigger; highest lock is +2% → 102.
+      // Percent-trail: 150 × (1 - 0.025) = 146.25. Trail wins (higher stop).
       const [updated] = rm.updateTrailingStops([pos]);
-      expect(updated!.stopLoss).toBe(90);
+      expect(updated!.stopLoss).toBe(146.25);
     });
 
     it("moves stop to breakeven after +1.5% gain", () => {
