@@ -10,8 +10,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
-import { judgeCompletion } from "../lib/anthropic.js";
-import { getAnthropicApiKey } from "../lib/config.js";
+import { chatCompletion } from "../lib/venice.js";
+import { getVeniceApiKey } from "../lib/config.js";
 import type { TradeDecision } from "./scoring.js";
 import type { TechnicalSignals } from "./technical.js";
 import type { PortfolioState } from "./risk.js";
@@ -36,7 +36,7 @@ export interface JudgeConfig {
 
 export const DEFAULT_JUDGE_CONFIG: JudgeConfig = {
   enabled: false,
-  model: "claude-haiku-4-5-20251001",
+  model: "llama-3.3-70b",
   topN: 3,
   scoreBand: [0.10, 0.35],
   timeoutMs: 8_000,
@@ -182,8 +182,8 @@ export async function judge(
   const start = Date.now();
 
   try {
-    // Gate: judge disabled or no API key
-    if (!config.enabled || !getAnthropicApiKey()) {
+    // Gate: judge disabled or no Venice API key
+    if (!config.enabled || !getVeniceApiKey()) {
       return { verdict: FALLBACK_VERDICT, cached: false, latencyMs: 0 };
     }
 
@@ -200,15 +200,22 @@ export async function judge(
       return { verdict: cached, cached: true, latencyMs: Date.now() - start };
     }
 
-    // Call Claude
-    const result = await judgeCompletion({
-      model: config.model,
-      systemPrompt: SYSTEM_PROMPT,
-      userPrompt: buildUserPrompt(ctx),
-      maxTokens: 400,
-      temperature: 0.1,
-      timeoutMs: config.timeoutMs,
-    });
+    // Call Venice (OpenAI-compatible chat completions)
+    const result = await Promise.race([
+      chatCompletion({
+        model: config.model,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: buildUserPrompt(ctx) },
+        ],
+        maxTokens: 400,
+        temperature: 0.1,
+        disableThinking: true,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Judge timeout")), config.timeoutMs),
+      ),
+    ]);
 
     // Parse response
     const parsed = parseVerdict(result.content);

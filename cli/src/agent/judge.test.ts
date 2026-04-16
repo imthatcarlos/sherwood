@@ -4,19 +4,18 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockJudgeCompletion, mockGetKey } = vi.hoisted(() => ({
-  mockJudgeCompletion: vi.fn(),
+const { mockChatCompletion, mockGetKey } = vi.hoisted(() => ({
+  mockChatCompletion: vi.fn(),
   mockGetKey: vi.fn<() => string | undefined>().mockReturnValue("test-key"),
 }));
 
-vi.mock("../lib/anthropic.js", () => ({
-  judgeCompletion: mockJudgeCompletion,
+vi.mock("../lib/venice.js", () => ({
+  chatCompletion: mockChatCompletion,
 }));
 
 vi.mock("../lib/config.js", () => ({
-  getAnthropicApiKey: mockGetKey,
+  getVeniceApiKey: mockGetKey,
   loadConfig: vi.fn(() => ({ groupCache: {} })),
-  getVeniceApiKey: vi.fn(),
 }));
 
 import { judge, selectJudgeCandidates, DEFAULT_JUDGE_CONFIG } from "./judge.js";
@@ -61,22 +60,22 @@ describe("judge", () => {
   });
 
   it("confirms when model returns confirm verdict", async () => {
-    mockJudgeCompletion.mockResolvedValueOnce({
+    mockChatCompletion.mockResolvedValueOnce({
       content: JSON.stringify({ verdict: "confirm", reasoning: "Signals align", risks: [], confidence: 0.8 }),
-      usage: { input: 100, output: 50 },
+      model: "llama-3.3-70b", usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
     });
 
     const result = await judge(makeContext(), enabledConfig);
     expect(result.verdict.verdict).toBe("confirm");
     expect(result.verdict.reasoning).toBe("Signals align");
     expect(result.verdict.confidence).toBe(0.8);
-    expect(mockJudgeCompletion).toHaveBeenCalledOnce();
+    expect(mockChatCompletion).toHaveBeenCalledOnce();
   });
 
   it("vetoes when model returns veto verdict", async () => {
-    mockJudgeCompletion.mockResolvedValueOnce({
+    mockChatCompletion.mockResolvedValueOnce({
       content: JSON.stringify({ verdict: "veto", reasoning: "Regime contradiction", risks: ["trending-down for long"], confidence: 0.9 }),
-      usage: { input: 100, output: 50 },
+      model: "llama-3.3-70b", usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
     });
 
     const result = await judge(makeContext(), enabledConfig);
@@ -86,9 +85,9 @@ describe("judge", () => {
   });
 
   it("falls back to confirm on bad JSON", async () => {
-    mockJudgeCompletion.mockResolvedValueOnce({
+    mockChatCompletion.mockResolvedValueOnce({
       content: "This is not JSON at all!",
-      usage: { input: 100, output: 50 },
+      model: "llama-3.3-70b", usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
     });
 
     const result = await judge(makeContext(), enabledConfig);
@@ -97,7 +96,7 @@ describe("judge", () => {
   });
 
   it("falls back to confirm on timeout", async () => {
-    mockJudgeCompletion.mockRejectedValueOnce(new DOMException("Aborted", "AbortError"));
+    mockChatCompletion.mockRejectedValueOnce(new DOMException("Aborted", "AbortError"));
 
     const result = await judge(makeContext(), enabledConfig);
     expect(result.verdict.verdict).toBe("confirm");
@@ -105,7 +104,7 @@ describe("judge", () => {
   });
 
   it("falls back to confirm on SDK error", async () => {
-    mockJudgeCompletion.mockRejectedValueOnce(new Error("500 Internal Server Error"));
+    mockChatCompletion.mockRejectedValueOnce(new Error("500 Internal Server Error"));
 
     const result = await judge(makeContext(), enabledConfig);
     expect(result.verdict.verdict).toBe("confirm");
@@ -117,14 +116,14 @@ describe("judge", () => {
     const result = await judge(ctx, enabledConfig);
     expect(result.verdict.verdict).toBe("confirm");
     expect(result.verdict.reasoning).toBe("fallback");
-    expect(mockJudgeCompletion).not.toHaveBeenCalled();
+    expect(mockChatCompletion).not.toHaveBeenCalled();
   });
 
   it("skips judge when action is HOLD", async () => {
     const ctx = makeContext({ decision: makeDecision({ action: "HOLD", score: 0.15 }) });
     const result = await judge(ctx, enabledConfig);
     expect(result.verdict.verdict).toBe("confirm");
-    expect(mockJudgeCompletion).not.toHaveBeenCalled();
+    expect(mockChatCompletion).not.toHaveBeenCalled();
   });
 
   it("skips judge when no API key", async () => {
@@ -132,13 +131,13 @@ describe("judge", () => {
 
     const result = await judge(makeContext(), enabledConfig);
     expect(result.verdict.verdict).toBe("confirm");
-    expect(mockJudgeCompletion).not.toHaveBeenCalled();
+    expect(mockChatCompletion).not.toHaveBeenCalled();
   });
 
   it("strips markdown fences from model response", async () => {
-    mockJudgeCompletion.mockResolvedValueOnce({
+    mockChatCompletion.mockResolvedValueOnce({
       content: '```json\n{"verdict":"confirm","reasoning":"OK","risks":[],"confidence":0.7}\n```',
-      usage: { input: 100, output: 50 },
+      model: "llama-3.3-70b", usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
     });
 
     const result = await judge(makeContext(), enabledConfig);
@@ -147,9 +146,9 @@ describe("judge", () => {
   });
 
   it("clamps confidence to [0, 1]", async () => {
-    mockJudgeCompletion.mockResolvedValueOnce({
+    mockChatCompletion.mockResolvedValueOnce({
       content: JSON.stringify({ verdict: "confirm", reasoning: "test", risks: [], confidence: 5.0 }),
-      usage: { input: 100, output: 50 },
+      model: "llama-3.3-70b", usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
     });
 
     const result = await judge(makeContext(), enabledConfig);
