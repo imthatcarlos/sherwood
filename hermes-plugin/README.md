@@ -68,7 +68,7 @@ hermes sherwood tail alpha-fund
 | XMTP `RISK_ALERT` | Inject with `priority="high"` for agent escalation |
 | XMTP `APPROVAL_REQUEST` | Inject with `priority="human-escalate"` |
 | XMTP plain `MESSAGE` | Inject only when `@`-mention present (configurable) |
-| Agent calls `sherwood proposal create/execute/settle` | `pre_tool_call` runs risk checks; `post_tool_call` writes memory |
+| Agent calls `sherwood proposal create/execute/settle` | `pre_tool_call` runs risk checks; `post_tool_call` writes memory + injects `<sherwood-settlement>` block |
 
 ## Risk checks
 
@@ -97,6 +97,62 @@ Refresh bundled skill pack from the Sherwood repo:
 ```bash
 ./scripts/refresh_skill_pack.sh ../skill
 ```
+
+## Autonomous mode (cron)
+
+Every 15 minutes, a fresh isolated Hermes session runs a cron job that calls
+`sherwood_monitor_cron_tick` for each configured syndicate. The tick checks for
+new interesting events (proposals created, settled, executed, cancelled; risk
+alerts; approval requests) since the last run, advances a cursor, and delivers a
+concise digest via Hermes' configured gateway (Telegram, Discord, etc.). If all
+ticks return empty events and no concentration alerts, nothing is delivered.
+
+Cursor state is persisted at `~/.hermes/plugins/sherwood-monitor/cron_cursor.json`.
+
+The cron job is set up once from the BOOT.md routine:
+
+```python
+cronjob(
+    action="create",
+    prompt="For each syndicate in ~/.hermes/plugins/sherwood-monitor/config.yaml, call sherwood_monitor_cron_tick(subdomain, include_exposure=true). Compose a concise digest of any returned events and concentration alerts. If all ticks returned empty events and no alerts, say nothing (deliver no message). Otherwise deliver the digest.",
+    schedule="*/15 * * * *",
+    name="sherwood-monitor"
+)
+```
+
+## Cross-syndicate exposure
+
+Ask the agent "what's my total Aerodrome exposure?" or call
+`sherwood_monitor_exposure()` directly. The tool aggregates vault positions
+across all configured syndicates, returns total AUM, per-protocol breakdown,
+concentration percentages, and any protocols above the concentration threshold.
+
+Configure the threshold in `config.yaml`:
+
+```yaml
+concentration_threshold_pct: 30  # default 30%
+```
+
+When a protocol's share of total AUM exceeds this value, the tool returns a
+`concentration_alerts` list so the agent can flag it or take action.
+
+## Institutional memory
+
+After every `sherwood proposal execute` or `sherwood proposal settle` command,
+the plugin injects a `<sherwood-settlement>` block into the agent's next turn:
+
+```
+<sherwood-settlement syndicate="alpha-fund" action="settle" proposal_id="42"
+  pnl_usd="500.0" tx="0xabc...">
+REMEMBER THIS — use the remember-settlement skill to persist it to memory.
+</sherwood-settlement>
+```
+
+The bundled `remember-settlement` skill primes the agent to call its `memory`
+tool and store a one-line record. Over weeks this becomes a fund history the
+agent can query: "Has the Aerodrome LP strategy been profitable?", "Which
+proposer has the best track record?", "What's our average P&L on 7-day
+strategies for alpha-fund?"
 
 ## License
 
