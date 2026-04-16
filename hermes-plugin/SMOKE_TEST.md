@@ -4,14 +4,16 @@
 
 ## What you're testing
 
-The `sherwood-monitor` plugin you're running. Your job is to prove it works end-to-end against a live testnet Sherwood deployment and report with evidence. "Evidence" means logs, state files, and observed behavior — not assertions.
+The `sherwood-monitor` plugin you're running. Your job is to prove it works end-to-end against a live Sherwood deployment and report with evidence. "Evidence" means logs, state files, and observed behavior — not assertions.
 
 ## Ground rules
 
-- **Testnet only.** Every command involving chain state must use the testnet (Base Sepolia). Verify first: `sherwood config get network` should show a testnet chain id. If it's mainnet, STOP and ask the user to switch.
+- **Default target is `alpha-fund` on Base mainnet.** The user has designated this as the test subject. Do NOT create new syndicates, do NOT test against production funds other than this one. If `sherwood config get` shows a different network or wallet than expected, confirm with the user before proceeding.
+- **Mainnet means real capital.** Any command that writes state on-chain (proposals, votes, executes, settles) costs gas and commits funds. The default mode of this runbook is **observation-only** — validate the plugin by watching activity that's already happening, not by creating synthetic activity. Any phase that requires a write asks for explicit user approval first, with a single-line "are you sure?" prompt.
 - **Quiet is a valid pass.** If a layer produces "no output, no events, no complaints" — that can be correct. Log the absence; don't assume failure.
 - **One phase at a time.** Do not run ahead. Each phase's prerequisites depend on prior phases passing.
 - **Attach evidence.** For every pass/fail in your report, paste the command output or file snippet that justifies it.
+- **Never retry writes.** If a write command fails, STOP and report. Do not assume idempotency.
 
 ---
 
@@ -24,9 +26,11 @@ The `sherwood-monitor` plugin you're running. Your job is to prove it works end-
    echo "Run dir: $RUN_DIR"
    ```
 
-2. **Ask the user two questions before starting:**
-   - "Which testnet syndicate subdomain should I test against?" — save as `$SUB`. If they don't have one handy, STOP and tell them to create one first (`sherwood syndicate create ...`).
-   - "Can you run a second terminal to trigger events if I ask, or should I trigger them all myself from my tools?" — this determines Phase 3 strategy.
+2. **Confirm the target with the user (once):**
+   - Default: `SUB=alpha-fund` on Base mainnet.
+   - Ask: "Proceeding against alpha-fund on Base mainnet — confirm?" If they say a different subdomain or network, use that instead. If they decline, STOP.
+   - Ask: "Is there any activity you expect in the next ~10 minutes (a proposal you're about to create, an LP vote coming in, a settlement elapsing)? If so, which? This helps me know what to watch for in Phase 3."
+   - Save answers to `$RUN_DIR/0-targets.txt`.
 
 3. **Prepare loggers:**
    ```bash
@@ -43,10 +47,12 @@ The `sherwood-monitor` plugin you're running. Your job is to prove it works end-
    ```bash
    sherwood --version      # must be >= 0.4.0
    sherwood config get     # note the network + wallet address
+   sherwood vault info $SUB --json > "$RUN_DIR/0-vault-info.json" || true
+   sherwood proposal list $SUB --json > "$RUN_DIR/0-proposals-before.json" || true
    ```
-   Save output to `$RUN_DIR/preflight.txt`.
+   Save the first two outputs to `$RUN_DIR/preflight.txt`. The last two snapshot the current on-chain state so you can diff later.
 
-**Pass condition:** `$SUB` is set, `$RUN_DIR` exists, sherwood CLI version ≥ 0.4.0, network is testnet.
+**Pass condition:** `$SUB` resolves to a real vault, `$RUN_DIR` exists, sherwood CLI version ≥ 0.4.0, network matches user expectation, vault info + proposal list are readable.
 
 ---
 
@@ -106,100 +112,144 @@ Goal: prove the streaming supervisor spawns, reads, and stops a child process cl
 
 ---
 
-## Phase 3 — Reactive event injection
+## Phase 3 — Reactive event injection (mainnet-safe)
 
 Goal: prove events arriving from the subprocess actually reach you on the next turn via `pre_llm_call`.
 
-This is the trickiest phase. You need to cause an event to happen on-chain while the supervisor is running.
+**Mainnet constraint:** you do NOT create proposals or trigger on-chain state changes. Instead, you replay recent history by resetting the session cursor, then observe the injection.
+
+### Strategy: replay-via-cursor-reset
+
+The Sherwood CLI stores a per-syndicate cursor at `~/.sherwood/sessions/`. Resetting it to a block ~1000 blocks back (≈33 min on Base) causes the next `session check --stream` to re-emit every event since then as if fresh. The events have already happened on-chain — this is read-only.
 
 ### Setup
 
-1. Start the supervisor again: `sherwood_monitor_start(subdomain=$SUB)`.
+1. Start the supervisor: `sherwood_monitor_start(subdomain=$SUB)` (or make sure it's running from Phase 2).
 2. Wait 5 seconds for the process to settle.
-3. Note the current block: `sherwood session check $SUB | jq '.meta'` → save to `$RUN_DIR/3-pre-event-meta.json`.
+3. Get current block number:
+   ```bash
+   sherwood session check $SUB | jq '.meta' > "$RUN_DIR/3-meta.json"
+   ```
+4. Call `sherwood_monitor_status()` and note `events_seen` for `$SUB`. Save as `EVENTS_BEFORE`.
 
-### Trigger an event
+### Replay recent events
 
-Based on user's answer in Phase 0:
+1. Stop the supervisor first so the cursor reset isn't racing:
+   ```text
+   sherwood_monitor_stop(subdomain=$SUB)
+   ```
 
-**If the user is driving the second terminal:** ask them to trigger a proposal now. Wait for them to confirm. Give them a sample command:
-```bash
-sherwood proposal create $SUB --template moonwell-supply --size-usd 100 --duration 600
-```
+2. Reset the session cursor back ~1000 blocks:
+   ```bash
+   CURRENT_BLOCK=$(cast block-number --rpc-url https://mainnet.base.org 2>/dev/null || sherwood session check $SUB | jq -r '.meta.blocksScanned as $b | (input_filename)')
+   # Simpler: use sherwood's own reset which supports --since-block
+   REPLAY_FROM=$((CURRENT_BLOCK - 1000))
+   sherwood session reset $SUB --since-block $REPLAY_FROM
+   ```
 
-**If you're triggering it yourself:** run it via the terminal tool. Use a tiny size ($100, 10-min duration) to minimize cost.
+   If `session reset` doesn't support `--since-block`, check `~/.sherwood/sessions/$SUB.json` and edit `lastBlockNumber` to a value ~1000 blocks earlier. Save the before/after JSON to `$RUN_DIR/3-cursor-reset.diff`.
 
-Save the tx hash from the output to `$RUN_DIR/3-proposal-tx.txt`.
+3. Restart the supervisor: `sherwood_monitor_start(subdomain=$SUB)`.
+
+4. **Wait 45 seconds.** The streaming subprocess will catch up by re-emitting every event in the replay window.
 
 ### Observe the injection
 
-1. Wait 45 seconds (subprocess polls on-chain every 30s, plus a margin).
+1. Say something neutral that gives the LLM an excuse to look at recent activity: *"What's happened on $SUB recently? Just summarize, don't do anything."*
 
-2. Now say something innocuous to test injection. Don't mention the proposal. Example: *"Can you summarize what you know about this syndicate's recent activity?"*
-
-3. **Your own response to that turn is the evidence.** If the `pre_llm_call` hook injected the `<sherwood-event>` block, you should see it in your context this turn — it will look like:
+2. **Your own response to that turn is the evidence.** If the `pre_llm_call` hook injected `<sherwood-event>` blocks, they appear in your context this turn:
    ```
-   <sherwood-event syndicate="$SUB" source="chain" type="ProposalCreated" ...>
+   <sherwood-event syndicate="$SUB" source="chain" type="..." ...>
    ```
 
-4. Record in `$RUN_DIR/3-injection-evidence.md`:
-   - YES / NO — did you see the `<sherwood-event type="ProposalCreated">` block injected?
-   - Quote the exact block you received.
-   - Did you mention the new proposal in your response without the user asking about it? (You should have.)
+3. Record in `$RUN_DIR/3-injection-evidence.md`:
+   - YES / NO — did you see `<sherwood-event>` blocks injected?
+   - Quote the first 2–3 blocks you received (redact wallet addresses if sensitive).
+   - How many distinct events did the injection include? Should roughly match what `sherwood session check $SUB` reports in its `events` array for the replay window.
+   - Did your summary reference events you weren't explicitly told about? (Proves they came from injection, not tool calls.)
 
-### Verify XMTP auto-post
+4. Call `sherwood_monitor_status()` again. `events_seen` for `$SUB` should now be `EVENTS_BEFORE + N` where N matches the event count above.
 
-1. Check the syndicate's XMTP chat log:
-   ```bash
-   sherwood chat $SUB log --limit 5 > "$RUN_DIR/3-xmtp-log.txt"
-   ```
-2. Confirm a markdown summary from **your agent identity** referencing "Proposal #<id>" appears within the last minute.
+### XMTP auto-post check (observational only)
 
-**Pass condition:** both the in-session injection AND the XMTP auto-post happened. Save `$RUN_DIR/3-PASS.txt` with both evidences.
+Auto-posts only happen for LIVE proposal lifecycle events, not replays (the plugin's post-fn runs on the handler path, so replays will also trigger posts — but that would spam the real group). To avoid this:
+
+**Before replay:** temporarily disable auto-posts by editing config:
+```bash
+sed -i.bak 's/xmtp_summaries: true/xmtp_summaries: false/' ~/.hermes/plugins/sherwood-monitor/config.yaml
+```
+
+And restore after replay:
+```bash
+mv ~/.hermes/plugins/sherwood-monitor/config.yaml.bak ~/.hermes/plugins/sherwood-monitor/config.yaml
+```
+
+Skip XMTP validation in this phase. Instead, record to `$RUN_DIR/3-xmtp-note.md`: "xmtp_summaries disabled during replay to prevent spam; XMTP auto-post verified separately via code review of handlers.py — see CHAIN_INJECT_AND_POST set."
+
+**Pass condition:** injection observed (≥1 event), `events_seen` counter advanced, no spam sent to the real XMTP group.
 
 **If fail:**
-- If XMTP post missing but injection worked → `xmtp_summaries` config flag may be false, or `sherwood chat send` failed. Inspect `$RUN_DIR/sherwood-monitor.log`.
-- If injection missing → the EventBuffer isn't being drained. Call `sherwood_monitor_status()` and check `events_seen` for the subdomain — should be ≥ 1.
+- No injection → check `$RUN_DIR/sherwood-monitor.log` for errors. Check `sherwood_monitor_status()` `stderr_tail` for subprocess errors. Check `~/.sherwood/sessions/$SUB.json` still has the old cursor (reset may not have worked).
+- Injection but wrong count → replay window may have had no interesting events. Try a larger replay window (2000 blocks back).
+- Cursor reset didn't work → the CLI version may be older than expected. Skip the replay path and instead: leave the supervisor running for 10+ min and wait for a natural event (poll `events_seen` periodically). Document this fallback in the report.
 
 ---
 
-## Phase 4 — Risk guardrails
+## Phase 4 — Risk guardrails (block-only on mainnet)
 
-Goal: prove `pre_tool_call` blocks oversized proposals with a reason, and allows compliant ones.
+Goal: prove `pre_tool_call` blocks oversized proposals with a reason.
 
-### Oversized test
+**Mainnet constraint:** the "oversized" test is safe — a blocked proposal never reaches the chain, costs zero gas, commits no capital. The "compliant" test would create a real proposal and is SKIPPED by default. Only run it if the user explicitly opts in.
 
-1. First, get the vault's AUM so you can calculate what "oversized" means:
+### Oversized test (safe, block-only)
+
+1. Get the vault's AUM so you can calculate what "oversized" means. You already saved this in Phase 0 as `$RUN_DIR/0-vault-info.json`:
    ```bash
-   sherwood vault info $SUB --json > "$RUN_DIR/4-vault-info.json"
-   ```
-   Read `aumUsd` from the output. Call it `$AUM`.
-
-2. Plan a proposal at **30% of `$AUM`** (the cap is 25% — this should be blocked).
-
-3. Attempt to create it via the terminal tool. Use the full command including `--size-usd` and `--protocol` flags so the hook can parse it:
-   ```bash
-   sherwood proposal create $SUB --protocol moonwell --size-usd <30% of AUM> ...
+   AUM=$(jq -r '.aumUsd' "$RUN_DIR/0-vault-info.json")
+   echo "AUM: $AUM" > "$RUN_DIR/4-aum.txt"
    ```
 
-4. **Expected:** the hook returns `{"blocked": True, "reason": "...position sizing..."}`. Your terminal tool should return this as the tool result. You should NOT have actually created a proposal on-chain.
+2. **If AUM is 0 or missing:** the risk hook fails-open (allows everything). Document in `$RUN_DIR/4-NOTE-failopen.txt` and SKIP the rest of Phase 4, marking it YELLOW not GREEN.
 
-5. Verify no new proposal appeared on-chain:
+3. If AUM > 0, plan a proposal at **30% of `$AUM`** (cap is 25% — should be blocked). Compute the size:
    ```bash
-   sherwood proposal list $SUB --json | jq '. | length' > "$RUN_DIR/4-proposal-count-after-block.txt"
+   OVERSIZED=$(python3 -c "print(int($AUM * 0.30))")
+   echo "Oversized size: $OVERSIZED" >> "$RUN_DIR/4-aum.txt"
    ```
-   Compare to before the attempt.
 
-Save to `$RUN_DIR/4-block-evidence.md`.
+4. Attempt to create it via your terminal tool. Full command including `--size-usd` and `--protocol` so the hook parses it:
+   ```bash
+   sherwood proposal create $SUB --protocol moonwell --size-usd $OVERSIZED
+   ```
 
-### Compliant test
+5. **Expected:** the pre_tool_call hook returns `{"blocked": True, "reason": "...position sizing..."}`. Your terminal tool should return this as its result. The command should NEVER have been executed.
 
-1. Attempt again at **10% of `$AUM`** using an allowed protocol. Should succeed.
-2. Save tx hash to `$RUN_DIR/4-compliant-tx.txt`.
+6. Verify no new proposal appeared on-chain (diff against Phase 0 snapshot):
+   ```bash
+   sherwood proposal list $SUB --json > "$RUN_DIR/4-proposals-after-block.json"
+   diff <(jq '. | length' "$RUN_DIR/0-proposals-before.json") <(jq '. | length' "$RUN_DIR/4-proposals-after-block.json")
+   ```
+   Should report no difference.
 
-**Pass condition:** oversized was blocked with reason; compliant went through.
+7. Save the blocked-reason text to `$RUN_DIR/4-block-evidence.md`.
 
-**Caveat:** if `sherwood vault info --json` returns zero AUM or doesn't exist yet, the risk hook fails-open (allows everything). This is documented behavior. Log it to `$RUN_DIR/4-NOTE-failopen.txt` and note the test can't fully validate until the CLI supports it.
+### Compliant test (SKIP unless explicitly approved)
+
+This would create a real on-chain proposal. By default: **SKIP**. Record in `$RUN_DIR/4-compliant-SKIPPED.txt`:
+"Compliant write-path test skipped by default on mainnet. Block-path validated above. Write-path was exercised in unit tests and in Layer 2 of the unit suite."
+
+Only proceed with the compliant test if the user explicitly says:
+
+> "Yes, create a real $X proposal on $SUB to validate the allow-path."
+
+If so:
+1. Confirm the exact size, protocol, and duration with the user one more time.
+2. Execute. Save tx hash to `$RUN_DIR/4-compliant-tx.txt`.
+3. Record the user's approval message verbatim in `$RUN_DIR/4-compliant-APPROVAL.txt`.
+
+**Pass condition (mainnet default):** oversized was blocked with a readable reason; no on-chain proposal count change; compliant path SKIPPED with note.
+
+**Pass condition (if user opted in):** above, plus tx hash recorded.
 
 ---
 
@@ -225,12 +275,35 @@ Goal: prove the cron-driven digest logic works, without waiting 15 minutes.
    ```
    `last_tick_at` should have changed; `block` should not have (no new events).
 
-### Idempotency after new event
+### Idempotency after a new event (replay-based on mainnet)
 
-1. Create another small proposal via terminal (similar to Phase 3, $100, 10-min).
-2. Wait 30 seconds for it to be indexed.
-3. Call `sherwood_monitor_cron_tick` again. Save to `$RUN_DIR/5-tick-3.json`.
-4. **Expected:** `events` contains exactly 1 entry — the new `ProposalCreated`.
+You will NOT create a new proposal. Instead, manually rewind the cron cursor and prove the tick re-surfaces historical events.
+
+1. Back up the cron cursor, then rewind its `block` for `$SUB` by ~500:
+   ```bash
+   cp ~/.hermes/plugins/sherwood-monitor/cron_cursor.json "$RUN_DIR/5-cursor-backup.json"
+   python3 - <<'PY'
+   import json, pathlib
+   p = pathlib.Path.home() / ".hermes/plugins/sherwood-monitor/cron_cursor.json"
+   data = json.loads(p.read_text())
+   import os
+   sub = os.environ["SUB"]
+   data[sub]["block"] = max(0, int(data[sub]["block"]) - 500)
+   p.write_text(json.dumps(data, indent=2))
+   print(f"rewound cursor for {sub} to block {data[sub]['block']}")
+   PY
+   ```
+
+2. Call `sherwood_monitor_cron_tick(subdomain=$SUB)` again. Save to `$RUN_DIR/5-tick-3.json`.
+
+3. **Expected:** `events` contains any interesting events (`ProposalCreated`, `ProposalSettled`, `ProposalCancelled`, `RISK_ALERT`, `APPROVAL_REQUEST`) that occurred in the rewound window. If there were none in the last 500 blocks, use a larger rewind (2000 blocks).
+
+4. After the test, restore the backup so you don't falsely replay events on the next real cron tick:
+   ```bash
+   cp "$RUN_DIR/5-cursor-backup.json" ~/.hermes/plugins/sherwood-monitor/cron_cursor.json
+   ```
+
+**What this proves:** the cursor logic is consulted and the tick returns deltas, not the full history. If the third tick returns the same events as the first (no cursor advance), that's a bug.
 
 ### Concentration alert
 
@@ -240,49 +313,76 @@ If the user has multiple syndicates configured and one exceeds the threshold, `c
 
 ---
 
-## Phase 6 — Settlement + memory
+## Phase 6 — Settlement + memory (opportunistic on mainnet)
 
 Goal: prove `<sherwood-settlement>` injection primes the agent to write memory via the `remember-settlement` skill.
 
-### Trigger settlement
+**Mainnet constraint:** you will NOT create + execute + settle a synthetic proposal. Instead you either (a) find a real settleable proposal on `$SUB` and ask the user to drive the settle, or (b) simulate the settlement-handler path in a controlled way using an already-settled historical event.
 
-1. Identify a proposal that can be settled. Use the one from Phase 3 or Phase 5 — whichever has finished its duration. Check `sherwood proposal list $SUB --json`.
+Pick the path based on current state:
 
-2. If none are ready, either wait (10-min durations from Phase 3/5 should be ready soon) or create a new 1-minute proposal and wait.
+### Path A — real settlement, user-driven
 
-3. Execute if not already: `sherwood proposal execute $SUB <id>`. Save tx to `$RUN_DIR/6-execute-tx.txt`.
+Precondition: `sherwood proposal list $SUB --json` shows a proposal with status "ReadyToSettle" (duration elapsed, not yet settled).
 
-4. Wait for duration to elapse.
+1. Show the proposal to the user and ask: "Proposal #X on $SUB is ready to settle. Can you run `sherwood proposal settle $SUB X` from your terminal? I'll observe from mine."
 
-5. Settle: `sherwood proposal settle $SUB <id>`. Save tx to `$RUN_DIR/6-settle-tx.txt`.
+2. While they're doing it, watch `$RUN_DIR/sherwood-monitor.log` for a `ProposalSettled` event.
+
+3. Proceed to "Observe the settlement block" below.
+
+### Path B — synthetic replay of a historical settlement
+
+Precondition: `sherwood proposal list $SUB --json` includes at least one already-settled proposal.
+
+1. Pick the most recent settled proposal. Note its id, tx hash, pnl.
+
+2. Reset the cursor far enough back to re-observe the `ProposalSettled` event (same technique as Phase 3).
+
+3. With the supervisor running and `xmtp_summaries: false` set in config, the stream will re-emit the `ProposalSettled` event, which routes through `handle_chain_event` → injects a `<sherwood-event type="ProposalSettled">` block. This validates the injection path.
+
+4. **Note carefully:** Path B does NOT exercise the `post_tool_call` hook, because the hook only fires when YOU (the agent) invoke `sherwood proposal settle ...` via the terminal tool. It doesn't fire on replay. Record this limitation in `$RUN_DIR/6-path-B-note.md`.
+
+   To fully validate `post_tool_call`, either use Path A or accept that this phase is YELLOW under Path B.
 
 ### Observe the settlement block
 
-1. The `post_tool_call` hook should have fired on the settle command. On your next turn, you should see a `<sherwood-settlement>` block injected with `REMEMBER THIS — use the remember-settlement skill to persist it to memory.`
+1. On the turn after the settle (Path A) or the replay (Path B), look for an injection block:
+   - Path A: `<sherwood-settlement syndicate="..." action="settle" proposal_id="X" pnl_usd="..." tx="0x...">` — pushed by `post_tool_call`.
+   - Path B: `<sherwood-event syndicate="..." source="chain" type="ProposalSettled" ...>` — pushed by the event handler.
 
 2. Save what you saw to `$RUN_DIR/6-settlement-injection.md` — paste the exact block.
 
 ### Invoke the skill
 
-1. Load the `remember-settlement` skill (it's bundled with the plugin at `skills/sherwood-agent/skills/remember-settlement/`).
+Only meaningful under Path A (Path B lacks the explicit REMEMBER THIS marker).
 
-2. Follow its instructions: call your `memory` tool with a structured record extracted from the settlement block.
+1. Load the `remember-settlement` skill from `skills/sherwood-agent/skills/remember-settlement/SKILL.md`.
 
-3. Verify the memory write:
-   ```bash
-   grep -A 2 "$SUB" ~/.hermes/memories/MEMORY.md > "$RUN_DIR/6-memory-entry.txt"
+2. Follow its instructions: call your `memory` tool with a structured record extracted from the block. Example:
    ```
-   The entry should mention the syndicate, strategy name if available, pnl_usd, and the date.
+   memory(action="add", content="Syndicate $SUB — strategy '<name>' settled <pnl_usd> on <date>. Proposal #<id>. Tx <short>.")
+   ```
+
+3. Verify the memory write landed:
+   ```bash
+   grep "$SUB" ~/.hermes/memories/MEMORY.md > "$RUN_DIR/6-memory-entry.txt"
+   ```
+   Should contain your new entry.
 
 ### Cross-session test
 
-1. Start a fresh Hermes conversation (or just a clean turn without context) and ask: *"Has the <strategy name> strategy on $SUB been profitable historically?"*
+1. Ask yourself a fresh question without context: *"Has anything been settled on $SUB recently? What did it do?"*
 
-2. Your answer should reference the memory entry you just wrote — WITHOUT needing to call any Sherwood tool. The content should come from the MEMORY.md injection into the system prompt.
+2. Your answer should reference the memory entry you just wrote — WITHOUT calling any Sherwood tool. Content comes from MEMORY.md injection into the system prompt.
 
-3. Save your answer and a note confirming you did not call tools to `$RUN_DIR/6-memory-recall.md`.
+3. Save your answer + a note confirming you did not call tools to `$RUN_DIR/6-memory-recall.md`.
 
-**Pass condition:** settlement block injected, memory written, memory recalled in a later turn without tool calls.
+**Pass condition (Path A):** settlement block injected, memory written, memory recalled in a later turn without tool calls. Mark GREEN.
+
+**Pass condition (Path B):** settlement event injected via the chain-event path; note that `post_tool_call` was not exercised. Mark YELLOW.
+
+**Pass condition (no settleable proposal available):** phase cannot run; mark YELLOW with note to re-run when a settlement happens naturally.
 
 ---
 
