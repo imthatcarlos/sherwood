@@ -200,18 +200,22 @@ export class TradeExecutor {
       ? 0.5 ** ((existingSameSide!.addCount ?? 0) + 1)
       : 1.0;
 
-    // Size the position using risk management
+    // Size the position using risk management. Conviction is fed in via the
+    // risk budget — the sizer then clamps at maxSinglePosition, so a
+    // high-conviction entry cannot blow past the hard cap (previous bug:
+    // sizing was clamped, then multiplied by conviction after, yielding 30%
+    // sizes on score ≥ 0.35 and 40% on score ≥ 0.45 against a 20% cap).
+    const conviction = convictionMultiplier(decision.score);
     const sizing = this.riskManager.calculatePositionSize(
       currentPrice,
       stopLossPrice,
       state.totalValue,
+      this.riskManager.getRiskPerTrade() * conviction,
     );
 
-    // Apply the pyramid haircut after sizing — the calculator picks a
-    // risk-appropriate base size, then we shrink it for each subsequent add.
-    const conviction = convictionMultiplier(decision.score);
-    const pyramidQuantity = sizing.quantity * sizeMultiplier * conviction;
-    const pyramidSizeUsd = sizing.sizeUsd * sizeMultiplier * conviction;
+    // Pyramid haircut shrinks size for each subsequent add (base 1.0x → 0.5x → 0.25x).
+    const pyramidQuantity = sizing.quantity * sizeMultiplier;
+    const pyramidSizeUsd = sizing.sizeUsd * sizeMultiplier;
 
     if (pyramidQuantity <= 0 || pyramidSizeUsd <= 0) {
       return {

@@ -128,7 +128,13 @@ export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
   "trending-down": { strongBuy: 0.70, buy: 0.40, sell: -0.25, strongSell: -0.55 },
   // Paper-trading showed 0.25 let marginal entries through (BLUR 0.25, SUI 0.255).
   // 0.30 filters noise while keeping genuine signals (AAVE 0.33, ETH 0.30, ETHENA 0.39).
-  "ranging":        { strongBuy: 0.55, buy: 0.30, sell: -0.30, strongSell: -0.55 },
+  //
+  // SELL side is NOT symmetric with BUY: the contrarian sentiment model + on-chain
+  // defaults + BTC-bullish suppression bias the aggregate score positive. Empirical
+  // distribution over 2017 production signals: min -0.18, p3 ≈ -0.10, p50 ≈ +0.15.
+  // With sell = -0.30, ZERO shorts fired in 8 days. -0.15 / -0.30 mirrors the BUY
+  // spacing (0.30 / 0.55) against the negative tail we actually observe.
+  "ranging":        { strongBuy: 0.55, buy: 0.30, sell: -0.15, strongSell: -0.30 },
   "high-volatility":{ strongBuy: 0.70, buy: 0.45, sell: -0.45, strongSell: -0.70 },
   "low-volatility": { strongBuy: 0.60, buy: 0.30, sell: -0.30, strongSell: -0.60 },
 };

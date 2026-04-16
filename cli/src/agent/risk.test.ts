@@ -231,6 +231,29 @@ describe("RiskManager", () => {
       const result = rm.calculatePositionSize(100, 90, 10000, 0.05);
       expect(result.sizeUsd).toBeCloseTo(2000, 6);
     });
+
+    it("clamps to maxSinglePosition when conviction boosts risk past cap", () => {
+      // Executor calls: calculatePositionSize(price, stop, pv, riskPerTrade * conviction).
+      // With conviction = 2.0 (score ≥ 0.45), effective risk = 0.04 = 4% of pv.
+      // Sizer must clamp at maxSinglePosition (20% = 2000), not produce 30%+ sizes
+      // that then get rejected by canOpenPosition. Regression test for the pre-fix
+      // loop where the executor multiplied sizing.sizeUsd by conviction post-clamp.
+      const baseRisk = rm.getRiskPerTrade();
+      const conviction = 2.0;
+      const result = rm.calculatePositionSize(100, 90, 10000, baseRisk * conviction);
+      expect(result.sizeUsd).toBeLessThanOrEqual(2000);
+      expect(result.sizeUsd).toBeCloseTo(2000, 6);
+    });
+  });
+
+  // ── getRiskPerTrade ──
+
+  describe("getRiskPerTrade", () => {
+    it("exposes the configured base risk fraction", () => {
+      expect(rm.getRiskPerTrade()).toBe(0.02);
+      const custom = new RiskManager({ riskPerTrade: 0.015 });
+      expect(custom.getRiskPerTrade()).toBe(0.015);
+    });
   });
 
   // ── isDrawdownLimitHit ──

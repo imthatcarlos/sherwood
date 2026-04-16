@@ -299,7 +299,7 @@ describe("computeTradeDecision", () => {
     expect(rangingDecision.score).toBeLessThan(0.4);
     expect(rangingDecision.action).toBe("BUY");
     expect(rangingDecision.thresholds?.buy).toBe(0.30);
-    expect(rangingDecision.thresholds?.sell).toBe(-0.30);
+    expect(rangingDecision.thresholds?.sell).toBe(-0.15);
   });
 
   it("trending-up is asymmetric — harder to SELL than default", () => {
@@ -332,27 +332,29 @@ describe("computeTradeDecision", () => {
     expect(decision.action).toBe("BUY");
   });
 
-  it("score at sell threshold fires SELL (symmetric boundary)", () => {
-    const signals: Signal[] = [makeSignal("technical", -0.30)];
+  it("score at sell threshold fires SELL", () => {
+    // Ranging SELL threshold = -0.15 (calibrated to the negative tail of the
+    // production score distribution, which is right-biased).
+    const signals: Signal[] = [makeSignal("technical", -0.15)];
     const decision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(decision.score).toBe(-0.30);
+    expect(decision.score).toBe(-0.15);
     expect(decision.action).toBe("SELL");
   });
 
   it("score == strongSell threshold fires STRONG_SELL", () => {
     // 3 categories to avoid convergence bonus.
-    // Ranging strongSell = -0.55 (from REGIME_THRESHOLDS).
+    // Ranging strongSell = -0.30 (from REGIME_THRESHOLDS).
     const signals: Signal[] = [
-      makeSignal("technical", -0.55),
-      makeSignal("sentiment", -0.55),
-      makeSignal("onchain", -0.55),
+      makeSignal("technical", -0.30),
+      makeSignal("sentiment", -0.30),
+      makeSignal("onchain", -0.30),
     ];
     const decision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(decision.score).toBeCloseTo(-0.55, 5);
+    expect(decision.score).toBeCloseTo(-0.30, 5);
     expect(decision.action).toBe("STRONG_SELL");
   });
 

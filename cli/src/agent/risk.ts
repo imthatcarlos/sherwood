@@ -153,6 +153,12 @@ export class RiskManager {
     this.portfolio = { ...EMPTY_PORTFOLIO };
   }
 
+  /** Base risk-per-trade fraction (e.g. 0.02 = 2%). Exposed so callers can
+   *  apply conviction / profile multipliers without duplicating the config. */
+  getRiskPerTrade(): number {
+    return this.config.riskPerTrade;
+  }
+
   /** Check if we can open a new position (or pyramid into an existing one).
    *  When `direction` is omitted, defaults to 'long' for backward compatibility.
    *  An existing position with a different direction always rejects (no flips
