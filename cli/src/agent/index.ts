@@ -321,8 +321,9 @@ export class TradingAgent {
 
       // Nansen netflow dropped — returns 422 for token_symbol filter.
       // HL perp-trades is the higher-value signal (same venue we trade).
-      const [hlPerpResult] = await Promise.allSettled([
+      const [hlPerpResult, flowResult] = await Promise.allSettled([
         nansenProvider.queryHyperliquidSmartMoney(hlSymbol),
+        nansenProvider.queryFlowIntelligence(hlSymbol),
       ]);
 
       // Process HL perp trades — derive a smartMoney signal from recent trade direction
@@ -362,6 +363,27 @@ export class TradingAgent {
         }
       } else {
         console.error(chalk.dim(`  x402 Nansen HL perps unavailable: ${hlPerpResult.reason}`));
+      }
+
+      // Flow Intelligence — aggregate accumulation/distribution by investor type
+      if (flowResult.status === 'fulfilled' && flowResult.value?.data) {
+        const flowData = flowResult.value.data as Record<string, unknown>;
+        // The API returns flow data by investor type. Extract net flows.
+        // Positive net_flow = smart money accumulating = bullish.
+        // Negative net_flow = smart money distributing = bearish.
+        const netFlow = Number(flowData.net_flow_24h_usd ?? flowData.net_flow ?? 0);
+        if (netFlow !== 0 && !isNaN(netFlow)) {
+          // Normalize: $1M+ flow = strong signal (±0.5), scale linearly
+          const normalizedFlow = Math.max(-0.5, Math.min(0.5, netFlow / 2_000_000));
+          signals.push({
+            name: 'flowIntelligence',
+            value: normalizedFlow,
+            confidence: Math.min(0.7, 0.3 + Math.abs(normalizedFlow)),
+            source: 'Nansen Flow Intelligence',
+            details: `Smart money 24h net flow: $${(netFlow / 1_000_000).toFixed(2)}M ${netFlow > 0 ? '(accumulating)' : '(distributing)'}`,
+          });
+          console.error(chalk.dim(`  Nansen flow-intelligence: $${(netFlow / 1_000_000).toFixed(2)}M net flow, cost ${flowResult.value.costUsdc}`));
+        }
       }
 
       // Push event signal (no Messari — use free path)

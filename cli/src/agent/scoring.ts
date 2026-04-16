@@ -468,6 +468,7 @@ const SIGNAL_CATEGORY_MAP: Record<string, keyof ScoringWeights> = {
   fundamental: "fundamental",
   event: "event",
   smartMoney: "smartMoney",
+  flowIntelligence: "smartMoney",  // shares smartMoney category — auto weight-split with perp signal
 
   // Strategy signal mappings to categories
   // momentum intentionally has no key in getStrategyAdjustments() — it keeps
