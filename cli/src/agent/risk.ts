@@ -81,9 +81,9 @@ export interface RiskConfig {
  */
 export const DEFAULT_RISK_CONFIG: RiskConfig = {
   maxPortfolioRisk: 0.15,
-  maxSinglePosition: 0.10,
+  maxSinglePosition: 0.20,
   maxCorrelatedExposure: 0.20,
-  maxConcurrentTrades: 8,
+  maxConcurrentTrades: 5,
   hardStopPercent: 0.05,          // 5% hard stop — short-term trades shouldn't bleed past this
   trailingStopAtr: 1.5,
   trailingStopPct: 0,         // OFF — opt in via config

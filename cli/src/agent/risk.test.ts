@@ -56,8 +56,8 @@ describe("RiskManager", () => {
 
     it("rejects when single position size exceeds limit", () => {
       rm.updatePortfolio({ totalValue: 10000, cash: 10000, positions: [] });
-      // Default maxSinglePosition is 10%, so 1500 on 10000 = 15% > 10%
-      const result = rm.canOpenPosition("bitcoin", 1500);
+      // Default maxSinglePosition is 20%, so 2500 on 10000 = 25% > 20%
+      const result = rm.canOpenPosition("bitcoin", 2500);
       expect(result.allowed).toBe(false);
       expect(result.reason).toMatch(/exceeds max/);
     });
@@ -158,27 +158,26 @@ describe("RiskManager", () => {
 
   describe("calculatePositionSize", () => {
     it("calculates correct quantity and size from risk formula", () => {
-      // riskPerTrade default = 0.02 (2%), maxSinglePosition = 0.10 (10%)
+      // riskPerTrade default = 0.02 (2%), maxSinglePosition = 0.20 (20%)
       // portfolioValue = 10000, riskUsd = 200
       // entry = 100, stop = 90, riskPerUnit = 10
       // quantity = 200 / 10 = 20, sizeUsd = 20 * 100 = 2000
-      // BUT maxSinglePosition = 10% of 10000 = 1000, so capped:
-      // cappedQuantity = 1000 / 100 = 10, sizeUsd = 1000, riskUsd = 10 * 10 = 100
+      // maxSinglePosition = 20% of 10000 = 2000, no cap hit
       const result = rm.calculatePositionSize(100, 90, 10000);
-      expect(result.quantity).toBeCloseTo(10, 6);
-      expect(result.sizeUsd).toBeCloseTo(1000, 6);
-      expect(result.riskUsd).toBeCloseTo(100, 6);
+      expect(result.quantity).toBeCloseTo(20, 6);
+      expect(result.sizeUsd).toBeCloseTo(2000, 6);
+      expect(result.riskUsd).toBeCloseTo(200, 6);
     });
 
     it("caps position size at maxSinglePosition", () => {
       // entry = 100, stop = 99.5, riskPerUnit = 0.5
       // riskUsd = 10000 * 0.02 = 200, quantity = 200 / 0.5 = 400
-      // sizeUsd = 400 * 100 = 40000, but maxSinglePosition = 10% of 10000 = 1000
+      // sizeUsd = 400 * 100 = 40000, but maxSinglePosition = 20% of 10000 = 2000
       const result = rm.calculatePositionSize(100, 99.5, 10000);
-      expect(result.sizeUsd).toBeCloseTo(1000, 6);
-      expect(result.quantity).toBeCloseTo(10, 6);
-      // riskUsd should be recalculated: 10 * 0.5 = 5
-      expect(result.riskUsd).toBeCloseTo(5, 6);
+      expect(result.sizeUsd).toBeCloseTo(2000, 6);
+      expect(result.quantity).toBeCloseTo(20, 6);
+      // riskUsd should be recalculated: 20 * 0.5 = 10
+      expect(result.riskUsd).toBeCloseTo(10, 6);
     });
 
     it("returns zero for zero entry price", () => {
@@ -205,9 +204,9 @@ describe("RiskManager", () => {
       // override riskPerTrade to 5%
       // riskUsd = 10000 * 0.05 = 500, riskPerUnit = 10
       // quantity = 500 / 10 = 50, sizeUsd = 50 * 100 = 5000
-      // but maxSinglePosition = 10% of 10000 = 1000 => capped
+      // but maxSinglePosition = 20% of 10000 = 2000 => capped
       const result = rm.calculatePositionSize(100, 90, 10000, 0.05);
-      expect(result.sizeUsd).toBeCloseTo(1000, 6);
+      expect(result.sizeUsd).toBeCloseTo(2000, 6);
     });
   });
 
