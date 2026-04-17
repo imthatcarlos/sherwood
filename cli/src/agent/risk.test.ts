@@ -594,4 +594,73 @@ describe("RiskManager", () => {
       expect(updated!.trailingStop).toBe(updated!.stopLoss);
     });
   });
+
+  describe("updateStopLosses (ATR trailing)", () => {
+    // Use trailingStopAtr=2 so arithmetic matches the spec for this bug fix.
+    let atrRm: RiskManager;
+    beforeEach(() => {
+      atrRm = new RiskManager({ ...DEFAULT_RISK_CONFIG, trailingStopAtr: 2 });
+    });
+
+    it("LONG: tightens trailing stop up toward current price", () => {
+      const pos = makePosition({
+        entryPrice: 100,
+        currentPrice: 110,
+        stopLoss: 97,
+      });
+      // candidate = 110 - 2*1 = 108 > 97 → tighten.
+      const [updated] = atrRm.updateStopLosses([pos], { ethereum: 1 });
+      expect(updated!.trailingStop).toBe(108);
+      expect(updated!.stopLoss).toBe(108);
+    });
+
+    it("LONG: never moves stop down", () => {
+      const pos = makePosition({
+        entryPrice: 100,
+        currentPrice: 110,
+        stopLoss: 109,
+      });
+      // candidate = 108 < 109 → no change.
+      const [updated] = atrRm.updateStopLosses([pos], { ethereum: 1 });
+      expect(updated).toBe(pos);
+    });
+
+    it("SHORT: tightens trailing stop DOWN toward current price", () => {
+      // entry $100, stop $103, price $90, atr $1, trailingStopAtr=2 → new trail = 92
+      const pos = makePosition({
+        side: "short",
+        entryPrice: 100,
+        currentPrice: 90,
+        stopLoss: 103,
+      });
+      const [updated] = atrRm.updateStopLosses([pos], { ethereum: 1 });
+      expect(updated!.trailingStop).toBe(92);
+      expect(updated!.stopLoss).toBe(92);
+    });
+
+    it("SHORT: never moves stop up (loosen)", () => {
+      // candidate = 90 + 2 = 92; current trailing = 91 → 92 > 91, so no tighten.
+      const pos = makePosition({
+        side: "short",
+        entryPrice: 100,
+        currentPrice: 90,
+        stopLoss: 91,
+      });
+      const [updated] = atrRm.updateStopLosses([pos], { ethereum: 1 });
+      expect(updated).toBe(pos);
+    });
+
+    it("SHORT: pins stopLoss to tighter (LOWER) via Math.min", () => {
+      const pos = makePosition({
+        side: "short",
+        entryPrice: 100,
+        currentPrice: 90,
+        stopLoss: 95,
+      });
+      const [updated] = atrRm.updateStopLosses([pos], { ethereum: 1 });
+      // candidate 92 < currentTrailing 95 → tighten; stopLoss = min(95, 92) = 92
+      expect(updated!.trailingStop).toBe(92);
+      expect(updated!.stopLoss).toBe(92);
+    });
+  });
 });

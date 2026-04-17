@@ -456,10 +456,25 @@ export class RiskManager {
       if (atr === undefined || atr <= 0) return pos;
 
       const trailingDistance = atr * this.config.trailingStopAtr;
-      const newTrailingStop = pos.currentPrice - trailingDistance;
-
-      // Only move trailing stop up, never down
       const currentTrailing = pos.trailingStop ?? pos.stopLoss;
+
+      if (pos.side === 'short') {
+        // For SHORTS: stop sits ABOVE current price. Tighten only if new
+        // candidate is LOWER than the current trailing stop.
+        const newTrailingStop = pos.currentPrice + trailingDistance;
+        if (newTrailingStop < currentTrailing) {
+          return {
+            ...pos,
+            trailingStop: newTrailingStop,
+            // Also update hard stop if trailing is tighter (lower)
+            stopLoss: Math.min(pos.stopLoss, newTrailingStop),
+          };
+        }
+        return pos;
+      }
+
+      // LONGS: stop sits BELOW current price. Only move trailing stop up.
+      const newTrailingStop = pos.currentPrice - trailingDistance;
       if (newTrailingStop > currentTrailing) {
         return {
           ...pos,
