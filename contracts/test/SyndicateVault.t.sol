@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {SyndicateVault} from "../src/SyndicateVault.sol";
 import {ISyndicateVault} from "../src/interfaces/ISyndicateVault.sol";
+import {ISyndicateGovernor} from "../src/interfaces/ISyndicateGovernor.sol";
 import {BatchExecutorLib} from "../src/BatchExecutorLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
@@ -547,5 +548,209 @@ contract SyndicateVaultTest is Test {
         vm.prank(lp1);
         vm.expectRevert();
         vault.redeem(shares, lp1, lp1);
+    }
+
+    // ==================== AGENT IDENTITY RE-VERIFICATION ====================
+    //
+    // These tests exercise `executeGovernorBatch`'s re-check that the proposing
+    // agent still owns its ERC-8004 NFT. msg.sender is the governor (factory
+    // returns its address), and the governor is mocked to return a crafted
+    // StrategyProposal whose `proposer` points at our registered agent.
+
+    address internal constant MOCK_GOVERNOR = address(0xCAFE);
+    uint256 internal constant MOCK_PROPOSAL_ID = 42;
+
+    /// @dev Mock factory.governor() to return MOCK_GOVERNOR, and mock that
+    ///      governor's getActiveProposal / getProposal to describe a proposal
+    ///      whose proposer is `proposer`.
+    function _mockActiveProposal(address proposer) internal {
+        // factory = address(this) (the test contract deployed the proxy), so vault
+        // reads `governor()` from us.
+        vm.mockCall(address(this), abi.encodeWithSignature("governor()"), abi.encode(MOCK_GOVERNOR));
+
+        vm.mockCall(
+            MOCK_GOVERNOR,
+            abi.encodeWithSelector(ISyndicateGovernor.getActiveProposal.selector, address(vault)),
+            abi.encode(MOCK_PROPOSAL_ID)
+        );
+
+        ISyndicateGovernor.StrategyProposal memory prop = ISyndicateGovernor.StrategyProposal({
+            id: MOCK_PROPOSAL_ID,
+            proposer: proposer,
+            vault: address(vault),
+            metadataURI: "",
+            performanceFeeBps: 0,
+            strategyDuration: 0,
+            votesFor: 0,
+            votesAgainst: 0,
+            votesAbstain: 0,
+            snapshotTimestamp: 0,
+            voteEnd: 0,
+            executeBy: 0,
+            executedAt: 0,
+            state: ISyndicateGovernor.ProposalState.Executed
+        });
+        vm.mockCall(
+            MOCK_GOVERNOR,
+            abi.encodeWithSelector(ISyndicateGovernor.getProposal.selector, MOCK_PROPOSAL_ID),
+            abi.encode(prop)
+        );
+    }
+
+    /// @dev A no-op batch used to exercise only the auth / re-check path.
+    function _noopBatch() internal pure returns (BatchExecutorLib.Call[] memory) {
+        return new BatchExecutorLib.Call[](0);
+    }
+
+    function test_executeGovernorBatch_agentIdentityStillValid_succeeds() public {
+        _mockActiveProposal(agentAddr); // agent1NftId still owned by agentAddr
+
+        vm.prank(MOCK_GOVERNOR);
+        vault.executeGovernorBatch(_noopBatch());
+        // No revert = pass.
+    }
+
+    function test_executeGovernorBatch_nftTransferred_reverts() public {
+        // Agent transfers their ERC-8004 NFT away after being registered.
+        address attacker = makeAddr("attacker");
+        vm.prank(agentAddr);
+        agentRegistry.transferFrom(agentAddr, attacker, agent1NftId);
+
+        _mockActiveProposal(agentAddr);
+
+        vm.prank(MOCK_GOVERNOR);
+        vm.expectRevert(abi.encodeWithSelector(ISyndicateVault.AgentIdentityRevoked.selector, agent1NftId, agentAddr));
+        vault.executeGovernorBatch(_noopBatch());
+    }
+
+    function test_settleGovernorBatch_nftTransferred_succeeds() public {
+        // Critical: settlement must survive NFT revocation. Otherwise a revoked NFT during an
+        // Executed proposal would trap capital in the strategy clone with no recovery (emergencyCancel
+        // cannot cancel Executed proposals).
+        address attacker = makeAddr("attacker");
+        vm.prank(agentAddr);
+        agentRegistry.transferFrom(agentAddr, attacker, agent1NftId);
+
+        _mockActiveProposal(agentAddr);
+
+        vm.prank(MOCK_GOVERNOR);
+        vault.settleGovernorBatch(_noopBatch());
+        // No revert = settle path intentionally bypasses the agent re-check.
+    }
+
+    function test_executeGovernorBatch_noRegistry_skipsRecheck() public {
+        // Deploy a fresh vault with agentRegistry = address(0).
+        SyndicateVault impl = new SyndicateVault();
+        bytes memory initData = abi.encodeCall(
+            SyndicateVault.initialize,
+            (ISyndicateVault.InitParams({
+                    asset: address(usdc),
+                    name: "No-Registry Vault",
+                    symbol: "nrVault",
+                    owner: owner,
+                    executorImpl: address(executorLib),
+                    openDeposits: true,
+                    agentRegistry: address(0),
+                    managementFeeBps: 0
+                }))
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
+        SyndicateVault noRegistryVault = SyndicateVault(payable(address(proxy)));
+
+        // Register the agent WITHOUT registry check (registerAgent skips when registry is 0).
+        vm.prank(owner);
+        noRegistryVault.registerAgent(agent1NftId, agentAddr);
+
+        // Mock factory.governor() for THIS new vault + mock active proposal on MOCK_GOVERNOR.
+        vm.mockCall(address(this), abi.encodeWithSignature("governor()"), abi.encode(MOCK_GOVERNOR));
+        vm.mockCall(
+            MOCK_GOVERNOR,
+            abi.encodeWithSelector(ISyndicateGovernor.getActiveProposal.selector, address(noRegistryVault)),
+            abi.encode(MOCK_PROPOSAL_ID)
+        );
+        ISyndicateGovernor.StrategyProposal memory prop;
+        prop.id = MOCK_PROPOSAL_ID;
+        prop.proposer = agentAddr;
+        prop.vault = address(noRegistryVault);
+        prop.state = ISyndicateGovernor.ProposalState.Executed;
+        vm.mockCall(
+            MOCK_GOVERNOR,
+            abi.encodeWithSelector(ISyndicateGovernor.getProposal.selector, MOCK_PROPOSAL_ID),
+            abi.encode(prop)
+        );
+
+        // Even if the NFT were transferred, the re-check is skipped when registry == 0.
+        vm.prank(agentAddr);
+        agentRegistry.transferFrom(agentAddr, makeAddr("nobody"), agent1NftId);
+
+        vm.prank(MOCK_GOVERNOR);
+        noRegistryVault.executeGovernorBatch(_noopBatch());
+        // No revert = pass.
+    }
+
+    function test_executeGovernorBatch_ownerInitiatedProposer_skipsRecheck() public {
+        // Proposer is the vault owner, not a registered agent → re-check skipped.
+        // Even though we also transfer out agent1's NFT for good measure, the gate
+        // is that _agents[owner].active == false.
+        vm.prank(agentAddr);
+        agentRegistry.transferFrom(agentAddr, makeAddr("buyer"), agent1NftId);
+
+        _mockActiveProposal(owner);
+
+        vm.prank(MOCK_GOVERNOR);
+        vault.executeGovernorBatch(_noopBatch());
+        // No revert = pass.
+    }
+
+    /// @dev Gas delta on happy-path executeGovernorBatch.
+    ///      Measures:
+    ///        A. With re-check: registry set, agent registered → full _verifyActiveAgentIdentity runs.
+    ///        B. Without re-check: registry == 0 → the helper short-circuits at the first `if`.
+    ///      Delta = per-call overhead of the fix. Run with `-vv` to see the numbers.
+    function test_executeGovernorBatch_gasDelta_happyPath() public {
+        // ---- Path A: registry set, re-check active ----
+        _mockActiveProposal(agentAddr);
+
+        // Warm mocks & storage with a first call so we measure steady-state cost.
+        vm.prank(MOCK_GOVERNOR);
+        vault.executeGovernorBatch(_noopBatch());
+
+        vm.prank(MOCK_GOVERNOR);
+        uint256 gasBefore = gasleft();
+        vault.executeGovernorBatch(_noopBatch());
+        uint256 gasWithRecheck = gasBefore - gasleft();
+        emit log_named_uint("executeGovernorBatch gas WITH re-check", gasWithRecheck);
+
+        // ---- Path B: no registry, re-check skipped ----
+        SyndicateVault impl = new SyndicateVault();
+        bytes memory initData = abi.encodeCall(
+            SyndicateVault.initialize,
+            (ISyndicateVault.InitParams({
+                    asset: address(usdc),
+                    name: "Bench Vault",
+                    symbol: "bVault",
+                    owner: owner,
+                    executorImpl: address(executorLib),
+                    openDeposits: true,
+                    agentRegistry: address(0),
+                    managementFeeBps: 0
+                }))
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
+        SyndicateVault benchVault = SyndicateVault(payable(address(proxy)));
+
+        vm.mockCall(address(this), abi.encodeWithSignature("governor()"), abi.encode(MOCK_GOVERNOR));
+
+        // Warm the call once.
+        vm.prank(MOCK_GOVERNOR);
+        benchVault.executeGovernorBatch(_noopBatch());
+
+        vm.prank(MOCK_GOVERNOR);
+        gasBefore = gasleft();
+        benchVault.executeGovernorBatch(_noopBatch());
+        uint256 gasNoRecheck = gasBefore - gasleft();
+        emit log_named_uint("executeGovernorBatch gas WITHOUT re-check", gasNoRecheck);
+
+        emit log_named_uint("delta (added by fix)", gasWithRecheck - gasNoRecheck);
     }
 }

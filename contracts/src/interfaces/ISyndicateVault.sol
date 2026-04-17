@@ -25,6 +25,7 @@ interface ISyndicateVault {
     error ZeroAddress();
     error CannotRescueAsset();
     error NotFactory();
+    error AgentIdentityRevoked(uint256 agentId, address agentAddress);
 
     // ── Init Params ──
     struct InitParams {
@@ -68,6 +69,7 @@ interface ISyndicateVault {
 
     // ── Governor ──
     function executeGovernorBatch(BatchExecutorLib.Call[] calldata calls) external;
+    function settleGovernorBatch(BatchExecutorLib.Call[] calldata calls) external;
     function transferPerformanceFee(address asset, address to, uint256 amount) external;
     function governor() external view returns (address);
     function redemptionsLocked() external view returns (bool);

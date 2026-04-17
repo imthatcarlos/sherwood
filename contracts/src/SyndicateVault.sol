@@ -247,13 +247,65 @@ contract SyndicateVault is
     }
 
     /// @inheritdoc ISyndicateVault
+    /// @dev Re-verifies the ERC-8004 identity of the proposing agent at execute time.
+    ///      Registration-time-only checks are insufficient: if an agent's NFT is transferred or
+    ///      sold after registration, the original agent wallet would otherwise retain execute
+    ///      rights. We read the active proposal's proposer from the governor, look up the stored
+    ///      AgentConfig, and re-check `_agentRegistry.ownerOf(agentId) == agentAddress`.
+    ///
+    ///      Option chosen: in-path re-check inside executeGovernorBatch, using only existing
+    ///      governor view methods (getActiveProposal + getProposal). This requires no interface
+    ///      changes on the governor (parallel work is editing it). Cost: one external SLOAD-style
+    ///      call to the governor plus one ERC-721 ownerOf lookup per execute / settle batch.
+    ///
+    ///      Skipped when:
+    ///        - `_agentRegistry` is unset (chain has no ERC-8004 registry, matching registerAgent).
+    ///        - Proposer is not a registered agent (e.g. owner-initiated proposal; caller auth
+    ///          has already been validated by onlyGovernor).
     function executeGovernorBatch(BatchExecutorLib.Call[] calldata calls) external onlyGovernor {
+        _verifyActiveAgentIdentity();
+        _runGovernorBatch(calls);
+    }
+
+    /// @inheritdoc ISyndicateVault
+    /// @notice Settlement counterpart to executeGovernorBatch — does NOT re-check agent identity.
+    /// @dev Settlement MUST always be able to recover capital, including when the proposing agent's
+    ///      ERC-8004 NFT has been revoked/transferred. Re-checking identity on the close path would
+    ///      trap funds: emergencyCancel cannot cancel an already-Executed proposal, so a revoked
+    ///      agent would strand capital in the strategy clone with no recovery path. Governor calls
+    ///      this function from settleProposal, settleProposal's fallback, and emergencySettle;
+    ///      authentication is still enforced via onlyGovernor.
+    function settleGovernorBatch(BatchExecutorLib.Call[] calldata calls) external onlyGovernor {
+        _runGovernorBatch(calls);
+    }
+
+    /// @dev Shared delegatecall-into-BatchExecutorLib body used by both execute and settle paths.
+    function _runGovernorBatch(BatchExecutorLib.Call[] calldata calls) internal {
         (bool success, bytes memory returnData) =
             _executorImpl.delegatecall(abi.encodeCall(BatchExecutorLib.executeBatch, (calls)));
         if (!success) {
             assembly {
                 revert(add(returnData, 32), mload(returnData))
             }
+        }
+    }
+
+    /// @dev Re-verify that the active proposal's proposer still owns their ERC-8004 agent NFT.
+    ///      No-op when the registry is unset or the proposer is not a registered agent.
+    function _verifyActiveAgentIdentity() internal view {
+        IERC721 registry = _agentRegistry;
+        if (address(registry) == address(0)) return;
+
+        address gov = _getGovernor();
+        uint256 activeProposalId = ISyndicateGovernor(gov).getActiveProposal(address(this));
+        if (activeProposalId == 0) return;
+
+        address proposer = ISyndicateGovernor(gov).getProposal(activeProposalId).proposer;
+        AgentConfig storage cfg = _agents[proposer];
+        if (!cfg.active) return;
+
+        if (registry.ownerOf(cfg.agentId) != cfg.agentAddress) {
+            revert AgentIdentityRevoked(cfg.agentId, cfg.agentAddress);
         }
     }
 

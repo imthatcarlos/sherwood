@@ -298,8 +298,10 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
             }
         }
 
-        // Run the pre-committed settlement calls
-        ISyndicateVault(proposal.vault).executeGovernorBatch(_loadCalls(_settlementCalls, proposalId));
+        // Run the pre-committed settlement calls. Uses the settle-path variant, which does NOT
+        // re-check agent identity — settlement must always be able to return capital, even if the
+        // proposing agent's NFT has been revoked since execution.
+        ISyndicateVault(proposal.vault).settleGovernorBatch(_loadCalls(_settlementCalls, proposalId));
 
         _finishSettlement(proposalId, proposal);
     }
@@ -679,8 +681,9 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
         StrategyProposal storage proposal,
         BatchExecutorLib.Call[] calldata fallbackCalls
     ) internal {
-        // Try pre-committed calls first
-        try ISyndicateVault(proposal.vault).executeGovernorBatch(_loadCalls(_settlementCalls, proposalId)) {
+        // Try pre-committed calls first. Uses settle-path variant: settlement must always be
+        // able to return capital, even if the proposing agent's NFT was revoked post-execution.
+        try ISyndicateVault(proposal.vault).settleGovernorBatch(_loadCalls(_settlementCalls, proposalId)) {
         // Pre-committed calls succeeded
         }
         catch (bytes memory reason) {
@@ -691,7 +694,7 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
                 }
             }
 
-            ISyndicateVault(proposal.vault).executeGovernorBatch(fallbackCalls);
+            ISyndicateVault(proposal.vault).settleGovernorBatch(fallbackCalls);
         }
     }
 
