@@ -115,6 +115,7 @@ export class HyperliquidProvider {
   private oiCacheFile: string;
   private oiCacheLoaded = false;
   private oiCacheLoadPromise: Promise<void> | null = null;
+  private oiCacheSeq = 0; // per-process monotonically-increasing tmp suffix
 
   constructor() {
     this.cacheDir = join(homedir(), '.sherwood', 'agent', 'cache');
@@ -162,10 +163,12 @@ export class HyperliquidProvider {
     for (const [coin, entry] of this.oiCache.entries()) {
       snapshot[coin] = entry;
     }
+    // Unique per-process tmp suffix avoids a rename-race between back-to-back
+    // persist() calls (writeFile of the second collides with rename of the first).
+    const tmp = `${this.oiCacheFile}.tmp.${process.pid}.${++this.oiCacheSeq}`;
     void (async () => {
       try {
         await mkdir(this.cacheDir, { recursive: true });
-        const tmp = this.oiCacheFile + '.tmp';
         await writeFile(tmp, JSON.stringify(snapshot), 'utf-8');
         await rename(tmp, this.oiCacheFile);
       } catch (err) {
