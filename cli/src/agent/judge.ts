@@ -38,7 +38,7 @@ export const DEFAULT_JUDGE_CONFIG: JudgeConfig = {
   enabled: false,
   model: "llama-3.3-70b",
   topN: 3,
-  scoreBand: [0.10, 0.35],
+  scoreBand: [0.10, 0.50],
   timeoutMs: 8_000,
   cacheTtlMs: 900_000, // 15 min
 };

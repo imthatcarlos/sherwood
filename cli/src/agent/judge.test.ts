@@ -112,7 +112,7 @@ describe("judge", () => {
   });
 
   it("skips judge when score is outside band (above)", async () => {
-    const ctx = makeContext({ decision: makeDecision({ score: 0.45 }) });
+    const ctx = makeContext({ decision: makeDecision({ score: 0.55 }) });
     const result = await judge(ctx, enabledConfig);
     expect(result.verdict.verdict).toBe("confirm");
     expect(result.verdict.reasoning).toBe("fallback");
@@ -179,7 +179,7 @@ describe("selectJudgeCandidates", () => {
 
   it("excludes tokens outside the score band", () => {
     const results = [
-      { token: "bitcoin", score: 0.45, action: "STRONG_BUY" },
+      { token: "bitcoin", score: 0.55, action: "STRONG_BUY" },
       { token: "ethereum", score: 0.05, action: "BUY" },
       { token: "aave", score: 0.25, action: "BUY" },
     ];

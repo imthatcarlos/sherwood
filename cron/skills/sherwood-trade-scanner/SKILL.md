@@ -29,7 +29,7 @@ value (or skip the XMTP post and report locally only).
 From `<REPO_DIR>`:
 
 ```bash
-sherwood agent start --auto --cycle 1
+sherwood agent start --auto --cycle 1 --use-judge
 ```
 
 This executes one DRY-RUN cycle in paper-trading mode:
