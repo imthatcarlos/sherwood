@@ -16,6 +16,7 @@ import type { RiskConfig, PortfolioState } from './risk.js';
 import { CoinGeckoProvider } from '../providers/data/coingecko.js';
 import { Reporter } from './reporter.js';
 import { DynamicTokenSelector } from './token-selector.js';
+import { PriceValidator } from './price-validator.js';
 
 export interface LoopConfig {
   agent: AgentConfig;
@@ -54,6 +55,9 @@ export class AgentLoop {
   private riskManager: RiskManager;
   private coingecko: CoinGeckoProvider;
   private reporter: Reporter;
+  /** Rejects bad-price ticks (floor + 20% delta cap). Persisted to disk so
+   *  anchors survive across cron invocations. */
+  private priceValidator: PriceValidator;
   /** Last portfolio state loaded by runCycle(). Exposed to the judge via
    *  agent.setPortfolioStateGetter() so portfolio-veto branches can fire. */
   private lastPortfolioState: PortfolioState | undefined;
@@ -66,6 +70,7 @@ export class AgentLoop {
     this.executor = new TradeExecutor(config.execution, this.riskManager, this.portfolio);
     this.coingecko = new CoinGeckoProvider();
     this.reporter = new Reporter();
+    this.priceValidator = new PriceValidator();
     // Wire real portfolio state into the judge (replaces hardcoded zeros).
     this.agent.setPortfolioStateGetter(() => this.lastPortfolioState);
   }
@@ -177,9 +182,19 @@ export class AgentLoop {
 
         for (const id of tokenIds) {
           const price = priceData?.[id]?.usd;
-          if (typeof price === 'number') {
-            currentPrices[id] = price;
+          if (typeof price !== 'number') continue;
+          const check = this.priceValidator.check(id, price);
+          if (!check.ok) {
+            // Skip this token for the cycle — no MTM, no exit check, no trades.
+            console.warn(
+              chalk.yellow(
+                `  ⚠ Bad price tick rejected: ${id} → $${price} (${check.reason})`,
+              ),
+            );
+            errors.push(`Bad price rejected for ${id}: ${check.reason}`);
+            continue;
           }
+          currentPrices[id] = check.price;
         }
 
         if (Object.keys(currentPrices).length > 0) {
@@ -260,19 +275,32 @@ export class AgentLoop {
         try {
           // Get current price for the token
           const priceData = await this.coingecko.getPrice([result.token], ['usd']);
-          const currentPrice = priceData?.[result.token]?.usd;
+          const rawPrice = priceData?.[result.token]?.usd;
 
-          if (typeof currentPrice === 'number' && currentPrice > 0) {
-            const atr = result.data?.technicalSignals?.atr;
-            const execResult = await this.executor.execute(result.decision, result.token, currentPrice, atr);
-            if (execResult.success) {
-              tradesExecuted++;
-              console.log(this.executor.formatExecution(execResult));
-            } else if (execResult.error && !execResult.error.includes('does not trigger')) {
-              errors.push(`${result.token}: ${execResult.error}`);
-            }
-          } else {
+          if (typeof rawPrice !== 'number' || rawPrice <= 0) {
             errors.push(`No price data for ${result.token}`);
+            continue;
+          }
+
+          const check = this.priceValidator.check(result.token, rawPrice);
+          if (!check.ok) {
+            console.warn(
+              chalk.yellow(
+                `  ⚠ Bad price tick rejected (entry): ${result.token} → $${rawPrice} (${check.reason})`,
+              ),
+            );
+            errors.push(`Bad price rejected for ${result.token}: ${check.reason}`);
+            continue;
+          }
+
+          const currentPrice = check.price;
+          const atr = result.data?.technicalSignals?.atr;
+          const execResult = await this.executor.execute(result.decision, result.token, currentPrice, atr);
+          if (execResult.success) {
+            tradesExecuted++;
+            console.log(this.executor.formatExecution(execResult));
+          } else if (execResult.error && !execResult.error.includes('does not trigger')) {
+            errors.push(`${result.token}: ${execResult.error}`);
           }
         } catch (err) {
           errors.push(`Execution failed for ${result.token}: ${(err as Error).message}`);
