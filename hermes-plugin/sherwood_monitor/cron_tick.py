@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,13 @@ from typing import Any
 _log = logging.getLogger(__name__)
 
 CURSOR_PATH = Path.home() / ".hermes" / "plugins" / "sherwood-monitor" / "cron_cursor.json"
+
+# Serializes the load-modify-save window for the shared cursor file. Two
+# concurrent cron_tick invocations (different syndicates, or tool + background
+# driver) would otherwise each read the file, modify their own entry, and
+# race on write — the second writer clobbering the first syndicate's cursor
+# advance and causing duplicate event emission on the next tick.
+_CURSOR_LOCK = asyncio.Lock()
 
 INTERESTING_CHAIN = {
     "ProposalCreated",
@@ -29,8 +38,26 @@ def _load_cursors() -> dict:
 
 
 def _save_cursors(cursors: dict) -> None:
+    """Atomically persist cursors via tmp-file + os.replace.
+
+    `os.replace` is atomic on POSIX and Windows, so a reader mid-tick either
+    sees the old cursor or the new one — never a truncated write, never an
+    empty file if the process is killed mid-save.
+    """
     CURSOR_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CURSOR_PATH.write_text(json.dumps(cursors, indent=2))
+    fd, tmp = tempfile.mkstemp(
+        prefix=".cron_cursor.", suffix=".tmp", dir=str(CURSOR_PATH.parent)
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(cursors, f, indent=2)
+        os.replace(tmp, CURSOR_PATH)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 async def _run_session_check(sherwood_bin: str, subdomain: str) -> dict | None:
@@ -119,8 +146,12 @@ async def cron_tick(
     syndicates_for_exposure: list[str] | None = None,
     concentration_threshold_pct: float = 30.0,
 ) -> dict:
-    cursors = _load_cursors()
-    sub_cursor = cursors.get(subdomain, {"block": 0, "timestamp": 0.0})
+    # Read the per-syndicate cursor snapshot under the lock. We release before
+    # the awaitable session check so unrelated syndicates aren't blocked on
+    # network I/O. Re-acquire before the save to serialize the write.
+    async with _CURSOR_LOCK:
+        cursors_snapshot = _load_cursors()
+    sub_cursor = cursors_snapshot.get(subdomain, {"block": 0, "timestamp": 0.0})
 
     payload = await _run_session_check(sherwood_bin, subdomain)
     if payload is None:
@@ -130,17 +161,23 @@ async def cron_tick(
         payload, int(sub_cursor.get("block", 0)), float(sub_cursor.get("timestamp", 0))
     )
 
-    cursors[subdomain] = {
+    new_entry = {
         "block": max_block,
         "timestamp": max_ts,
         "last_tick_at": int(time.time()),
     }
-    _save_cursors(cursors)
+
+    # Reload-modify-save under the lock so concurrent invocations for other
+    # syndicates don't clobber our write (and we don't clobber theirs).
+    async with _CURSOR_LOCK:
+        cursors = _load_cursors()
+        cursors[subdomain] = new_entry
+        _save_cursors(cursors)
 
     result: dict[str, Any] = {
         "subdomain": subdomain,
         "events": new_events,
-        "cursor": cursors[subdomain],
+        "cursor": new_entry,
     }
 
     if include_exposure and syndicates_for_exposure:

@@ -1,6 +1,7 @@
 """Tests for sherwood_monitor.cron_tick."""
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -207,3 +208,48 @@ def test_filter_sorts_out_of_order_messages():
     new, _max_block, max_ts = _filter_interesting(payload, block_cursor=0, ts_cursor=0)
     assert len(new) == 1
     assert new[0]["type"] == "RISK_ALERT"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_ticks_both_cursors_persisted(tmp_path, monkeypatch):
+    """Regression: two cron_tick invocations in flight must both land their
+    cursor updates. Before the asyncio.Lock + atomic replace, the second
+    writer's read-modify-write would clobber the first syndicate's cursor."""
+    cursor_file = tmp_path / "cron_cursor.json"
+    monkeypatch.setattr(cron_tick_mod, "CURSOR_PATH", cursor_file)
+
+    payload_alpha = {
+        "events": [{"type": "ProposalCreated", "block": 100, "proposalId": "1"}],
+        "messages": [],
+    }
+    payload_beta = {
+        "events": [{"type": "ProposalCreated", "block": 200, "proposalId": "2"}],
+        "messages": [],
+    }
+
+    async def fake_spawn(*args, **kwargs):
+        sub = args[3]
+        payload = payload_alpha if sub == "alpha" else payload_beta
+        proc = MagicMock()
+        encoded = json.dumps(payload).encode()
+        proc.communicate = AsyncMock(return_value=(encoded, b""))
+        proc.returncode = 0
+        proc.wait = AsyncMock(return_value=0)
+        return proc
+
+    with patch("asyncio.create_subprocess_exec", side_effect=fake_spawn):
+        results = await asyncio.gather(
+            cron_tick("sherwood", "alpha"),
+            cron_tick("sherwood", "beta"),
+        )
+
+    # Both ticks reported their respective event
+    assert len(results[0]["events"]) == 1
+    assert len(results[1]["events"]) == 1
+
+    # Both cursors landed on disk — neither was clobbered by the other writer
+    data = json.loads(cursor_file.read_text())
+    assert "alpha" in data
+    assert "beta" in data
+    assert data["alpha"]["block"] == 100
+    assert data["beta"]["block"] == 200

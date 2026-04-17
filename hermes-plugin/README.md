@@ -79,9 +79,14 @@ the plugin blocks if any of these fail:
 - Total portfolio exposure > 50% of vault AUM
 - Protocol not in the vault's configured mandate list
 
-Day-1 limitation: the default state fetcher returns zeros when `sherwood vault info
---json` is unavailable, causing checks to fail-open (permissive). Configure
-your mandate explicitly once `vault info` is fully wired.
+Day-1 limitation: the default state fetcher calls `sherwood vault info
+<sub> --json`, a subcommand that does not yet exist in the Sherwood CLI
+as of this plugin version. Until that subcommand lands upstream, the
+state fetcher returns `None` and the `pre_tool_call` hook fails-open
+(allows the proposal) and logs a warning. This is deliberate: we ship
+the enforcement scaffolding without synthesizing fake vault state. Once
+the CLI subcommand exists, checks engage automatically — no plugin
+change required.
 
 ## Development
 

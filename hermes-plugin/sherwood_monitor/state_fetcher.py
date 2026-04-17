@@ -1,8 +1,19 @@
 """Default state fetcher used by the pre_tool_call risk hook.
 
-Shells out to `sherwood vault info <subdomain> --json`. If the command fails
-or returns unexpected output, returns permissive zeros — meaning risk checks
-will allow the action (fail-open). A stricter fail-closed mode is a follow-up.
+Shells out to `sherwood vault info <subdomain> --json` and returns a state
+dict for risk evaluation, OR `None` if the data is unavailable.
+
+**Fail-open contract (safety-critical):** returning `None` signals "state
+unknown" to the pre_tool_call hook, which then ALLOWS the proposal and logs
+a warning. Returning a dict with zeros signals "state known and is zero" —
+that is treated as a real signal and will (correctly) block.
+
+The current Sherwood CLI does not ship a `vault info --json` subcommand.
+Until that lands upstream, this fetcher always returns `None`, so all
+`pre_tool_call` risk checks fail-open. This is the intended day-one
+behavior: the plugin ships enforcement infrastructure without synthesizing
+fake vault state. Once the CLI subcommand exists and is pinned in
+preflight, checks engage automatically with no plugin change.
 """
 from __future__ import annotations
 
@@ -16,8 +27,8 @@ _log = logging.getLogger(__name__)
 async def fetch_vault_info(sherwood_bin: str, subdomain: str) -> dict | None:
     """Shell out to `sherwood vault info <subdomain> --json` and return the raw dict.
 
-    Returns None on any failure (non-zero exit, parse error, subprocess error).
-    Callers are responsible for providing defaults.
+    Returns None on any failure (non-zero exit, parse error, subprocess error,
+    or the subcommand not existing on this CLI version).
     """
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -38,16 +49,23 @@ async def fetch_vault_info(sherwood_bin: str, subdomain: str) -> dict | None:
         return None
 
 
-async def default_state_fetcher(sherwood_bin: str, subdomain: str) -> dict:
-    """Thin adapter: calls fetch_vault_info and projects into risk-check shape."""
-    defaults = {
-        "vault_aum_usd": 0.0,
-        "current_exposure_usd": 0.0,
-        "allowed_protocols": [],
-    }
+async def default_state_fetcher(sherwood_bin: str, subdomain: str) -> dict | None:
+    """Return the risk-check state dict for a syndicate, or None if unknown.
+
+    Contract:
+    - dict with `vault_aum_usd`, `current_exposure_usd`, `allowed_protocols`
+      when `vault info --json` returned parseable data.
+    - `None` when the CLI returned no data, returned malformed data, or the
+      subcommand is unavailable. The caller (pre_tool_call hook) treats
+      `None` as fail-open: allow the proposal and log a warning.
+
+    Previously returned zero-defaults on failure, which the risk checks
+    interpreted as "vault has zero AUM" and blocked every proposal. That was
+    a fail-closed regression contradicting the documented fail-open intent.
+    """
     payload = await fetch_vault_info(sherwood_bin, subdomain)
     if payload is None:
-        return defaults
+        return None
 
     try:
         return {
@@ -56,7 +74,7 @@ async def default_state_fetcher(sherwood_bin: str, subdomain: str) -> dict:
             "allowed_protocols": list(payload.get("allowedProtocols", [])),
         }
     except (ValueError, TypeError):
-        return defaults
+        return None
 
 
 def stderr_memory_writer(record: dict) -> None:

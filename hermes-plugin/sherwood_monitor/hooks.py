@@ -142,6 +142,18 @@ def make_pre_tool_call_hook(state_fetcher: StateFetcher):
             _log.warning("state fetch failed for %s: %s — allowing", subdomain, exc)
             return None
 
+        # Fail-open contract: state_fetcher returns None when vault state is
+        # unknown (e.g., `sherwood vault info --json` not yet shipped in the
+        # installed CLI). Do NOT synthesize zero-defaults — that would make
+        # every proposal trip the AUM==0 guard and fail-closed.
+        if state is None:
+            _log.warning(
+                "risk check for %s %s skipped: vault state unavailable — allowing",
+                subdomain,
+                command,
+            )
+            return None
+
         verdict = evaluate_propose(
             ProposeParams(
                 subdomain=subdomain,

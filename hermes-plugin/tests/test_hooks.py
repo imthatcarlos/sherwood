@@ -163,6 +163,26 @@ async def test_pre_tool_call_swallows_fetcher_exception():
     assert result is None
 
 
+@pytest.mark.asyncio
+async def test_pre_tool_call_fails_open_when_state_is_none(caplog):
+    """Regression: when state_fetcher returns None (CLI vault info unavailable),
+    the hook must allow the proposal and log a warning — NOT block as if AUM=0."""
+    async def fetch(sub):
+        return None
+
+    hook = make_pre_tool_call_hook(state_fetcher=fetch)
+    result = await hook(
+        tool_name="bash",
+        params={
+            "command": "sherwood proposal create alpha --size-usd 50000 --protocol moonwell"
+        },
+    )
+    assert result is None
+    assert any(
+        "vault state unavailable" in r.message for r in caplog.records
+    )
+
+
 from sherwood_monitor.hooks import make_post_tool_call_hook
 
 
