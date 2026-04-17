@@ -35,6 +35,11 @@ export interface CycleResult {
   tradesExecuted: number;
   exitsProcessed: number;
   portfolioValue: number;
+  /** Realized PnL since UTC day start (closed trades only). */
+  dailyRealizedPnl: number;
+  /** Sum of mark-to-market pnlUsd across all open positions at cycle end. */
+  unrealizedPnl: number;
+  /** @deprecated Alias for dailyRealizedPnl — retained for downstream consumers of cycles.jsonl. */
   dailyPnl: number;
   errors: string[];
 }
@@ -144,6 +149,7 @@ export class AgentLoop {
     const drawdown = this.riskManager.isDrawdownLimitHit();
     if (drawdown.paused) {
       console.log(chalk.red(`  ⚠ Trading paused: ${drawdown.message}`));
+      const unrealizedPnlAtPause = state.positions.reduce((sum, p) => sum + p.pnlUsd, 0);
       const result: CycleResult = {
         cycleNumber: this.cycleCount,
         timestamp: Date.now(),
@@ -153,6 +159,8 @@ export class AgentLoop {
         tradesExecuted: 0,
         exitsProcessed: 0,
         portfolioValue: state.totalValue,
+        dailyRealizedPnl: state.dailyPnl,
+        unrealizedPnl: unrealizedPnlAtPause,
         dailyPnl: state.dailyPnl,
         errors: [drawdown.message],
       };
@@ -276,6 +284,7 @@ export class AgentLoop {
     const updatedState = await this.portfolio.load();
 
     // 6. Build cycle result
+    const unrealizedPnl = updatedState.positions.reduce((sum, p) => sum + p.pnlUsd, 0);
     const cycleResult: CycleResult = {
       cycleNumber: this.cycleCount,
       timestamp: Date.now(),
@@ -285,6 +294,8 @@ export class AgentLoop {
       tradesExecuted,
       exitsProcessed,
       portfolioValue: updatedState.totalValue,
+      dailyRealizedPnl: updatedState.dailyPnl,
+      unrealizedPnl,
       dailyPnl: updatedState.dailyPnl,
       errors,
     };
