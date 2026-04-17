@@ -100,6 +100,56 @@ describe("resetPnlCounters", () => {
     expect(result.lastWeeklyReset).toBeGreaterThan(tenDaysAgo);
   });
 
+  it("resets dailyEntries when crossing UTC midnight (Orca-inspired daily cap)", () => {
+    const yesterdayMs = Date.now() - 48 * 60 * 60 * 1000;
+    const state: PortfolioState = {
+      totalValue: 10000,
+      positions: [],
+      cash: 10000,
+      dailyPnl: 0,
+      weeklyPnl: 0,
+      monthlyPnl: 0,
+      dailyEntries: 7,
+      lastDailyEntriesReset: yesterdayMs,
+      lastDailyReset: Date.now(),
+    };
+    const result = resetPnlCounters(state);
+    expect(result.dailyEntries).toBe(0);
+    expect(result.lastDailyEntriesReset).toBeGreaterThan(yesterdayMs);
+  });
+
+  it("preserves dailyEntries within the same UTC day", () => {
+    const now = Date.now();
+    const state: PortfolioState = {
+      totalValue: 10000,
+      positions: [],
+      cash: 10000,
+      dailyPnl: 0,
+      weeklyPnl: 0,
+      monthlyPnl: 0,
+      dailyEntries: 3,
+      lastDailyEntriesReset: now,
+      lastDailyReset: now,
+    };
+    const result = resetPnlCounters(state);
+    expect(result.dailyEntries).toBe(3);
+  });
+
+  it("initializes dailyEntries when lastDailyEntriesReset is undefined (legacy file)", () => {
+    const state: PortfolioState = {
+      totalValue: 10000,
+      positions: [],
+      cash: 10000,
+      dailyPnl: 0,
+      weeklyPnl: 0,
+      monthlyPnl: 0,
+      // no dailyEntries / lastDailyEntriesReset — simulates pre-upgrade portfolio.json
+    };
+    const result = resetPnlCounters(state);
+    expect(result.dailyEntries).toBe(0);
+    expect(result.lastDailyEntriesReset).toBeDefined();
+  });
+
   it("resets monthly PnL when lastMonthlyReset is before 1st of this month UTC", () => {
     // Set lastMonthlyReset to 40 days ago (guaranteed to be before 1st of month)
     const fortyDaysAgo = Date.now() - 40 * 24 * 60 * 60 * 1000;
@@ -401,6 +451,86 @@ describe("PortfolioTracker.addToPosition", () => {
     await expect(tracker.addToPosition("bitcoin", 100, 0, "long")).rejects.toThrow(/Invalid add quantity/);
     await expect(tracker.addToPosition("bitcoin", 100, -1, "long")).rejects.toThrow(/Invalid add quantity/);
     await expect(tracker.addToPosition("bitcoin", 0, 1, "long")).rejects.toThrow(/Invalid add price/);
+  });
+});
+
+describe("PortfolioTracker.openPosition (Orca-inspired fields)", () => {
+  function setupBacking() {
+    const backing = { state: null as string | null };
+    mockReadFile.mockImplementation(async () => {
+      if (backing.state === null) throw new Error("ENOENT: no such file");
+      return backing.state;
+    });
+    return backing;
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { writeFile, rename, mkdir } = await import("node:fs/promises");
+    vi.mocked(writeFile).mockResolvedValue(undefined);
+    vi.mocked(rename).mockResolvedValue(undefined);
+    vi.mocked(mkdir).mockResolvedValue(undefined);
+  });
+
+  it("seeds peakPrice at entryPrice on open (HWM profit-lock)", async () => {
+    const backing = setupBacking();
+    const { writeFile } = await import("node:fs/promises");
+    vi.mocked(writeFile).mockImplementation(async (_p: any, data: any) => {
+      backing.state = typeof data === "string" ? data : data.toString();
+    });
+    const tracker = new PortfolioTracker();
+    const pos = await tracker.openPosition({
+      tokenId: "bitcoin", symbol: "BTC", side: "long",
+      entryPrice: 100, currentPrice: 100, quantity: 10,
+      entryTimestamp: Date.now(),
+      stopLoss: 95, takeProfit: 110, strategy: "test",
+    });
+    expect(pos.peakPrice).toBe(100);
+  });
+
+  it("increments dailyEntries on each new position (daily cap counter)", async () => {
+    const backing = setupBacking();
+    const { writeFile } = await import("node:fs/promises");
+    vi.mocked(writeFile).mockImplementation(async (_p: any, data: any) => {
+      backing.state = typeof data === "string" ? data : data.toString();
+    });
+    const tracker = new PortfolioTracker();
+
+    await tracker.openPosition({
+      tokenId: "bitcoin", symbol: "BTC", side: "long",
+      entryPrice: 100, currentPrice: 100, quantity: 1,
+      entryTimestamp: Date.now(), stopLoss: 95, takeProfit: 110, strategy: "test",
+    });
+    let state = await tracker.load();
+    expect(state.dailyEntries).toBe(1);
+
+    await tracker.openPosition({
+      tokenId: "ethereum", symbol: "ETH", side: "long",
+      entryPrice: 2000, currentPrice: 2000, quantity: 1,
+      entryTimestamp: Date.now(), stopLoss: 1900, takeProfit: 2100, strategy: "test",
+    });
+    state = await tracker.load();
+    expect(state.dailyEntries).toBe(2);
+  });
+
+  it("pyramid adds via addToPosition do NOT increment dailyEntries", async () => {
+    const backing = setupBacking();
+    const { writeFile } = await import("node:fs/promises");
+    vi.mocked(writeFile).mockImplementation(async (_p: any, data: any) => {
+      backing.state = typeof data === "string" ? data : data.toString();
+    });
+    const tracker = new PortfolioTracker();
+
+    await tracker.openPosition({
+      tokenId: "bitcoin", symbol: "BTC", side: "long",
+      entryPrice: 100, currentPrice: 100, quantity: 10,
+      entryTimestamp: Date.now(), stopLoss: 97, takeProfit: 110, strategy: "test",
+    });
+
+    await tracker.addToPosition("bitcoin", 105, 5, "long");
+    const state = await tracker.load();
+    // still just the single new entry from openPosition
+    expect(state.dailyEntries).toBe(1);
   });
 });
 

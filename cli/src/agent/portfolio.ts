@@ -22,6 +22,15 @@ export function resetPnlCounters(state: PortfolioState): PortfolioState {
     updated.lastDailyReset = now;
   }
 
+  // Orca-inspired: PnL-aware daily cap, see README / PR #223.
+  // Reset the daily-entry counter on the same UTC day boundary as dailyPnl.
+  // Tracked independently (lastDailyEntriesReset) so legacy files missing
+  // `dailyEntries` reset cleanly on first load.
+  if (!updated.lastDailyEntriesReset || updated.lastDailyEntriesReset < todayMs) {
+    updated.dailyEntries = 0;
+    updated.lastDailyEntriesReset = now;
+  }
+
   // Reset weekly PnL on Monday midnight UTC
   const dayOfWeek = new Date(now).getUTCDay(); // 0=Sun, 1=Mon
   const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -70,6 +79,7 @@ const DEFAULT_PORTFOLIO: PortfolioState = {
   dailyPnl: 0,
   weeklyPnl: 0,
   monthlyPnl: 0,
+  dailyEntries: 0,
 };
 
 export class PortfolioTracker {
@@ -230,6 +240,10 @@ export class PortfolioTracker {
       ...position,
       addCount: position.addCount ?? 0,
       lastAddTimestamp: position.lastAddTimestamp ?? position.entryTimestamp,
+      // Orca-inspired HWM profit-lock, see README / PR #223.
+      // Seed peakPrice at entry so subsequent cycles can ratchet from
+      // the first favorable move.
+      peakPrice: position.peakPrice ?? position.entryPrice,
       pnlPercent: 0,
       pnlUsd: 0,
     };
@@ -240,6 +254,12 @@ export class PortfolioTracker {
       (sum, p) => sum + p.quantity * p.currentPrice,
       0,
     );
+
+    // Orca-inspired: PnL-aware daily cap, see README / PR #223.
+    // Count this NEW entry against the day's turnover budget.
+    // Pyramid adds go through addToPosition and do NOT count.
+    const prior = Number.isFinite(this.state.dailyEntries) ? (this.state.dailyEntries ?? 0) : 0;
+    this.state.dailyEntries = prior + 1;
 
     await this.save(this.state);
     return fullPosition;

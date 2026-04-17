@@ -17,6 +17,15 @@ export interface PortfolioState {
   /** Token → timestamp of last stop-loss exit. Used to enforce cooldown
    *  before re-entry to prevent the stop-reentry-stop pattern. */
   stopCooldowns?: Record<string, number>;
+  /** Orca-inspired: PnL-aware daily cap, see README / PR #223.
+   *  Count of NEW position entries (not pyramid adds) opened since the
+   *  last daily reset. Used together with getDynamicDailyCap() to throttle
+   *  entry frequency based on the day's realized PnL. */
+  dailyEntries?: number;
+  /** Timestamp of the last `dailyEntries` reset — tracked independently
+   *  from `lastDailyReset` so future boundary logic can diverge if needed
+   *  (and so legacy portfolio.json files without this field reset cleanly). */
+  lastDailyEntriesReset?: number;
 }
 
 export interface Position {
@@ -46,6 +55,16 @@ export interface Position {
   /** Whether the 50% partial-profit exit has been taken. Prevents
    *  re-triggering on subsequent cycles. */
   partialTaken?: boolean;
+  /** Orca-inspired: HWM-based profit-lock, see README / PR #223.
+   *  For LONG: the highest price seen since entry (>= entryPrice).
+   *  For SHORT: the lowest price seen since entry (<= entryPrice).
+   *  Updated each cycle in `updateTrailingStops`. Enables stop-loss
+   *  ratcheting based on peak-to-date gain rather than unrealized PnL
+   *  alone — so a retrace followed by a new peak always advances the
+   *  lock, never resets it. Persisted to portfolio.json. Legacy positions
+   *  loaded without this field default to entryPrice (safest — never
+   *  locks too aggressively on the first cycle post-upgrade). */
+  peakPrice?: number;
 }
 
 export interface RiskConfig {
@@ -63,15 +82,26 @@ export interface RiskConfig {
    *  E.g. 0.02 = after +2% unrealized gain, stop tightens to entry price.
    *  Set to 0 to disable. */
   breakevenTriggerPct: number;
-  /** Stepped profit-lock table: each [trigger, lock] pair means "if PnL% crosses
-   *  trigger, ratchet stop to lock in at least lockPct of gain".
-   *  Entries applied in order; last matching entry wins per cycle. */
-  profitLockSteps: Array<{ trigger: number; lock: number }>;
+  /** Orca-inspired HWM profit-lock, see README / PR #223.
+   *  Stepped table: each {trigger, lockPct} pair means "once PnL% from
+   *  entry crosses `trigger`, ratchet stop-loss to lock in `lockPct` of
+   *  the peak move from entry".
+   *  For LONG: stop = entry + (peakPrice - entry) * lockPct.
+   *  For SHORT: stop = entry - (entry - peakPrice) * lockPct.
+   *  Entries iterate in order; highest-triggered tier wins (stricter
+   *  locks override looser ones) and stops only ratchet up — never down. */
+  profitLockSteps: Array<{ trigger: number; lockPct: number }>;
   dailyLossLimit: number;
   weeklyLossLimit: number;
   monthlyLossLimit: number;
   maxSlippage: Record<string, number>;
   riskPerTrade: number;
+  /** Orca-inspired: PnL-aware daily cap, see README / PR #223.
+   *  When set, short-circuits the tiered step function in
+   *  `getDynamicDailyCap()` and uses this value directly. Useful for
+   *  tests or an aggressive-mode config override. Leave unset for the
+   *  default PnL-tiered behavior. */
+  dailyCapOverride?: number;
 }
 
 /**
@@ -95,9 +125,14 @@ export const DEFAULT_RISK_CONFIG: RiskConfig = {
   trailingStopAtr: 1.5,
   trailingStopPct: 0.025,              // 2.5% fallback trail (overridden per-position by ATR when available)
   breakevenTriggerPct: 0.015,          // move to breakeven after +1.5% gain
+  // Orca-inspired HWM profit-lock (see README / PR #223): each entry locks a
+  // percentage of the peak-to-date move. Tiers cascade — the highest
+  // triggered tier wins — and stops never ratchet down.
   profitLockSteps: [
-    { trigger: 0.02, lock: 0.005 },   // after +2%, lock in +0.5%
-    { trigger: 0.04, lock: 0.02 },    // after +4%, lock in +2%
+    { trigger: 0.05, lockPct: 0.30 },  // +5% gain  → lock 30% of peak move
+    { trigger: 0.10, lockPct: 0.50 },  // +10% gain → lock 50% of peak move
+    { trigger: 0.15, lockPct: 0.70 },  // +15% gain → lock 70% of peak move
+    { trigger: 0.20, lockPct: 0.85 },  // +20% gain → lock 85% of peak move
   ],
   dailyLossLimit: 0.05,
   weeklyLossLimit: 0.10,
@@ -119,12 +154,14 @@ export const DEFAULT_RISK_CONFIG: RiskConfig = {
  * Tighter stops and faster profit-locking than swing trading.
  */
 export const RECOMMENDED_TRAILING_CONFIG = {
-  trailingStopPct: 0.025,           // 2.5% trail — tighter for short-term
-  breakevenTriggerPct: 0.015,       // move to breakeven after +1.5% gain
+  trailingStopPct: 0.025,                // 2.5% trail — tighter for short-term
+  breakevenTriggerPct: 0.015,            // move to breakeven after +1.5% gain
+  // HWM tiers: lock a growing fraction of the peak move from entry.
   profitLockSteps: [
-    { trigger: 0.02, lock: 0.005 }, // after +2%, lock in +0.5%
-    { trigger: 0.04, lock: 0.02 },  // after +4%, lock in +2%
-    { trigger: 0.06, lock: 0.04 },  // after +6%, lock in +4% (near TP)
+    { trigger: 0.05, lockPct: 0.30 },   // +5% gain  → lock 30% of peak move
+    { trigger: 0.10, lockPct: 0.50 },   // +10% gain → lock 50% of peak move
+    { trigger: 0.15, lockPct: 0.70 },   // +15% gain → lock 70% of peak move
+    { trigger: 0.20, lockPct: 0.85 },   // +20% gain → lock 85% of peak move
   ],
 } as const;
 
@@ -159,6 +196,60 @@ export class RiskManager {
     return this.config.riskPerTrade;
   }
 
+  /**
+   * Orca-inspired PnL-aware daily cap (see README / PR #223).
+   *
+   * Returns the maximum number of NEW position entries allowed today based
+   * on realized daily PnL as a fraction of the start-of-day portfolio
+   * value. Tiers (step function):
+   *
+   *   >= +5%       → 12 ("hot hand")
+   *   [ 0%, +5%)   →  8
+   *   [-5%,  0%)   →  5
+   *   [-15%, -5%)  →  3
+   *   [-25%,-15%)  →  1
+   *   < -25%       →  0 (circuit breaker)
+   *
+   * `config.dailyCapOverride` short-circuits to a fixed value when set
+   * (tests / aggressive mode). The start-of-day value is reconstructed
+   * as `totalValue - dailyPnl` — same trick loop.ts uses to derive
+   * dailyPnlPct for the judge.
+   *
+   * Orthogonal to `maxConcurrentTrades`: that limits simultaneous open
+   * positions; this limits turnover per day.
+   */
+  getDynamicDailyCap(): number {
+    // Override short-circuit
+    if (
+      this.config.dailyCapOverride !== undefined
+      && Number.isFinite(this.config.dailyCapOverride)
+    ) {
+      return Math.max(0, Math.floor(this.config.dailyCapOverride));
+    }
+
+    const totalValue = Number.isFinite(this.portfolio.totalValue) ? this.portfolio.totalValue : 0;
+    const dailyPnl = Number.isFinite(this.portfolio.dailyPnl) ? this.portfolio.dailyPnl : 0;
+    // Reconstruct start-of-day value (mirrors loop.ts:691 logic). Fall
+    // back to cash when totalValue is unset to avoid a false 0% baseline.
+    const startOfDayValue = (totalValue - dailyPnl) > 0
+      ? totalValue - dailyPnl
+      : (Number.isFinite(this.portfolio.cash) ? this.portfolio.cash : 0);
+
+    if (startOfDayValue <= 0) {
+      // No baseline to measure against — fall back to the middle tier.
+      return 5;
+    }
+
+    const pnlPct = dailyPnl / startOfDayValue;
+
+    if (pnlPct >= 0.05) return 12;
+    if (pnlPct >= 0) return 8;
+    if (pnlPct >= -0.05) return 5;
+    if (pnlPct >= -0.15) return 3;
+    if (pnlPct >= -0.25) return 1;
+    return 0; // circuit breaker — no new entries today
+  }
+
   /** Check if we can open a new position (or pyramid into an existing one).
    *  When `direction` is omitted, defaults to 'long' for backward compatibility.
    *  An existing position with a different direction always rejects (no flips
@@ -167,6 +258,28 @@ export class RiskManager {
     // Check concurrent trades limit
     if (this.portfolio.positions.length >= this.config.maxConcurrentTrades) {
       return { allowed: false, reason: `Max concurrent trades (${this.config.maxConcurrentTrades}) reached` };
+    }
+
+    // Orca-inspired: PnL-aware daily entry cap (see README / PR #223).
+    // Only applies to NEW positions — pyramid adds into an existing token
+    // go through their own spacing / addCount guards below and do not
+    // count toward the daily turnover budget.
+    const isNewEntry = !this.portfolio.positions.find((p) => p.tokenId === token);
+    if (isNewEntry) {
+      const dailyCap = this.getDynamicDailyCap();
+      const entriesToday = Number.isFinite(this.portfolio.dailyEntries)
+        ? (this.portfolio.dailyEntries ?? 0)
+        : 0;
+      if (entriesToday >= dailyCap) {
+        const totalValue = Number.isFinite(this.portfolio.totalValue) ? this.portfolio.totalValue : 0;
+        const dailyPnl = Number.isFinite(this.portfolio.dailyPnl) ? this.portfolio.dailyPnl : 0;
+        const startOfDayValue = (totalValue - dailyPnl) > 0 ? totalValue - dailyPnl : 0;
+        const pnlPct = startOfDayValue > 0 ? (dailyPnl / startOfDayValue) * 100 : 0;
+        return {
+          allowed: false,
+          reason: `Dynamic daily cap (${dailyCap}) reached — PnL ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%`,
+        };
+      }
     }
 
     // Check single position size limit
@@ -362,50 +475,68 @@ export class RiskManager {
   }
 
   /**
-   * Ratchet stop-losses upward each cycle based on current prices.
-   * Applies three independent mechanisms, whichever gives the highest stop:
+   * Ratchet stop-losses each cycle based on current prices.
+   * Applies three independent mechanisms, whichever gives the tightest stop:
    *
    *   1. Breakeven: if PnL% crosses +breakevenTriggerPct, move stop to entryPrice.
    *      Locks in "no loss" once the trade is meaningfully in the money.
    *
-   *   2. Profit-lock ratchet: stepped table (e.g. after +5% gain, lock in +2%).
-   *      Each triggered step moves stop to entryPrice × (1 + lock).
-   *      Prevents giving back earned profit on mean reversion.
+   *   2. Orca-inspired HWM profit-lock (see README / PR #223): stepped table
+   *      keyed on "gain from entry". Each triggered tier locks a growing
+   *      fraction of the peak-to-date move:
+   *        LONG:  stop = entry + (peakPrice - entry) * lockPct
+   *        SHORT: stop = entry - (entry - peakPrice) * lockPct
+   *      `peakPrice` tracks the best price observed since entry and is
+   *      updated on every call (max for LONG, min for SHORT). A retrace
+   *      followed by a new peak advances the lock — never resets it.
    *
-   *   3. Percent-trail: stop = max(currentStop, currentPrice × (1 - trailingStopPct)).
-   *      Continuous trail — tracks new highs as price runs.
+   *   3. Percent-trail: stop tracks currentPrice × (1 ± trailingStopPct).
+   *      Continuous trail — tracks new highs (LONG) / lows (SHORT).
    *
-   * All mechanisms respect the "stops never move down" invariant.
-   * Returns an array of updated positions (pure — does not mutate input).
+   * All mechanisms respect the "stops never loosen" invariant.
+   * `peakPrice` is updated even when no stop-change fires (so future
+   * cycles see the ratchet). Returns a new array — does not mutate input.
    *
-   * No ATR needed — works from price alone, so it can run every loop cycle
-   * without re-computing technicals. Use updateStopLosses() when ATR is
-   * already available (keeps tighter trails on volatile assets).
+   * Legacy positions loaded from portfolio.json without `peakPrice`
+   * default to `entryPrice` (safest — never triggers a tier on the
+   * first cycle after upgrade until price actually advances).
    */
   updateTrailingStops(positions: Position[]): Position[] {
     return positions.map((pos) => {
       if (pos.currentPrice <= 0 || pos.entryPrice <= 0) return pos;
 
       const isShort = pos.side === 'short';
-      // Direction-aware PnL
+
+      // Update peak-price HWM. For LONG, peak = max observed price.
+      // For SHORT, peak = min observed price (most favorable for a short).
+      // Legacy positions without `peakPrice` seed from entryPrice — this
+      // is the safer default: on the first post-upgrade cycle, no HWM
+      // tier will fire until price actually moves beyond entry.
+      const priorPeak = Number.isFinite(pos.peakPrice) ? (pos.peakPrice as number) : pos.entryPrice;
+      const newPeak = isShort
+        ? Math.min(priorPeak, pos.currentPrice)
+        : Math.max(priorPeak, pos.currentPrice);
+
+      // Direction-aware PnL from entry
       const pnlPct = isShort
         ? (pos.entryPrice - pos.currentPrice) / (pos.entryPrice || 1)
         : (pos.currentPrice - pos.entryPrice) / (pos.entryPrice || 1);
       let newStop = pos.stopLoss;
 
       if (isShort) {
-        // For SHORTS: stops move DOWN (tighter = lower price).
-        // "Never loosen" = never move stop UP (higher) for shorts.
+        // For SHORTS: stops sit ABOVE price. "Tighter" = LOWER.
 
-        // 1. Breakeven: move stop down to entry (from above)
+        // 1. Breakeven: move stop down to entry
         if (this.config.breakevenTriggerPct > 0 && pnlPct >= this.config.breakevenTriggerPct) {
           newStop = Math.min(newStop, pos.entryPrice);
         }
 
-        // 2. Profit-lock: lock in gains by moving stop further down
+        // 2. HWM profit-lock. For shorts, the peak is the lowest price.
+        //    stop = entry - (entry - peak) * lockPct  (peak <= entry)
+        //    Iterate tiers — highest-triggered tier wins.
         for (const step of this.config.profitLockSteps) {
           if (pnlPct >= step.trigger) {
-            const lockedStop = pos.entryPrice * (1 - step.lock);
+            const lockedStop = pos.entryPrice - (pos.entryPrice - newPeak) * step.lockPct;
             newStop = Math.min(newStop, lockedStop);
           }
         }
@@ -416,21 +547,27 @@ export class RiskManager {
           newStop = Math.min(newStop, trailStop);
         }
 
-        if (newStop < pos.stopLoss) {
-          return { ...pos, stopLoss: newStop, trailingStop: newStop };
+        if (newStop < pos.stopLoss || newPeak !== priorPeak) {
+          return {
+            ...pos,
+            peakPrice: newPeak,
+            stopLoss: newStop < pos.stopLoss ? newStop : pos.stopLoss,
+            trailingStop: newStop < pos.stopLoss ? newStop : pos.trailingStop,
+          };
         }
       } else {
-        // For LONGS: stops move UP (tighter = higher price).
+        // For LONGS: stops sit BELOW price. "Tighter" = HIGHER.
 
         // 1. Breakeven
         if (this.config.breakevenTriggerPct > 0 && pnlPct >= this.config.breakevenTriggerPct) {
           newStop = Math.max(newStop, pos.entryPrice);
         }
 
-        // 2. Profit-lock steps
+        // 2. HWM profit-lock.
+        //    stop = entry + (peak - entry) * lockPct  (peak >= entry)
         for (const step of this.config.profitLockSteps) {
           if (pnlPct >= step.trigger) {
-            const lockedStop = pos.entryPrice * (1 + step.lock);
+            const lockedStop = pos.entryPrice + (newPeak - pos.entryPrice) * step.lockPct;
             newStop = Math.max(newStop, lockedStop);
           }
         }
@@ -441,8 +578,13 @@ export class RiskManager {
           newStop = Math.max(newStop, trailStop);
         }
 
-        if (newStop > pos.stopLoss) {
-          return { ...pos, stopLoss: newStop, trailingStop: newStop };
+        if (newStop > pos.stopLoss || newPeak !== priorPeak) {
+          return {
+            ...pos,
+            peakPrice: newPeak,
+            stopLoss: newStop > pos.stopLoss ? newStop : pos.stopLoss,
+            trailingStop: newStop > pos.stopLoss ? newStop : pos.trailingStop,
+          };
         }
       }
       return pos;

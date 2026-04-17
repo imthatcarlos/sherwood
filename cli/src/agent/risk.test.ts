@@ -505,7 +505,7 @@ describe("RiskManager", () => {
         stopLoss: 90,
       });
       // rm uses DEFAULT_RISK_CONFIG — trailing is now ON by default.
-      // At +50% all profit-lock steps trigger; highest lock is +2% → 102.
+      // HWM: peak=150, highest-triggered tier (+20%) → 100 + (150-100)*0.85 = 142.50.
       // Percent-trail: 150 × (1 - 0.025) = 146.25. Trail wins (higher stop).
       const [updated] = rm.updateTrailingStops([pos]);
       expect(updated!.stopLoss).toBe(146.25);
@@ -514,7 +514,7 @@ describe("RiskManager", () => {
     it("moves stop to breakeven after +1.5% gain", () => {
       const pos = makePosition({
         entryPrice: 100,
-        currentPrice: 101.6, // +1.6% triggers breakeven (1.5% threshold) but not profit-lock (2%)
+        currentPrice: 101.6, // +1.6% triggers breakeven (1.5%) but no HWM tier (first is +5%)
         stopLoss: 97,
       });
       const [updated] = trailingRm.updateTrailingStops([pos]);
@@ -522,48 +522,53 @@ describe("RiskManager", () => {
       expect(updated!.stopLoss).toBe(100);
     });
 
-    it("locks in +0.5% gain after +2% move (profit-lock step)", () => {
+    it("HWM locks 30% of peak move after +5% gain", () => {
       const pos = makePosition({
         entryPrice: 100,
-        currentPrice: 103,   // +3% triggers [0.02, 0.005]
+        currentPrice: 105,   // +5% triggers first HWM tier (lockPct=0.30)
         stopLoss: 97,
       });
       const [updated] = trailingRm.updateTrailingStops([pos]);
-      // lock → 100.5; trail 103*0.975=100.425; max = 100.5
-      expect(updated!.stopLoss).toBeCloseTo(100.5, 2);
-    });
-
-    it("locks in +2% gain after +4% move", () => {
-      const pos = makePosition({
-        entryPrice: 100,
-        currentPrice: 105,   // +5% triggers [0.04, 0.02]
-        stopLoss: 97,
-      });
-      const [updated] = trailingRm.updateTrailingStops([pos]);
-      // lock → 102; trail 105*0.975=102.375; max = 102.375
+      // peak=105, lock = 100 + (105-100)*0.30 = 101.50
+      // breakeven → 100; percent-trail 105*0.975 = 102.375
+      // max(97, 100, 101.50, 102.375) = 102.375
       expect(updated!.stopLoss).toBeCloseTo(102.375, 2);
+      expect(updated!.peakPrice).toBe(105);
     });
 
-    it("percent-trail beats profit-lock at large gains", () => {
+    it("HWM locks 50% of peak move after +10% gain", () => {
       const pos = makePosition({
         entryPrice: 100,
-        currentPrice: 115,   // +15%
+        currentPrice: 110,   // +10% triggers tiers at 5% and 10%
         stopLoss: 97,
       });
       const [updated] = trailingRm.updateTrailingStops([pos]);
-      // lock at +6% → 104; trail = 115*0.975 = 112.125; trail wins
+      // peak=110; +10% tier (lockPct=0.50) → 100 + 10*0.50 = 105.
+      // percent-trail 110*0.975 = 107.25. Max = 107.25.
+      expect(updated!.stopLoss).toBeCloseTo(107.25, 2);
+    });
+
+    it("percent-trail beats HWM lock at large gains", () => {
+      const pos = makePosition({
+        entryPrice: 100,
+        currentPrice: 115,   // +15% → tier lockPct=0.70
+        stopLoss: 97,
+      });
+      const [updated] = trailingRm.updateTrailingStops([pos]);
+      // HWM lock = 100 + 15*0.70 = 110.50. Trail = 115*0.975 = 112.125. Trail wins.
       expect(updated!.stopLoss).toBeCloseTo(112.125, 2);
     });
 
-    it("never moves stop down", () => {
+    it("never moves stop down (peak updates but stopLoss pinned)", () => {
       const pos = makePosition({
         entryPrice: 100,
         currentPrice: 101,
-        stopLoss: 99,        // already above current trail (101*0.95=95.95)
+        stopLoss: 99,        // already above current trail (101*0.975=98.475) and no tier fires
       });
       const [updated] = trailingRm.updateTrailingStops([pos]);
+      // stop stays at 99 (no tier triggered, breakeven at +1.5% not reached,
+      // trail lower than current stop). Peak gets updated to 101 for future cycles.
       expect(updated!.stopLoss).toBe(99);
-      expect(updated).toBe(pos);
     });
 
     it("respects disabled mechanisms", () => {
@@ -661,6 +666,338 @@ describe("RiskManager", () => {
       // candidate 92 < currentTrailing 95 → tighten; stopLoss = min(95, 92) = 92
       expect(updated!.trailingStop).toBe(92);
       expect(updated!.stopLoss).toBe(92);
+    });
+  });
+
+  // ── Orca-inspired: PnL-aware daily cap ──
+  describe("getDynamicDailyCap", () => {
+    it("returns 12 at >= +5% daily PnL (hot hand)", () => {
+      rm.updatePortfolio({
+        totalValue: 10500,
+        cash: 10500,
+        positions: [],
+        dailyPnl: 500, // +5%
+      });
+      expect(rm.getDynamicDailyCap()).toBe(12);
+    });
+
+    it("returns 8 for [0%, +5%) daily PnL", () => {
+      rm.updatePortfolio({
+        totalValue: 10300,
+        cash: 10300,
+        positions: [],
+        dailyPnl: 300, // +3%
+      });
+      expect(rm.getDynamicDailyCap()).toBe(8);
+    });
+
+    it("returns 5 for [-5%, 0%) daily PnL", () => {
+      rm.updatePortfolio({
+        totalValue: 9700,
+        cash: 9700,
+        positions: [],
+        dailyPnl: -300, // -3%
+      });
+      expect(rm.getDynamicDailyCap()).toBe(5);
+    });
+
+    it("returns 3 for [-15%, -5%) daily PnL", () => {
+      rm.updatePortfolio({
+        totalValue: 9000,
+        cash: 9000,
+        positions: [],
+        dailyPnl: -1000, // -10%
+      });
+      expect(rm.getDynamicDailyCap()).toBe(3);
+    });
+
+    it("returns 1 for [-25%, -15%) daily PnL", () => {
+      rm.updatePortfolio({
+        totalValue: 8000,
+        cash: 8000,
+        positions: [],
+        dailyPnl: -2000, // -20%
+      });
+      expect(rm.getDynamicDailyCap()).toBe(1);
+    });
+
+    it("returns 0 at < -25% daily PnL (circuit breaker)", () => {
+      rm.updatePortfolio({
+        totalValue: 7000,
+        cash: 7000,
+        positions: [],
+        dailyPnl: -3000, // -30%
+      });
+      expect(rm.getDynamicDailyCap()).toBe(0);
+    });
+
+    it("boundary: exactly +5% returns 12 (inclusive lower bound of top tier)", () => {
+      rm.updatePortfolio({
+        totalValue: 10500,
+        cash: 10500,
+        positions: [],
+        dailyPnl: 500, // exactly +5%
+      });
+      expect(rm.getDynamicDailyCap()).toBe(12);
+    });
+
+    it("boundary: exactly 0% returns 8 (non-negative side)", () => {
+      rm.updatePortfolio({
+        totalValue: 10000,
+        cash: 10000,
+        positions: [],
+        dailyPnl: 0,
+      });
+      expect(rm.getDynamicDailyCap()).toBe(8);
+    });
+
+    it("respects dailyCapOverride and short-circuits tiers", () => {
+      const custom = new RiskManager({ dailyCapOverride: 3 });
+      custom.updatePortfolio({
+        totalValue: 15000,
+        cash: 15000,
+        positions: [],
+        dailyPnl: 5000, // +50% — would normally return 12
+      });
+      expect(custom.getDynamicDailyCap()).toBe(3);
+    });
+
+    it("falls back to middle tier (5) when start-of-day value cannot be derived", () => {
+      rm.updatePortfolio({
+        totalValue: 0,
+        cash: 0,
+        positions: [],
+        dailyPnl: 0,
+      });
+      expect(rm.getDynamicDailyCap()).toBe(5);
+    });
+  });
+
+  describe("canOpenPosition + dynamic daily cap", () => {
+    it("blocks new entry when daily-entry count reaches the dynamic cap", () => {
+      rm.updatePortfolio({
+        totalValue: 10000,
+        cash: 10000,
+        positions: [],
+        dailyPnl: 0,          // → cap = 8
+        dailyEntries: 8,
+      });
+      const result = rm.canOpenPosition("bitcoin", 500);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toMatch(/Dynamic daily cap \(8\)/);
+    });
+
+    it("allows new entry up to (cap - 1)", () => {
+      rm.updatePortfolio({
+        totalValue: 10000,
+        cash: 10000,
+        positions: [],
+        dailyPnl: 0,
+        dailyEntries: 7, // still under cap of 8
+      });
+      const result = rm.canOpenPosition("bitcoin", 500);
+      expect(result.allowed).toBe(true);
+    });
+
+    it("pyramid adds to an existing position DO NOT count against the cap", () => {
+      // dailyEntries already at cap (8) — a pyramid add should still be
+      // checked against pyramid rules, not the daily-turnover budget.
+      const existingPos = makePosition({
+        tokenId: "bitcoin",
+        symbol: "BTC",
+        side: "long",
+        addCount: 0,
+        lastAddTimestamp: Date.now() - PYRAMID_MIN_SPACING_MS - 1000,
+      });
+      rm.updatePortfolio({
+        totalValue: 50000,
+        cash: 40000,
+        positions: [existingPos],
+        dailyPnl: 0,
+        dailyEntries: 8, // would block a NEW token — shouldn't block this add
+      });
+      const result = rm.canOpenPosition("bitcoin", 500, "long");
+      expect(result.allowed).toBe(true);
+    });
+
+    it("circuit breaker: at < -25% PnL no new entry is allowed", () => {
+      rm.updatePortfolio({
+        totalValue: 7000,
+        cash: 7000,
+        positions: [],
+        dailyPnl: -3000, // -30%
+        dailyEntries: 0,
+      });
+      // But daily-loss guard at -5% also fires — check the message carefully.
+      // isDrawdownLimitHit runs AFTER the dynamic-cap check in canOpenPosition,
+      // so the cap-zero message should surface first for NEW entries.
+      const result = rm.canOpenPosition("bitcoin", 500);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toMatch(/Dynamic daily cap \(0\)/);
+    });
+
+    it("respects dailyCapOverride in the entry-cap check", () => {
+      const custom = new RiskManager({ dailyCapOverride: 2 });
+      custom.updatePortfolio({
+        totalValue: 10000,
+        cash: 10000,
+        positions: [],
+        dailyPnl: 0,
+        dailyEntries: 2,
+      });
+      const result = custom.canOpenPosition("bitcoin", 500);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toMatch(/Dynamic daily cap \(2\)/);
+    });
+  });
+
+  // ── Orca-inspired: HWM profit-lock ──
+  describe("updateTrailingStops HWM semantics", () => {
+    let hwmRm: RiskManager;
+    beforeEach(() => {
+      hwmRm = new RiskManager(DEFAULT_RISK_CONFIG);
+    });
+
+    it("LONG: tracks peak price across cycles", () => {
+      // Cycle 1: price hits 110 (+10%)
+      const pos1 = makePosition({ entryPrice: 100, currentPrice: 110, stopLoss: 97 });
+      const [afterCycle1] = hwmRm.updateTrailingStops([pos1]);
+      expect(afterCycle1!.peakPrice).toBe(110);
+
+      // Cycle 2: price retraces to 108 — peak must not drop
+      const pos2 = { ...afterCycle1!, currentPrice: 108 };
+      const [afterCycle2] = hwmRm.updateTrailingStops([pos2]);
+      expect(afterCycle2!.peakPrice).toBe(110);
+
+      // Cycle 3: price makes a new peak at 115 — peak advances
+      const pos3 = { ...afterCycle2!, currentPrice: 115 };
+      const [afterCycle3] = hwmRm.updateTrailingStops([pos3]);
+      expect(afterCycle3!.peakPrice).toBe(115);
+    });
+
+    it("LONG: lock ratchets UP with new peaks, never down on retrace", () => {
+      // Cycle 1: +10% → lockPct 0.50 applied on peak=110.
+      const pos1 = makePosition({ entryPrice: 100, currentPrice: 110, stopLoss: 97 });
+      const [c1] = hwmRm.updateTrailingStops([pos1]);
+      const lockAfterC1 = c1!.stopLoss;
+      // 100 + 10*0.50 = 105 vs trail 110*0.975 = 107.25 → 107.25
+      expect(lockAfterC1).toBeCloseTo(107.25, 2);
+
+      // Cycle 2: retrace to 108 (still +8%). stopLoss must NOT decrease.
+      const pos2 = { ...c1!, currentPrice: 108 };
+      const [c2] = hwmRm.updateTrailingStops([pos2]);
+      expect(c2!.stopLoss).toBeGreaterThanOrEqual(lockAfterC1);
+
+      // Cycle 3: new peak at 120 (+20%) — tier 0.85 applies on peak=120.
+      // 100 + 20*0.85 = 117. Trail = 120*0.975 = 117. Max = 117.
+      const pos3 = { ...c2!, currentPrice: 120 };
+      const [c3] = hwmRm.updateTrailingStops([pos3]);
+      expect(c3!.stopLoss).toBeCloseTo(117, 2);
+      expect(c3!.peakPrice).toBe(120);
+    });
+
+    it("LONG: each HWM tier locks the correct fraction of peak move", () => {
+      const cases: Array<{ price: number; expectedLock: number; desc: string }> = [
+        { price: 105, expectedLock: 101.5, desc: "+5%  → 30% of 5 = 1.5" },
+        { price: 110, expectedLock: 105,   desc: "+10% → 50% of 10 = 5" },
+        { price: 115, expectedLock: 110.5, desc: "+15% → 70% of 15 = 10.5" },
+        { price: 120, expectedLock: 117,   desc: "+20% → 85% of 20 = 17" },
+      ];
+      // Isolate the HWM mechanism — no percent-trail or breakeven interference.
+      const hwmOnly = new RiskManager({
+        ...DEFAULT_RISK_CONFIG,
+        trailingStopPct: 0,
+        breakevenTriggerPct: 0,
+      });
+      for (const c of cases) {
+        const pos = makePosition({ entryPrice: 100, currentPrice: c.price, stopLoss: 90 });
+        const [updated] = hwmOnly.updateTrailingStops([pos]);
+        expect(updated!.stopLoss).toBeCloseTo(c.expectedLock, 2);
+      }
+    });
+
+    it("SHORT: tracks peak price as the LOWEST price seen (most profit)", () => {
+      const pos = makePosition({
+        side: "short", entryPrice: 100, currentPrice: 90, stopLoss: 110,
+      });
+      const [c1] = hwmRm.updateTrailingStops([pos]);
+      expect(c1!.peakPrice).toBe(90);
+
+      // Price bounces up to 92 — peak must not rise
+      const pos2 = { ...c1!, currentPrice: 92 };
+      const [c2] = hwmRm.updateTrailingStops([pos2]);
+      expect(c2!.peakPrice).toBe(90);
+
+      // Price makes new low at 85 — peak advances (lower)
+      const pos3 = { ...c2!, currentPrice: 85 };
+      const [c3] = hwmRm.updateTrailingStops([pos3]);
+      expect(c3!.peakPrice).toBe(85);
+    });
+
+    it("SHORT: HWM lock ratchets DOWN with new lows, formula mirrors LONG", () => {
+      // SHORT at entry 100, price 85 (+15% profit for short → tier lockPct=0.70).
+      // stop = entry - (entry - peak) * lockPct = 100 - (100-85)*0.70 = 100 - 10.5 = 89.5
+      // Isolate HWM from percent-trail interference.
+      const hwmOnly = new RiskManager({
+        ...DEFAULT_RISK_CONFIG,
+        trailingStopPct: 0,
+        breakevenTriggerPct: 0,
+      });
+      const pos = makePosition({
+        side: "short", entryPrice: 100, currentPrice: 85, stopLoss: 110,
+      });
+      const [updated] = hwmOnly.updateTrailingStops([pos]);
+      expect(updated!.stopLoss).toBeCloseTo(89.5, 2);
+      expect(updated!.peakPrice).toBe(85);
+    });
+
+    it("legacy position without peakPrice seeds from entryPrice and doesn't over-lock", () => {
+      // A freshly-loaded position from pre-HWM portfolio.json has no peakPrice.
+      // On the first cycle after upgrade, peak seeds from entryPrice — so no
+      // HWM tier fires until price actually advances past entry.
+      // Isolate HWM semantics from breakeven/percent-trail so this test
+      // specifically verifies the legacy migration doesn't over-lock.
+      const hwmOnly = new RiskManager({
+        ...DEFAULT_RISK_CONFIG,
+        trailingStopPct: 0,
+        breakevenTriggerPct: 0,
+      });
+      const legacyPos: Position = makePosition({
+        entryPrice: 100,
+        currentPrice: 100.5, // barely in the money
+        stopLoss: 90,
+      });
+      // peakPrice intentionally left undefined.
+      expect(legacyPos.peakPrice).toBeUndefined();
+      const [updated] = hwmOnly.updateTrailingStops([legacyPos]);
+      // With peak seeded at 100 and current=100.5, no HWM tier triggers
+      // (+5% not reached). stopLoss stays at 90. peakPrice advances to 100.5.
+      expect(updated!.peakPrice).toBe(100.5);
+      expect(updated!.stopLoss).toBe(90);
+    });
+
+    it("legacy position at +10% since entry doesn't over-lock on first post-upgrade cycle", () => {
+      // If a pre-HWM position is loaded and price is already +10% from entry,
+      // the seeded peak (=entry) means the HWM lock is computed against the
+      // NEW observed peak (=current), not a hypothetical historical high.
+      // This matches the safe behavior: lock amount = tier(lockPct) × real move.
+      const hwmOnly = new RiskManager({
+        ...DEFAULT_RISK_CONFIG,
+        trailingStopPct: 0,
+        breakevenTriggerPct: 0,
+      });
+      const legacyPos: Position = makePosition({
+        entryPrice: 100,
+        currentPrice: 110, // +10%
+        stopLoss: 95,
+      });
+      expect(legacyPos.peakPrice).toBeUndefined();
+      const [updated] = hwmOnly.updateTrailingStops([legacyPos]);
+      // peak seeds at entry(100), then gets updated to 110 this cycle.
+      // +10% triggers tiers at 5% and 10% → highest lockPct = 0.50.
+      // lock = 100 + (110-100)*0.50 = 105.
+      expect(updated!.peakPrice).toBe(110);
+      expect(updated!.stopLoss).toBe(105);
     });
   });
 });
