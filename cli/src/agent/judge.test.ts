@@ -191,6 +191,26 @@ describe("selectJudgeCandidates", () => {
     expect(candidates.has("aave")).toBe(true);
   });
 
+  it("treats scoreBand upper as exclusive (matches judge() gate)", () => {
+    // At abs(score) === scoreBand[1] (default 0.50), selectJudgeCandidates
+    // must NOT pick the token — judge() rejects it at the identical bound
+    // with `absScore > scoreBand[1]` === false, leading to fallback confirm.
+    // Prior bug: `abs <= scoreBand[1]` selected it; judge() fallback-confirmed.
+    const results = [
+      { token: "bitcoin", score: 0.50, action: "BUY" },
+      { token: "ethereum", score: 0.499, action: "BUY" },
+      { token: "solana", score: -0.50, action: "SELL" },
+    ];
+
+    const config: JudgeConfig = { ...DEFAULT_JUDGE_CONFIG, enabled: true, topN: 3, scoreBand: [0.10, 0.50] };
+    const candidates = selectJudgeCandidates(results, config);
+
+    expect(candidates.size).toBe(1);
+    expect(candidates.has("bitcoin")).toBe(false);
+    expect(candidates.has("solana")).toBe(false);
+    expect(candidates.has("ethereum")).toBe(true);
+  });
+
   it("respects topN budget cap", () => {
     const results = Array.from({ length: 10 }, (_, i) => ({
       token: `token-${i}`,

@@ -12,7 +12,7 @@ import { TradeExecutor } from './executor.js';
 import type { ExecutionConfig } from './executor.js';
 import { PortfolioTracker, resetPnlCounters } from './portfolio.js';
 import { RiskManager, DEFAULT_RISK_CONFIG } from './risk.js';
-import type { RiskConfig } from './risk.js';
+import type { RiskConfig, PortfolioState } from './risk.js';
 import { CoinGeckoProvider } from '../providers/data/coingecko.js';
 import { Reporter } from './reporter.js';
 import { DynamicTokenSelector } from './token-selector.js';
@@ -49,6 +49,9 @@ export class AgentLoop {
   private riskManager: RiskManager;
   private coingecko: CoinGeckoProvider;
   private reporter: Reporter;
+  /** Last portfolio state loaded by runCycle(). Exposed to the judge via
+   *  agent.setPortfolioStateGetter() so portfolio-veto branches can fire. */
+  private lastPortfolioState: PortfolioState | undefined;
 
   constructor(config: LoopConfig) {
     this.config = config;
@@ -58,6 +61,8 @@ export class AgentLoop {
     this.executor = new TradeExecutor(config.execution, this.riskManager, this.portfolio);
     this.coingecko = new CoinGeckoProvider();
     this.reporter = new Reporter();
+    // Wire real portfolio state into the judge (replaces hardcoded zeros).
+    this.agent.setPortfolioStateGetter(() => this.lastPortfolioState);
   }
 
   /** Start the autonomous loop */
@@ -133,6 +138,8 @@ export class AgentLoop {
       await this.portfolio.save(resetState);
     }
 
+    // Publish the refreshed state to the judge (via getter set in the ctor).
+    this.lastPortfolioState = resetState;
     this.riskManager.updatePortfolio(resetState);
     const drawdown = this.riskManager.isDrawdownLimitHit();
     if (drawdown.paused) {

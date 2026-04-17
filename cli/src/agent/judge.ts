@@ -240,7 +240,10 @@ export function selectJudgeCandidates(
     .filter((r) => {
       if (r.action === "HOLD") return false;
       const abs = Math.abs(r.score);
-      return abs >= config.scoreBand[0] && abs <= config.scoreBand[1];
+      // Upper bound is exclusive to match `judge()` gate at line 192
+      // (`absScore > config.scoreBand[1]` rejects). Inclusive here would
+      // pick a candidate that `judge()` then rejects → fallback confirm.
+      return abs >= config.scoreBand[0] && abs < config.scoreBand[1];
     })
     .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
     .slice(0, config.topN);

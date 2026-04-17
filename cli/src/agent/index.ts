@@ -41,6 +41,7 @@ import { CorrelationGuard } from "./correlation.js";
 import type { CorrelationCheck } from "./correlation.js";
 import { AlertSystem } from "./alerts.js";
 import type { Alert } from "./alerts.js";
+import type { PortfolioState } from "./risk.js";
 import { isX402WalletFunded } from "../lib/x402.js";
 
 export type { Signal, ScoringWeights, TradeDecision, Alert, TechnicalSignals };
@@ -104,6 +105,13 @@ export class TradingAgent {
   private correlationGuard: CorrelationGuard;
   private alertSystem: AlertSystem;
   private smoother: SignalSmoother | null = null;
+  /** Optional getter for current portfolio state. When set, judge receives
+   *  real portfolio context (openCount, cashPct, etc.); otherwise judge falls
+   *  back to neutral defaults and its portfolio-veto branch is effectively
+   *  disabled. Wired in by AgentLoop via setPortfolioStateGetter(). */
+  private portfolioStateGetter: (() => PortfolioState | undefined) | undefined;
+  /** Warn-once flag when portfolio getter is missing at judge time. */
+  private warnedNoPortfolioGetter = false;
 
   constructor(config: AgentConfig) {
     this.config = config;
@@ -568,10 +576,9 @@ export class TradingAgent {
       correlation: correlationCheck,
     };
 
-    // Persist analysis to ~/.sherwood/agent/signal-history.jsonl so the
-    // signal-audit tool can measure fire rates over time. Fire-and-forget —
-    // never blocks scoring, never crashes on disk failure.
-    logSignal(result, currentPrice, resolvedWeights);
+    // Note: logSignal() is intentionally NOT called here. It runs in
+    // analyzeAll() AFTER the judge pass, so judge verdicts can be included
+    // in signal-history.jsonl. See analyzeAll() below.
 
     return result;
   }
@@ -579,6 +586,13 @@ export class TradingAgent {
   /** Update the token watchlist without recreating the agent (preserves caches). */
   updateTokens(tokens: string[]): void {
     this.config.tokens = tokens;
+  }
+
+  /** Register a getter for current portfolio state. Called by AgentLoop so
+   *  the judge can see real openCount / cashPct / daily PnL / cooldowns when
+   *  building its veto decisions. If not set, judge uses neutral defaults. */
+  setPortfolioStateGetter(fn: () => PortfolioState | undefined): void {
+    this.portfolioStateGetter = fn;
   }
 
   /** Analyze all watchlist tokens.
@@ -644,8 +658,45 @@ export class TradingAgent {
         console.error(chalk.dim(`  [judge] Reviewing ${candidates.size} borderline decision(s): ${[...candidates].join(', ')}`));
       }
 
+      // Snapshot portfolio state once for the judge pass — all tokens in this
+      // cycle see the same portfolio view. Cheaper than a per-token load and
+      // avoids races with any concurrent mutation.
+      const pstate = this.portfolioStateGetter?.();
+      if (!pstate && candidates.size > 0 && !this.warnedNoPortfolioGetter) {
+        console.warn(chalk.yellow(
+          `  [judge] Warning: portfolio state getter not wired. Judge portfolio-veto branch disabled — using neutral defaults.`,
+        ));
+        this.warnedNoPortfolioGetter = true;
+      }
+
       for (const result of results) {
         if (!candidates.has(result.token)) continue;
+
+        // Build real portfolio snapshot for the judge. Falls back to neutral
+        // defaults when the getter isn't wired (e.g. one-shot analyzeAll callers).
+        let portfolio: JudgeContext["portfolio"] = {
+          openCount: 0, cashPct: 1, hasPositionThisToken: false, inStopCooldown: false, dailyPnlPct: 0,
+        };
+        if (pstate) {
+          const totalValue = pstate.totalValue || pstate.cash || 0;
+          const cooldowns = pstate.stopCooldowns ?? {};
+          const cooldownAt = cooldowns[result.token];
+          // Match RiskManager's STOP_COOLDOWN_MS (4h). We only need to know
+          // whether a cooldown is currently active, not the exact deadline.
+          const STOP_COOLDOWN_MS = 4 * 60 * 60 * 1000;
+          const inStopCooldown = cooldownAt !== undefined &&
+            (Date.now() - cooldownAt) < STOP_COOLDOWN_MS;
+          // dailyPnlPct ≈ dailyPnl / (totalValue − dailyPnl), reconstructing
+          // the start-of-day value from current total minus today's delta.
+          const startOfDayValue = totalValue - pstate.dailyPnl;
+          portfolio = {
+            openCount: pstate.positions.length,
+            cashPct: totalValue > 0 ? pstate.cash / totalValue : 1,
+            hasPositionThisToken: !!pstate.positions.find((p) => p.tokenId === result.token),
+            inStopCooldown,
+            dailyPnlPct: startOfDayValue > 0 ? pstate.dailyPnl / startOfDayValue : 0,
+          };
+        }
 
         const ctx: JudgeContext = {
           tokenId: result.token,
@@ -656,7 +707,7 @@ export class TradingAgent {
           regime: result.regime?.regime,
           btcBias: result.correlation?.btcBias,
           suppressionFactor: result.correlation?.suppressionFactor,
-          portfolio: { openCount: 0, cashPct: 1, hasPositionThisToken: false, inStopCooldown: false, dailyPnlPct: 0 },
+          portfolio,
         };
 
         const judgeResult = await judge(ctx, judgeConfig);
@@ -670,6 +721,27 @@ export class TradingAgent {
           console.error(chalk.dim(`  [judge] Confirmed ${result.token} (${judgeResult.cached ? "cached" : `${judgeResult.latencyMs}ms`})`));
         }
       }
+    }
+
+    // Persist analysis to ~/.sherwood/agent/signal-history.jsonl. Runs AFTER
+    // the judge pass so judgeVerdict fields land in signal-history.jsonl.
+    // Fire-and-forget — never blocks scoring, never crashes on disk failure.
+    for (const result of results) {
+      const resolvedWeights = this.config.weights
+        ?? profileForToken(result.token, this.config.weightProfile);
+      const price = result.data.price ?? 0;
+      const judgeData: JudgeLogData | undefined = result.judgeResult
+        ? {
+            verdict: result.judgeResult.verdict,
+            // Prefer pre-veto action/score when judge vetoed; otherwise log
+            // current (post-judge) action/score — they're identical on confirm.
+            preJudgeAction: result.preJudge?.action ?? result.decision.action,
+            preJudgeScore: result.preJudge?.score ?? result.decision.score,
+            latencyMs: result.judgeResult.latencyMs,
+            cached: result.judgeResult.cached,
+          }
+        : undefined;
+      logSignal(result, price, resolvedWeights, judgeData);
     }
 
     return results;
