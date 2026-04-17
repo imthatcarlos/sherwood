@@ -55,6 +55,7 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
     bytes32 public constant PARAM_COLLAB_WINDOW = keccak256("collaborationWindow");
     bytes32 public constant PARAM_MAX_CO_PROPOSERS = keccak256("maxCoProposers");
     bytes32 public constant PARAM_PROTOCOL_FEE_BPS = keccak256("protocolFeeBps");
+    bytes32 public constant PARAM_PROTOCOL_FEE_RECIPIENT = keccak256("protocolFeeRecipient");
 
     // ── Virtual accessors (implemented by SyndicateGovernor) ──
 
@@ -242,8 +243,8 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
             params.maxCoProposers = newValue;
             emit ParameterChangeFinalized(paramKey, old, newValue);
             emit MaxCoProposersUpdated(old, newValue);
-        } else if (paramKey == PARAM_PROTOCOL_FEE_BPS) {
-            uint256 old = _applyProtocolFeeBpsChange(newValue);
+        } else if (paramKey == PARAM_PROTOCOL_FEE_BPS || paramKey == PARAM_PROTOCOL_FEE_RECIPIENT) {
+            uint256 old = _applyProtocolFeeChange(paramKey, newValue);
             emit ParameterChangeFinalized(paramKey, old, newValue);
         } else {
             revert InvalidParameterKey();
@@ -284,10 +285,12 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
             if (newValue > MAX_PROTOCOL_FEE_BPS) revert InvalidProtocolFeeBps();
             if (newValue > 0 && _getProtocolFeeRecipient() == address(0)) revert InvalidProtocolFeeRecipient();
         }
+        // PARAM_PROTOCOL_FEE_RECIPIENT: queued value is immutable, and zero is rejected at queue time.
     }
 
-    /// @dev Apply protocol fee change — implemented by SyndicateGovernor
-    function _applyProtocolFeeBpsChange(uint256 newValue) internal virtual returns (uint256 old);
+    /// @dev Apply a protocol fee parameter change (bps or recipient) — implemented by SyndicateGovernor.
+    ///      For `PARAM_PROTOCOL_FEE_RECIPIENT`, the address is carried as `uint256(uint160(addr))`.
+    function _applyProtocolFeeChange(bytes32 paramKey, uint256 newValue) internal virtual returns (uint256 old);
 
     // ── Validation helpers ──
 

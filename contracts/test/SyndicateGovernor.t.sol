@@ -904,6 +904,117 @@ contract SyndicateGovernorTest is Test {
         vm.stopPrank();
     }
 
+    // ==================== PROTOCOL FEE RECIPIENT TIMELOCK ====================
+
+    function test_setProtocolFeeRecipient_queuesChange() public {
+        address newRecipient = makeAddr("newRecipient");
+        address originalRecipient = governor.protocolFeeRecipient();
+
+        vm.prank(owner);
+        governor.setProtocolFeeRecipient(newRecipient);
+
+        // Recipient unchanged until finalize
+        assertEq(governor.protocolFeeRecipient(), originalRecipient);
+
+        // Pending change stored under PARAM_PROTOCOL_FEE_RECIPIENT, carrying address as uint160
+        bytes32 key = governor.PARAM_PROTOCOL_FEE_RECIPIENT();
+        ISyndicateGovernor.PendingChange memory pending = governor.getPendingChange(key);
+        assertTrue(pending.exists);
+        assertEq(pending.newValue, uint256(uint160(newRecipient)));
+        assertEq(pending.effectiveAt, block.timestamp + PARAM_CHANGE_DELAY);
+
+        // Finalize after delay
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        vm.prank(owner);
+        governor.finalizeParameterChange(key);
+
+        assertEq(governor.protocolFeeRecipient(), newRecipient);
+
+        // Pending cleared
+        pending = governor.getPendingChange(key);
+        assertFalse(pending.exists);
+    }
+
+    function test_setProtocolFeeRecipient_prematureFinalize_reverts() public {
+        address newRecipient = makeAddr("newRecipient");
+        vm.prank(owner);
+        governor.setProtocolFeeRecipient(newRecipient);
+
+        // Finalize before delay elapses — reverts with ChangeNotReady
+        bytes32 key = governor.PARAM_PROTOCOL_FEE_RECIPIENT();
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.ChangeNotReady.selector);
+        governor.finalizeParameterChange(key);
+    }
+
+    function test_setProtocolFeeRecipient_zeroAddress_revertsAtQueue() public {
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.InvalidProtocolFeeRecipient.selector);
+        governor.setProtocolFeeRecipient(address(0));
+    }
+
+    function test_cancelProtocolFeeRecipientChange_clearsPending() public {
+        address newRecipient = makeAddr("newRecipient");
+        address originalRecipient = governor.protocolFeeRecipient();
+
+        vm.prank(owner);
+        governor.setProtocolFeeRecipient(newRecipient);
+
+        bytes32 key = governor.PARAM_PROTOCOL_FEE_RECIPIENT();
+        ISyndicateGovernor.PendingChange memory pending = governor.getPendingChange(key);
+        assertTrue(pending.exists);
+
+        // Cancel clears pending
+        vm.prank(owner);
+        governor.cancelParameterChange(key);
+        pending = governor.getPendingChange(key);
+        assertFalse(pending.exists);
+
+        // Recipient unchanged
+        assertEq(governor.protocolFeeRecipient(), originalRecipient);
+
+        // Finalizing after delay should now revert — nothing pending
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.NoChangePending.selector);
+        governor.finalizeParameterChange(key);
+    }
+
+    function test_setProtocolFeeRecipient_notOwner_reverts() public {
+        address newRecipient = makeAddr("newRecipient");
+        vm.prank(random);
+        vm.expectRevert(); // OwnableUnauthorizedAccount
+        governor.setProtocolFeeRecipient(newRecipient);
+    }
+
+    function test_setProtocolFeeRecipient_duplicateQueue_reverts() public {
+        address newRecipient = makeAddr("newRecipient");
+        vm.startPrank(owner);
+        governor.setProtocolFeeRecipient(newRecipient);
+        // Second queue while one is pending should revert
+        vm.expectRevert(ISyndicateGovernor.ChangeAlreadyPending.selector);
+        governor.setProtocolFeeRecipient(makeAddr("another"));
+        vm.stopPrank();
+    }
+
+    function test_setProtocolFeeRecipient_worksWithNonZeroBps() public {
+        // Governor was initialized with protocolFeeBps=200, recipient=owner.
+        // Queueing a new non-zero recipient should succeed — the bps>0/recipient!=0 invariant holds.
+        assertGt(governor.protocolFeeBps(), 0);
+        address newRecipient = makeAddr("newRecipient");
+
+        vm.prank(owner);
+        governor.setProtocolFeeRecipient(newRecipient);
+
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        bytes32 key = governor.PARAM_PROTOCOL_FEE_RECIPIENT();
+        vm.prank(owner);
+        governor.finalizeParameterChange(key);
+
+        assertEq(governor.protocolFeeRecipient(), newRecipient);
+        assertEq(governor.protocolFeeBps(), 200);
+    }
+
     // ==================== RESCUE ERC721 LOCK ====================
 
     function test_rescueERC721_blockedDuringActiveProposal() public {

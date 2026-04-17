@@ -459,11 +459,12 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
     // ==================== PROTOCOL FEE SETTERS ====================
 
     /// @inheritdoc ISyndicateGovernor
+    /// @dev Timelocked. Reuses the shared pending-change storage by casting address ↔ uint256
+    ///      to avoid adding a dedicated mapping (bytecode budget). After queueing, owner must
+    ///      call `finalizeParameterChange(PARAM_PROTOCOL_FEE_RECIPIENT)` once the delay elapses.
     function setProtocolFeeRecipient(address newRecipient) external onlyOwner {
         if (newRecipient == address(0)) revert InvalidProtocolFeeRecipient();
-        address old = _protocolFeeRecipient;
-        _protocolFeeRecipient = newRecipient;
-        emit ProtocolFeeRecipientUpdated(old, newRecipient);
+        _queueChange(PARAM_PROTOCOL_FEE_RECIPIENT, uint256(uint160(newRecipient)));
     }
 
     // ==================== VIEWS ====================
@@ -561,10 +562,19 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
         return _protocolFeeRecipient;
     }
 
-    function _applyProtocolFeeBpsChange(uint256 newValue) internal override returns (uint256 old) {
-        old = _protocolFeeBps;
-        _protocolFeeBps = newValue;
-        emit ProtocolFeeBpsUpdated(old, newValue);
+    /// @dev Observers should watch `ParameterChangeFinalized(paramKey, old, new)` for both
+    ///      `PARAM_PROTOCOL_FEE_BPS` and `PARAM_PROTOCOL_FEE_RECIPIENT`. The typed events
+    ///      `ProtocolFeeBpsUpdated` and `ProtocolFeeRecipientUpdated` are no longer emitted —
+    ///      dropped to stay under the EIP-170 contract size limit.
+    function _applyProtocolFeeChange(bytes32 paramKey, uint256 newValue) internal override returns (uint256 old) {
+        if (paramKey == PARAM_PROTOCOL_FEE_BPS) {
+            old = _protocolFeeBps;
+            _protocolFeeBps = newValue;
+        } else {
+            // PARAM_PROTOCOL_FEE_RECIPIENT — newValue carries address in low 160 bits
+            old = uint256(uint160(_protocolFeeRecipient));
+            _protocolFeeRecipient = address(uint160(newValue));
+        }
     }
 
     // ==================== INTERNAL ====================
