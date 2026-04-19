@@ -97,7 +97,17 @@ struct Review {
 // stamped alongside voteEnd at propose() / approveCollaboration() time.
 mapping(uint256 proposalId => Review) private _reviews;
 mapping(uint256 => mapping(address => VoteType)) private _votes;
+mapping(uint256 => mapping(address => uint128)) private _voteStake; // stake weight snapshot per (proposal, guardian) for vote-change math
 mapping(uint256 => address[]) private _approvers; // for batch-slashing at resolution
+mapping(uint256 => address[]) private _blockers;  // for epoch-reward accounting at resolution
+
+// Epoch-based reward accounting (replaces fixed rewardPerBlockWood — see §5)
+uint256 public constant EPOCH_DURATION = 7 days; // matches Minter emissions cadence
+uint256 public epochGenesis;                     // stamped at initialize()
+mapping(uint256 epochId => uint256) public epochBudget;                    // WOOD allocated for that epoch by fundEpoch()
+mapping(uint256 epochId => uint256) public epochTotalBlockWeight;          // sum of snapshotted Block-vote stake on all blocked proposals that epoch
+mapping(uint256 => mapping(address => uint256)) public epochGuardianBlockWeight; // per-guardian cumulative Block-vote stake per epoch
+mapping(uint256 => mapping(address => bool)) public epochRewardClaimed;    // idempotent claims
 
 // Emergency settle review
 struct EmergencyReview {
@@ -120,8 +130,8 @@ uint256 public defaultReviewPeriod; // default: 24 hours (used when proposer pas
 uint256 public minReviewPeriod;   // default: 6 hours  (lower bound on per-proposal override)
 uint256 public maxReviewPeriod;   // default: 7 days   (upper bound on per-proposal override)
 uint256 public blockQuorumBps;    // default: 3000 (30% of total guardian stake)
-uint256 public rewardPerBlockWood;// default: 500 WOOD — flat bounty split pro-rata among Block voters on a blocked proposal
-uint256 public rewardPool;        // WOOD held for guardian bounties; funded by treasury via fundRewardPool(amount)
+// Note: per-epoch reward *budget* is set by the protocol each epoch via fundEpoch() — no static rate
+//       parameter. See epochBudget mapping above and §11 (Follow-up: Minter emissions integration).
 
 // Slashing: WOOD is burned (not sent to treasury) — see §5 rationale
 address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
@@ -139,7 +149,7 @@ Guardian role:
 - `requestUnstakeGuardian()` — marks `unstakeRequestedAt = block.timestamp`. Guardian immediately loses voting power (removed from `_totalGuardianStake`). Cannot re-vote until unstake is either cancelled or claimed.
 - `cancelUnstakeGuardian()` — reverses an unstake request; stake becomes voting-eligible again.
 - `claimUnstakeGuardian()` — after `coolDownPeriod` elapses, releases WOOD to guardian. Zero-stake guardians are fully deregistered.
-- `voteOnProposal(uint256 proposalId, VoteType support)` — `Approve` or `Block`. The registry reads `reviewEnd` from the governor via `ISyndicateGovernor.getProposal(proposalId)` and the proposal's `voteEnd`; vote is allowed only when `voteEnd <= now < reviewEnd`. On the first vote for a given proposalId, snapshots `_totalGuardianStake` into `Review.totalStakeAtOpen` — this fixes the quorum denominator and prevents dilution by late-joining stakers. **Guardians MAY change their vote up until `reviewEnd`.** Changing a vote subtracts the guardian's previously-recorded stake weight from the old side (Approve/Block), adds the same stake weight (snapshotted from first vote, not re-snapshotted) to the new side, and (for Approve → Block changes) removes the guardian from `_approvers[proposalId]`. Calling the function with the *same* support you already recorded reverts with `NoVoteChange`. Vote-change is essential because of the cartel attack: without it, an honest early Approver is strictly worse off than an abstainer, which kills the optimistic-Approve equilibrium the system needs.
+- `voteOnProposal(uint256 proposalId, VoteType support)` — `Approve` or `Block`. The registry reads `reviewEnd` from the governor via `ISyndicateGovernor.getProposal(proposalId)` and the proposal's `voteEnd`; vote is allowed only when `voteEnd <= now < reviewEnd`. On the first vote for a given proposalId, snapshots `_totalGuardianStake` into `Review.totalStakeAtOpen` — this fixes the quorum denominator and prevents dilution by late-joining stakers. First vote also snapshots the guardian's current `guardianStake` into `_voteStake[proposalId][msg.sender]`. **Guardians MAY change their vote up until `reviewEnd`.** Changing a vote subtracts the guardian's stake weight (from `_voteStake`) from the old side's tally and adds it to the new side; does NOT re-snapshot stake. The guardian is added to / removed from `_approvers` and `_blockers` arrays to keep them consistent. Calling the function with the *same* support you already recorded reverts with `NoVoteChange`. Vote-change is essential because of the cartel attack: without it, an honest early Approver is strictly worse off than an abstainer, which kills the optimistic-Approve equilibrium the system needs.
 
 Owner role:
 - `prepareOwnerStake(uint256 amount)` — pull WOOD into the registry under `_prepared[msg.sender]`. Does **not** yet bind to a vault. Must be ≥ `minOwnerStake` (the floor) — at prepare time we don't know which vault the stake will bind to, so we can't check the TVL-scaled bond yet. If the chosen vault's TVL-scaled bond exceeds the prepared amount at `bindOwnerStake` time, the bind reverts and the owner must top up and re-bind. One prepared stake per owner at a time.
@@ -166,16 +176,24 @@ Slashing (internal, triggered by governor):
 - `_slashOwner(address vault)` — internal; invoked from `resolveEmergencyReview` when blocked. Zeros `_ownerStakes[vault].stakedAmount` and **burns** the slashed WOOD. Vault transitions into "owner must re-stake" state.
 - **Appeal path (off-chain → on-chain):** a slashed party can petition the protocol multisig for refund. Multisig executes `refundSlash(address recipient, uint256 amount)` — **onlyOwner** on the registry, capped per-epoch — which transfers WOOD from the treasury reserve to the refund recipient. Requires governance vote record; spec in §7 and §10. No on-chain slash reversal — the burn is final; refund is a new treasury-funded transfer.
 
-Reward distribution (Block-side, V1 minimal):
-- `fundRewardPool(uint256 amount)` — **onlyOwner**. Pulls WOOD into `rewardPool`. Protocol treasury tops up this pool.
-- `claimBlockReward(uint256 proposalId)` — active guardians who voted Block on a proposal that resolved `blocked = true` can claim their pro-rata share of `rewardPerBlockWood`, weighted by their stake at vote time over `blockStakeWeight`. Idempotent per (proposalId, guardian). Reverts if `rewardPool < payout` — treasury must top up.
-- Note: no reward for correct Approve in V1. Correct-Approve rewards (the full "good guardians rewarded weekly" loop from issue #227) are deferred to V1.5 with emissions + EAS. V1 only rewards the *active-defence* action (Block) because that is the one that materially prevented an LP loss.
+Reward distribution (Block-side, epoch-based):
+- `fundEpoch(uint256 epochId, uint256 amount)` — **onlyOwner or onlyMinter**. Pulls WOOD and adds `amount` to `epochBudget[epochId]`. Can be called multiple times per epoch to top up. Can be called for past epochs (adds to the pool; guardians who hadn't claimed yet see the updated share; already-claimed guardians are not topped up — they can claim the marginal via `topUpClaim(epochId)` — or we just document that budget additions after an epoch ends require a re-distribution. V1 simplification: disallow `fundEpoch` for an epoch that already has any claims). The expected flow is one `fundEpoch` call per epoch from the Minter (deferred to V1.5 — V1 uses multisig until emissions wiring lands).
+- **How blocks accrue weight:** inside `resolveReview`, when the proposal resolves `blocked = true`, the registry iterates `_blockers[proposalId]` and for each guardian:
+  - `epochId = (proposal.reviewEnd - epochGenesis) / EPOCH_DURATION`  (the epoch the review ended in)
+  - `epochGuardianBlockWeight[epochId][guardian] += _voteStake[proposalId][guardian]`
+  - `epochTotalBlockWeight[epochId] += _voteStake[proposalId][guardian]`
+- `claimEpochReward(uint256 epochId)` — active or unstaking guardians claim their pro-rata share of `epochBudget[epochId]` after the epoch ends (`block.timestamp >= epochGenesis + (epochId + 1) * EPOCH_DURATION`). Payout = `epochBudget[epochId] * epochGuardianBlockWeight[epochId][msg.sender] / epochTotalBlockWeight[epochId]`. Idempotent per (epochId, guardian) via `epochRewardClaimed`. Reverts with `NothingToClaim` if the guardian had zero block-weight that epoch.
+- **Unclaimed budget rolls to the next epoch** via an explicit `sweepUnclaimed(uint256 epochId)` — **onlyOwner**, callable 4 weeks after the epoch ends, transfers residual `epochBudget[epochId]` into `epochBudget[currentEpoch()]`. Keeps emissions productive if some guardians never claim.
+- Note: no reward for correct Approve in V1. Correct-Approve rewards (the full "good guardians rewarded weekly" loop from issue #227) are deferred to V1.5 with EAS. V1 only rewards the *active-defence* action (Block) because that is the one that materially prevented an LP loss.
 
 Parameter setters (timelocked — reuses `GovernorParameters` timelock pattern):
-- `setMinGuardianStake`, `setMinOwnerStake`, `setOwnerStakeTvlBps`, `setCoolDownPeriod`, `setDefaultReviewPeriod`, `setMinReviewPeriod`, `setMaxReviewPeriod`, `setBlockQuorumBps`, `setRewardPerBlockWood`.
+- `setMinGuardianStake`, `setMinOwnerStake`, `setOwnerStakeTvlBps`, `setCoolDownPeriod`, `setDefaultReviewPeriod`, `setMinReviewPeriod`, `setMaxReviewPeriod`, `setBlockQuorumBps`.
+- `setMinter(address)` — owner-only, timelocked. Authorizes the Minter to call `fundEpoch` directly once emissions integration lands (V1.5).
 
 Views:
-- `guardianStake(address)`, `ownerStake(address vault)`, `totalGuardianStake()`, `isActiveGuardian(address)`, `hasOwnerStake(address vault)`, `getReview(uint256)`, `getEmergencyReview(uint256)`, `preparedStakeOf(address owner)`, `canCreateVault(address owner)`, `pendingBlockReward(address guardian, uint256 proposalId)`.
+- `guardianStake(address)`, `ownerStake(address vault)`, `totalGuardianStake()`, `isActiveGuardian(address)`, `hasOwnerStake(address vault)`, `getReview(uint256)`, `getEmergencyReview(uint256)`, `preparedStakeOf(address owner)`, `canCreateVault(address owner)`.
+- `currentEpoch() returns (uint256)` — derives from `(block.timestamp - epochGenesis) / EPOCH_DURATION`.
+- `pendingEpochReward(address guardian, uint256 epochId) returns (uint256)` — computes the guardian's claimable amount for that epoch. Returns 0 if the epoch hasn't ended, if already claimed, or if the guardian had no Block weight.
 - `requiredOwnerBond(address vault) returns (uint256)` — returns `max(minOwnerStake, IERC4626(vault).totalAssets() * ownerStakeTvlBps / 10_000)`. Used by `bindOwnerStake` and `transferOwnerStakeSlot` to gate whether a prepared stake is sufficient. With `ownerStakeTvlBps = 0` (V1 default) this returns `minOwnerStake` unconditionally — the scaling pipe is wired but inert. A multisig parameter flip activates it without a code change, with the timelock giving owners advance notice to top up before any existing vault becomes undercollateralized on the next rotate.
 
 ### 3.2 Modified: `SyndicateGovernor.sol`
@@ -219,7 +237,8 @@ Minimal changes, scoped to what the governor has to know.
 New enum value, new struct field, new errors, new events, new function signatures:
 
 - Errors: `NotInGuardianReview`, `EmergencySettleBlocked`, `EmergencySettleNotReady`, `EmergencySettleMismatch`, `RegistryNotSet`, `InvalidReviewPeriod`.
-- Events: `GuardianReviewResolved(uint256 indexed proposalId, bool blocked)`, `ReviewPeriodOverridden(uint256 indexed proposalId, address indexed proposer, uint256 requestedPeriod)` (emitted from `propose()` when `reviewPeriodOverride != 0` so guardian agents can prioritize compressed-window proposals), `EmergencySettleProposed(uint256 indexed proposalId, address indexed owner, bytes32 callsHash, uint256 reviewEnd)`, `EmergencySettleFinalized(uint256 indexed proposalId, int256 pnl)`, `GuardianRegistryUpdated(address old, address new)`.
+- Events (governor-side): `GuardianReviewResolved(uint256 indexed proposalId, bool blocked)`, `ReviewPeriodOverridden(uint256 indexed proposalId, address indexed proposer, uint256 requestedPeriod)` (emitted from `propose()` when `reviewPeriodOverride != 0` so guardian agents can prioritize compressed-window proposals), `EmergencySettleProposed(uint256 indexed proposalId, address indexed owner, bytes32 callsHash, uint256 reviewEnd)`, `EmergencySettleFinalized(uint256 indexed proposalId, int256 pnl)`, `GuardianRegistryUpdated(address old, address new)`.
+- Events (registry-side): `EpochFunded(uint256 indexed epochId, address indexed funder, uint256 amount)`, `EpochRewardClaimed(uint256 indexed epochId, address indexed guardian, uint256 amount)`, `EpochUnclaimedSwept(uint256 indexed fromEpoch, uint256 indexed toEpoch, uint256 amount)`, `ApproverCapReached(uint256 indexed proposalId)`, `BlockerCapReached(uint256 indexed proposalId)`.
 - Function changes: drop `emergencySettle`; add `unstick`, `emergencySettleWithCalls`, `finalizeEmergencySettle`. `propose()` now takes a trailing `uint256 reviewPeriodOverride` argument.
 
 ## 4. Data flow — key scenarios
@@ -260,14 +279,15 @@ New enum value, new struct field, new errors, new events, new function signature
 | `minReviewPeriod` | 6 hours | 1h–defaultReviewPeriod | Floor on per-proposal override. 6h gives time-sensitive strategies (funding-rate, oracle-reactive) a fast path while still allowing guardian agents a single cron cycle to react. |
 | `maxReviewPeriod` | 7 days | defaultReviewPeriod–30 days | Ceiling on per-proposal override. |
 | `blockQuorumBps` | 3000 (30%) | 1000–10000 | Below 50% so a motivated guardian minority can stop clearly malicious proposals; high enough that random dissent doesn't grief. |
-| `rewardPerBlockWood` | 500 WOOD | — | Flat bounty, split pro-rata among Block voters on a resolved-as-blocked proposal. Small but non-zero — enough to cover gas and create a weak positive expectancy, without needing a full emissions schedule. |
+| `EPOCH_DURATION` | 7 days | — (constant) | Matches the Minter emissions epoch so guardian rewards can be wired into the same weekly cycle once V1.5 lands. |
+| Per-epoch reward budget | **set per-epoch** | — | No static rate parameter. The protocol calls `fundEpoch(epochId, amount)` each epoch with whatever WOOD it chooses to allocate (initially via multisig; later via Minter emissions). Guardians split the epoch's pool pro-rata by their Block-vote stake weight on proposals that resolved blocked during that epoch. |
 | **Slash destination** | **BURN** (`0x…dEaD`) | — | Chosen over treasury per business review: cleaner regulatory posture (slash is not protocol-controlled revenue), aligns with WOOD scarcity narrative, removes any treasury-capture incentive to over-slash. Wrongful slashes are made whole via the appeal path (see §7), funded from a separate treasury reserve, not from burned tokens. |
 
 All parameters are timelocked using the same queue/finalize pattern as `GovernorParameters.sol`, with `MIN_PARAM_CHANGE_DELAY = 6 hours` and `MAX_PARAM_CHANGE_DELAY = 7 days`.
 
 ## 6. Security notes
 
-- **Gas-bounded slashing:** `_slashApprovers` iterates `_approvers[proposalId]`. Bounded by an invariant cap `MAX_APPROVERS_PER_PROPOSAL = 100`. Guardians attempting to Approve after the cap is hit revert (but can still Block). This prevents griefing via thousands of dust-stakers joining to brick slash resolution.
+- **Gas-bounded iteration:** `_slashApprovers` iterates `_approvers[proposalId]`; the blocked-resolution epoch-weight attribution iterates `_blockers[proposalId]`. Both are bounded by invariant caps `MAX_APPROVERS_PER_PROPOSAL = 100` and `MAX_BLOCKERS_PER_PROPOSAL = 100`. Guardians attempting to join a full side revert; they can still join the other side or wait for a subsequent proposal. This prevents griefing via thousands of dust-stakers joining to brick slash-resolution or epoch-reward resolution.
 - **Stake snapshot vs. current:** guardian vote weight = `stakedAmount` at vote time (snapshotted into `_votes`). If a guardian tops up after voting, the extra doesn't count. Prevents sandwich-style weight manipulation.
 - **Unstake griefing:** requesting unstake immediately removes voting weight, but the guardian's past votes already count toward their proposal reviews. Slashing still applies during cool-down (stake is held in contract, just earmarked for release). This is critical — otherwise a guardian could Approve a malicious proposal and immediately unstake to dodge slashing.
 - **Owner re-stake after slash:** a slashed owner can restake and resume governance powers, but past slashing events are recorded and queryable. Off-chain reputation is out-of-scope for V1.
@@ -415,7 +435,8 @@ Even the optimistic case blows the 53-byte margin. This must be mitigated before
 
 ## 12. Follow-up specs (explicitly out of scope)
 
-- **Correct-Approve rewards + weekly cron** — Minter emissions allocated to guardians whose Approve votes matched the subsequent execution outcome (proposal executed successfully without emergency actions). Requires EAS schema for attestations. (V1 already ships the **Block**-side reward via `rewardPerBlockWood` from treasury — see §3.1. What's deferred is the Minter-emissions funding source and the correct-Approve reward loop.)
+- **Minter emissions → `fundEpoch`** — wire the existing Minter to call `GuardianRegistry.fundEpoch(currentEpoch, allocation)` each epoch, alongside the gauge emissions call. Requires a new "guardian emissions" slice in the Minter's allocation breakdown (proposed via tokenomics governance). V1 uses multisig-funded `fundEpoch`; V1.5 flips to Minter-funded.
+- **Correct-Approve rewards** — extends the epoch reward pool to also include Approvers whose votes matched the subsequent execution outcome (proposal executed successfully without emergency actions). Requires EAS schema for attestations (below). The Block-side reward (§3.1) is already live in V1; what's deferred is the Approve-side and the attestation scheme feeding it.
 - **EAS attestation schema** — `GUARDIAN_REVIEW_VOTE` schema capturing (proposalId, guardian, support, reasoning hash). Feeds reward computation.
 - **LLM knowledge base** — compiled good/bad attestations + reasoning → off-chain dataset for Hermes guardian skill training.
 - **Shareholder challenge (Option C)** — post-settlement jury-style adjudication for malicious proposals that slipped past guardians.
@@ -458,7 +479,26 @@ Applied from Carlos's review in response to blockers:
 - **§15.2 (Slash Appeal Reserve sizing) — owned by tokenomics governance**, not this spec.
 - **§15.4 (owner dual-use as guardian on other vaults) — deferred to V1.5.** Confirmed.
 
-## 16. Open questions (remaining)
+## 16. Changelog — reward model switched to epoch-based (2026-04-19)
+
+Replaces flat `rewardPerBlockWood` param with per-epoch distribution:
+
+- **Removed:** `rewardPerBlockWood`, `rewardPool`, `fundRewardPool`, `claimBlockReward`, `pendingBlockReward`.
+- **Added:** `EPOCH_DURATION = 7 days` constant, `epochGenesis`, `epochBudget[epochId]`, `epochGuardianBlockWeight[epochId][guardian]`, `epochTotalBlockWeight[epochId]`, `epochRewardClaimed[epochId][guardian]`.
+- **Added functions:** `fundEpoch(epochId, amount)`, `claimEpochReward(epochId)`, `sweepUnclaimed(epochId)` (4-week idle → next epoch), `pendingEpochReward`, `currentEpoch`, `setMinter`.
+- **Added arrays:** `_blockers[proposalId]` (parallel to `_approvers`), with `MAX_BLOCKERS_PER_PROPOSAL = 100` cap.
+- **Added storage:** `_voteStake[proposalId][guardian]` — explicit first-vote snapshot, used for vote-change accounting (was implicit before).
+- **Attribution:** on `resolveReview` when `blocked = true`, registry iterates `_blockers`, credits each blocker's `_voteStake` to `epochGuardianBlockWeight[epochId][guardian]` and `epochTotalBlockWeight[epochId]`, where `epochId = (proposal.reviewEnd - epochGenesis) / EPOCH_DURATION`.
+- **Economic model:** per-epoch pool, pro-rata distribution by Block stake on blocked proposals. Protocol funds each epoch with any amount it chooses (multisig in V1, Minter emissions in V1.5). No static rate parameter — "how much to distribute" is a policy decision made fresh each epoch.
+
+Why this shape:
+
+1. Matches existing WOOD/Minter 7-day epoch cadence — enables direct emissions integration in V1.5 with zero schema change.
+2. Decouples reward amount from a timelocked parameter setter; protocol doesn't need to predict a good per-block number.
+3. Self-regulating: epochs with many blocks → smaller per-block share (avoids over-rewarding during attack spikes). Epochs with no blocks → budget rolls forward to the next epoch via `sweepUnclaimed`.
+4. `fundEpoch(pastEpochId, amount)` is disallowed once any claim on that epoch has been processed — keeps accounting deterministic.
+
+## 17. Open questions (remaining)
 
 1. **Slash Appeal Reserve sizing** — opening allocation and per-epoch refund cap. Owned by tokenomics governance (WOOD emissions + treasury allocation), not this spec. Will be resolved by a separate governance vote before mainnet launch.
 
