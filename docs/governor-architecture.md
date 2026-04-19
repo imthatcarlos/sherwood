@@ -1,10 +1,12 @@
 # SyndicateGovernor — Architecture
 
+> **Known drift:** parts of this doc (`capitalRequired`, `splitIndex`, single `calls[]` array, missing `GuardianReview` state) predate several shipped refactors. The authority order from `CLAUDE.md` applies: `contracts/src/` is canonical; treat anything that conflicts with the current Solidity or the spec at `docs/superpowers/specs/2026-04-19-guardian-review-lifecycle-design.md` (PR #229) as out-of-date. This doc will get a full pass once PR #229 lands.
+
 ## Overview
 
-A governance system where agents propose strategies, vault shareholders vote, and approved agents execute within mandated parameters — earning performance fees on profits.
+A governance system where agents propose strategies, vault shareholders vote, approved agents pass a staked-guardian review, and then execute within mandated parameters — earning performance fees on profits.
 
-**One-liner:** Agents pitch trade plans. Shareholders vote. Winners execute and earn carry.
+**One-liner:** Agents pitch trade plans. Shareholders vote. Guardians review calldata. Winners execute and earn carry.
 
 **Multi-vault:** A single governor manages multiple vaults. Proposals target a specific vault. Only shareholders of that vault vote on its proposals.
 
@@ -19,26 +21,44 @@ A governance system where agents propose strategies, vault shareholders vote, an
     the borrowed USDC into Uniswap WETH/USDC LP. Expected APY: 12%.
     My performance fee: 15% of profits."
 
-2. Shareholders vote YES/NO (weighted by vault shares)
+2. Shareholders vote FOR/AGAINST/ABSTAIN (weighted by vault shares).
+   Optimistic: proposal passes by default unless AGAINST votes hit vetoThresholdBps.
 
-3. If quorum + majority → Approved
+3. Once voteEnd elapses and no veto quorum → proposal enters GuardianReview (new, PR #229)
+   - Permissionless openReview(id) snapshots guardian-stake denominator
+   - Staked guardians (independent third parties) review calldata for 24h
+   - If a Block quorum (≥30% of total guardian stake) lands → proposal Rejected,
+     early Approvers slashed (WOOD burned). Cohort-too-small cold-start → fallback
+     to owner-veto semantics.
+   - If no block quorum at reviewEnd → Approved
 
 4. Agent executes within the mandate
-   - Can only use up to the approved capital
-   - Can only call the approved target contracts
-   - Must execute within the execution window
+   - Can only use the pre-committed executeCalls (no runtime calldata edits)
+   - Must execute within the execution window (measured from reviewEnd)
 
 5. On settlement (anyone can call once strategy duration ends)
-   - Vault runs pre-committed unwind calls
-   - Profit = (position value at close) - (capital used)
-   - Performance fee paid to agent
+   - Vault runs pre-committed settlementCalls
+   - Profit = (position value at close) - (capital at open)
+   - Protocol fee → agent performance fee → management fee waterfall
    - Remaining profit accrues to vault (all shareholders)
-   - PnL attestation minted on-chain (EAS)
 
 6. Cooldown window begins
    - Redemptions re-enabled — depositors can withdraw
    - No new strategy can execute until cooldown expires
 ```
+
+### Owner-side emergency paths (PR #229 redesign)
+
+Before: a single `emergencySettle(proposalId, calls)` let the vault owner execute arbitrary calldata after strategy duration. This was an unbounded trusted-root.
+
+After PR #229, split into three functions with explicit intent:
+
+- **`unstick(proposalId)`** — owner-instant, runs only the pre-committed `settlementCalls`. No new calldata; no guardian review. Use when the committed unwind is correct but the proposer is unresponsive.
+- **`emergencySettleWithCalls(proposalId, calls)`** — owner commits new calldata and opens a guardian-reviewed window. Requires `ownerStake(vault) >= requiredOwnerBond(vault)` at call time (re-check blocks stake-at-TVL=0-drain-at-scale). Does not execute yet.
+- **`cancelEmergencySettle(proposalId)`** — owner self-recall before `reviewEnd`. No slash, no gas refund.
+- **`finalizeEmergencySettle(proposalId, calls)`** — after review. If guardians blocked: owner slashed. If not: calls execute.
+
+The `vetoProposal` and `emergencyCancel` functions remain but are narrowed to `Pending` / `Draft` states where no funds are at risk.
 
 ---
 

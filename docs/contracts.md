@@ -6,16 +6,24 @@ Solidity smart contracts for Sherwood, built with Foundry and OpenZeppelin (UUPS
 
 ```
                    ┌──────────────┐
-                   │   Factory    │ ── deploys vault proxies, registers ENS subnames
+   owner stake ──► │   Factory    │ ── deploys vault proxies, registers ENS subnames
                    └──────┬───────┘
-                          │
-              ┌───────────▼───────────┐
-              │    SyndicateVault     │ ── ERC-4626, holds all DeFi positions
-              │  (ERC1967 Proxy)      │
-              │                       │
-              │  delegatecall ───────►│── BatchExecutorLib (stateless)
-              │                       │     target.call(data)
-              └───────────────────────┘
+                          │                    ┌────────────────────────┐
+              ┌───────────▼───────────┐        │   GuardianRegistry     │
+              │    SyndicateVault     │        │   (PR #229 — designed) │
+              │  (ERC1967 Proxy)      │◄───────┤  stakes, reviews,      │
+              │                       │        │  slashing, epoch       │
+              │  delegatecall ───────►│        │  rewards               │
+              │                       │        └────────┬───────────────┘
+              └───────────────────────┘                 │ (registry hooks)
+                          ▲                             ▼
+                          │                  ┌────────────────────────┐
+                          └──────────────────┤   SyndicateGovernor    │
+                                             │   proposals, review,   │
+                                             │   execution, settle    │
+                                             └────────────────────────┘
+
+             BatchExecutorLib (stateless) — delegatecalled from vault
 ```
 
 The vault is the identity — all DeFi positions (Moonwell supply/borrow, Uniswap swaps, Venice staking) live on the vault address. Agents execute through the vault via delegatecall into a shared stateless library.
@@ -62,6 +70,21 @@ Shared stateless library. Vault delegatecalls into it to execute batches of prot
 ### StrategyRegistry
 
 Onchain registry of strategy implementations. Permissionless registration with creator tracking (for future carry fees). UUPS upgradeable.
+
+### GuardianRegistry _(designed in PR #229, not yet implemented)_
+
+UUPS upgradeable contract that adds a staked, slashable third-party review layer between proposal approval and execution. Single contract handling four concerns:
+
+1. **Guardian staking** — agents stake WOOD (≥ `minGuardianStake`, default 10k) to join the review cohort. 7-day cool-down on unstake. Vote weight = stake snapshotted at first vote per proposal.
+2. **Owner staking** — vault owners post a WOOD bond at vault creation via `SyndicateFactory.createSyndicate` → `prepareOwnerStake` → `bindOwnerStake`. Bond is slashable via guardian block-quorum on `emergencySettleWithCalls`. `requiredOwnerBond(vault) = max(minOwnerStake, totalAssets * ownerStakeTvlBps / 10_000)`, re-checked at emergency-settle call time.
+3. **Review vote accounting** — permissionless `openReview(id)` at `voteEnd` snapshots the quorum denominator. Guardians vote Approve / Block; block quorum (default 30% of total stake) → proposal `Rejected`, approvers slashed. WOOD is **burned** (not sent to treasury).
+4. **Epoch rewards** — per-epoch (7-day) pool funded by protocol via `fundEpoch(epochId, amount)`; Block voters on blocked proposals split the epoch pool pro-rata by stake weight.
+
+Also holds: `pause()` / `unpause()` (7-day deadman), pull-based burn fallback (`_pendingBurn` / `flushBurn` if the ERC-20 transfer reverts), and the `slashAppealReserve` (separate internal balance; `refundSlash` capped at 20% per epoch for wrongful slashes upheld by governance).
+
+**Trust assumptions:** WOOD is non-hook / non-fee / non-rebasing. `governor` and `factory` pointers on the registry are stamped at `initialize()` and never reassigned.
+
+Full spec: `docs/superpowers/specs/2026-04-19-guardian-review-lifecycle-design.md`.
 
 ## Deployed Addresses
 

@@ -81,21 +81,33 @@ Key sections: [Learn](https://docs.sherwood.sh/learn/quickstart) | [Protocol](ht
 ### Architecture
 
 - **SyndicateVault** — ERC-4626 vault with ERC20Votes for governance. Standard `redeem()`/`withdraw()` for LP exits (no custom ragequit). `_decimalsOffset()` = `asset.decimals()` for first-depositor inflation protection (shares have 12 decimals for USDC). Deposits and `rescueERC20` are blocked during active proposals (`redemptionsLocked()`).
-- **SyndicateGovernor** — Proposal lifecycle, optimistic voting, execution, settlement, collaborative proposals. Inherits `GovernorParameters` (abstract) for all parameter setters, validation, and timelock logic.
-- **GovernorParameters** — Abstract contract with constants, bounds, 10 parameter setters (all timelock-gated: queue → delay → finalize), and validation helpers. Extracted to reduce governor bytecode.
-- **SyndicateFactory** — UUPS upgradeable factory. Deploys vault + registers it with the governor. Creation fee, vault upgrades, paginated queries. Owner-configurable: `setVaultImpl`, `setGovernor`, `setCreationFee`, `setManagementFeeBps`, `setUpgradesEnabled`.
+- **SyndicateGovernor** — Proposal lifecycle, optimistic voting, execution, settlement, collaborative proposals. Inherits `GovernorParameters` (abstract) for parameter setters/timelock and (once PR #229 lands) `GovernorEmergency` (abstract) for `unstick` / `emergencySettleWithCalls` / `finalizeEmergencySettle` — the latter extraction is required to fit the guardian-review changes under the 24,576-byte limit (see PR #229 §11).
+- **GovernorParameters** — Abstract contract with constants, bounds, parameter setters (all timelock-gated: queue → delay → finalize), and validation helpers. Extracted to reduce governor bytecode.
+- **GuardianRegistry** _(designed in PR #229, not yet implemented)_ — UUPS upgradeable single contract for guardian staking + owner staking + review vote accounting + slashing + epoch-based Block rewards. Lives alongside the governor; governor calls privileged hooks. Replaces the implicit "governor.emergencySettle → owner-instant arbitrary calldata" escape hatch with a guardian-reviewed `emergencySettleWithCalls` path. See `docs/superpowers/specs/2026-04-19-guardian-review-lifecycle-design.md`.
+- **SyndicateFactory** — UUPS upgradeable factory. Deploys vault + registers it with the governor. Creation fee, vault upgrades, paginated queries. Owner-configurable: `setVaultImpl`, `setGovernor`, `setCreationFee`, `setManagementFeeBps`, `setUpgradesEnabled`. Once PR #229 lands: `guardianRegistry` becomes **immutable** post-init, `createSyndicate` requires the creator to have called `prepareOwnerStake` first, and `rotateOwner(vault, newOwner)` provides a timelocked recovery path for dead vaults.
 - **BatchExecutorLib** — Stateless 63-line contract for `delegatecall`-based batch execution. Note: the "delegatecall to BatchExecutorLib only" invariant is **not enforced in code** — `_executorImpl` is set at init with no codehash check (issue #226 §2.4). Treat as a trust assumption until fixed.
 - **Strategy Templates** — `BaseStrategy` (abstract) + `MoonwellSupplyStrategy` + `AerodromeLPStrategy`. ERC-1167 clonable. Vault calls `execute()`/`settle()` via batch.
 
 ### Governor Key Concepts
 
-- **Optimistic governance** — Proposals pass by default after voting period ends. Only rejected if AGAINST votes reach `vetoThresholdBps`. Vault owner can also `vetoProposal()` to reject Pending/Approved proposals.
+- **Optimistic governance** — Proposals pass by default after voting period ends. Only rejected if AGAINST votes reach `vetoThresholdBps`. Vault owner can also `vetoProposal()` to reject Pending/Approved proposals. **After PR #229 lands:** `vetoProposal` narrowed to `Pending` only; once the proposal enters `GuardianReview`, the only way to block is a guardian block-quorum.
 - **VoteType enum** — `For`, `Against`, `Abstain` (replaces boolean vote).
 - **Separate `executeCalls` / `settlementCalls`** — Proposals store opening and closing calls in two distinct arrays. No `splitIndex`.
 - **Parameter timelock** — All governance parameter changes are queued with a configurable delay (6h–7d). Owner calls the setter (queues), waits, then calls `finalizeParameterChange(paramKey)`. Parameters are re-validated at finalize time. Owner can `cancelParameterChange(paramKey)` at any time.
 - **Protocol fee** — `protocolFeeBps` + `protocolFeeRecipient` taken from gross profit before agent and management fees. Timelocked. Max 10%. Setting nonzero `protocolFeeBps` requires `protocolFeeRecipient` to be set first.
-- **Two settlement paths**: (1) `settleProposal` — proposer can call anytime, anyone else after strategy duration; (2) `emergencySettle` — vault owner after duration, tries pre-committed calls first then falls back to custom calls.
+- **Two settlement paths** (current): (1) `settleProposal` — proposer can call anytime, anyone else after strategy duration; (2) `emergencySettle` — vault owner after duration, tries pre-committed calls first then falls back to custom calls. **After PR #229 lands:** `emergencySettle` is split into three functions — `unstick()` (owner-instant, pre-committed calls only, no new calldata), `emergencySettleWithCalls(calls)` (opens a guardian-reviewed window), and `finalizeEmergencySettle(calls)` (executes after review if not blocked, slashes owner if blocked).
 - **Vault reads governor from factory** — no `setGovernor` on vault, no lock/unlock storage. `redemptionsLocked()` checks `governor.getActiveProposal()` directly.
+
+### Guardian Review Lifecycle (designed in PR #229, not yet implemented)
+
+- **New proposal state:** `GuardianReview` inserted between `Pending` and `Approved`. Lifecycle: `Draft → Pending → GuardianReview → Approved → Executed → Settled`.
+- **Staked guardians** review calldata during the review window (default 24h). Block quorum (30% of total guardian stake, default) → proposal `Rejected`, approvers slashed (WOOD **burned**, not sent to treasury).
+- **Owner stake** required at vault creation (`minOwnerStake`, default 10k WOOD). `emergencySettleWithCalls` re-checks the bond at call time using `requiredOwnerBond(vault) = max(floor, TVL * ownerStakeTvlBps / 10_000)` so owners can't stake at TVL=0 and drain at scale.
+- **Epoch-based Block rewards** — protocol funds `epochBudget` each 7-day epoch via `GuardianRegistry.fundEpoch`. Guardians who voted Block on blocked proposals claim pro-rata.
+- **Cold-start fallback** — reviews opened with `totalStakeAtOpen < MIN_COHORT_STAKE_AT_OPEN` (50k WOOD) return `blocked=false` unconditionally; owner veto remains active defence during bootstrap.
+- **Appeal path** — slashed parties petition multisig; `refundSlash` draws from a separate Slash Appeal Reserve, capped at 20% of reserve per epoch.
+- **Bootstrap commitment** — protocol multisig runs a guardian-of-last-resort during weeks 1–12.
+- Full spec: `docs/superpowers/specs/2026-04-19-guardian-review-lifecycle-design.md` (PR #229).
 
 ## CLI
 
@@ -232,3 +244,14 @@ These appear in `mintlify-docs/` or earlier CLAUDE.md text but are **not live in
 - WOOD/shares Uniswap V3 "early exit" pool
 - Automated price/lock-ratio circuit-breaker triggers in `Minter` (manual-only today)
 - `expireCollaboration(proposalId)` function referenced in docs (doesn't exist; lazy resolution only)
+
+## Designed, not yet implemented (PR #229)
+
+Listed here so the distinction between "vapor" and "spec'd and under review" is explicit:
+- **GuardianRegistry.sol** — staking, review votes, slashing, epoch rewards, appeal reserve. Single UUPS contract.
+- **GuardianReview lifecycle state** in `SyndicateGovernor` between `Pending` and `Approved`.
+- **`GovernorEmergency.sol` abstract** — extracted for bytecode headroom, holds `unstick` / `emergencySettleWithCalls` / `cancelEmergencySettle` / `finalizeEmergencySettle`.
+- **Owner stake at vault creation** (`minOwnerStake` + TVL scaling pipe, scaling disabled by default).
+- **Factory `rotateOwner(vault, newOwner)`** dead-vault recovery path.
+- **Pause + deadman auto-unpause** on the registry.
+- **Slash Appeal Reserve** funded by treasury; `refundSlash` capped at 20%/epoch.
