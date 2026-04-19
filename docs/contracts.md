@@ -119,7 +119,7 @@ Full spec: `docs/superpowers/specs/2026-04-19-guardian-review-lifecycle-design.m
 
 ## Testing
 
-66 tests across 2 test suites.
+Tests live in `contracts/test/`. Count drifts with the codebase — check `forge test --list` for the current total.
 
 ```bash
 cd contracts

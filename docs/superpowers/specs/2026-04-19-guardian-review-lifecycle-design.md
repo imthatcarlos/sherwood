@@ -85,21 +85,26 @@ struct PreparedOwnerStake {
 }
 mapping(address owner => PreparedOwnerStake) private _prepared;
 
+// Guardian voting uses a SEPARATE enum from ISyndicateGovernor.VoteType (which is {For, Against, Abstain}).
+// Keeping these distinct prevents enum-variant confusion at the ABI boundary between governor and registry.
+enum GuardianVoteType { None, Approve, Block }
+
 // Proposal review state (created by permissionless openReview() at voteEnd)
 struct Review {
     bool opened;                // set true by openReview()
     bool resolved;              // set true by resolveReview()
     bool blocked;               // set true inside resolveReview() if block quorum
+    bool cohortTooSmall;        // set true at openReview() if totalStakeAtOpen < MIN_COHORT_STAKE_AT_OPEN
     uint128 totalStakeAtOpen;   // _totalGuardianStake snapshot at openReview() call
     uint128 approveStakeWeight;
     uint128 blockStakeWeight;
 }
 // reviewEnd is NOT stored here — it lives on StrategyProposal.reviewEnd (governor).
 mapping(uint256 proposalId => Review) private _reviews;
-mapping(uint256 => mapping(address => VoteType)) private _votes;
+mapping(uint256 => mapping(address => GuardianVoteType)) private _votes;
 mapping(uint256 => mapping(address => uint128)) private _voteStake; // weight at vote time; used for tally math + epoch attribution
 mapping(uint256 => address[]) private _approvers;  // for batch-slashing — CAPPED at MAX_APPROVERS_PER_PROPOSAL
-mapping(uint256 => address[]) private _blockers;   // for epoch-reward accounting — UNCAPPED (only approvers get burned, so blocker iteration is bounded by total guardian count)
+mapping(uint256 => address[]) private _blockers;   // for epoch-reward accounting — UNCAPPED (see §6 "Gas-bounded iteration — asymmetric by design" for why capping this would be a DoS vector)
 // Slashing burn is pull-based as a fallback — see _slashApprovers for CEI reasoning
 mapping(address => uint256) private _pendingBurn;  // WOOD that couldn't be burned in a loop iteration; anyone can call flushBurn(guardian)
 
@@ -150,11 +155,12 @@ mapping(uint256 epochId => uint256) public refundedInEpoch;  // enforces MAX_REF
 // Slashing: WOOD is burned (not sent to treasury) — see §5 rationale
 address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
-// Privileged addresses (both settable only at init; see "Trust assumptions" section)
-address public governor;          // immutable after initialize() — see §3.1.Trust
-address public factory;           // immutable after initialize() — see §3.1.Trust
+// Privileged addresses. UUPS-proxied storage, so no Solidity `immutable` keyword — instead
+// these are set once in initialize() and NEVER reassigned (no setters exist). See Trust Assumptions.
+address public governor;          // set-once at initialize(); no setter — see §3.1.Trust
+address public factory;           // set-once at initialize(); no setter — see §3.1.Trust
 address public minter;            // settable by owner (timelocked); authorizes fundEpoch() calls from the Minter
-IERC20 public immutable wood;     // WOOD token — see Trust Assumptions §3.1.Trust
+IERC20 public wood;               // WOOD token, set-once at initialize(); no setter — see §3.1.Trust
 ```
 
 **Public / external functions:**
@@ -165,7 +171,7 @@ Guardian role:
 - `cancelUnstakeGuardian()` — reverses an unstake request; stake becomes voting-eligible again.
 - `claimUnstakeGuardian()` — after `coolDownPeriod` elapses, releases WOOD to guardian. Zero-stake guardians are fully deregistered.
 - `openReview(uint256 proposalId)` — **permissionless**. Callable once `block.timestamp >= proposal.voteEnd`. Snapshots `_totalGuardianStake` into `Review.totalStakeAtOpen` and marks `opened = true`. Subsequent calls are no-ops (idempotent). This is the **cold-start gate**: if `totalStakeAtOpen < MIN_COHORT_STAKE_AT_OPEN`, the review is treated as inactive-cohort — `resolveReview` returns `blocked = false` unconditionally and emits `CohortTooSmallToReview(proposalId, totalStakeAtOpen)`. Under cold-start conditions the owner's `vetoProposal` remains the only real defence. Moving the snapshot from first-vote to `openReview()` closes the denominator-manipulation attack where a cartel could freeze a high denominator then unstake honest supply. `openReview` can be called defensively by the governor at state-resolution time, by honest guardians before voting, or by anyone running a keeper.
-- `voteOnProposal(uint256 proposalId, VoteType support)` — `Approve` or `Block`. Requires `Review.opened == true` (otherwise the voter calls `openReview` first). Vote is allowed only when `voteEnd <= now < reviewEnd`. Snapshots the guardian's current `guardianStake` into `_voteStake[proposalId][msg.sender]` on first vote for the proposal. **Guardians MAY change their vote, but only up until `reviewEnd - (reviewPeriod * LATE_VOTE_LOCKOUT_BPS / 10_000)`** — i.e. the last 10% of the window is locked. Changing in an earlier window subtracts the guardian's `_voteStake` from the old side's tally and adds it to the new side; does NOT re-snapshot stake (prevents up-stake then late-switch gaming). Vote-change updates `_approvers` / `_blockers` array membership; both arrays use index mappings for O(1) removal. Calling with the same support you already recorded reverts with `NoVoteChange`; calling during the lockout window reverts with `VoteChangeLockedOut`. Approves are capped at `MAX_APPROVERS_PER_PROPOSAL` (emits `ApproverCapReached`); Blocks are uncapped. Honest vote-change in the early window is essential to prevent the cartel-slashing equilibrium (honest early Approver is strictly worse off than abstainer without it).
+- `voteOnProposal(uint256 proposalId, GuardianVoteType support)` — `Approve` or `Block` (distinct enum from governor's `VoteType` — see storage section). Requires `Review.opened == true` (otherwise the voter calls `openReview` first). Vote is allowed only when `voteEnd <= now < reviewEnd`. Snapshots the guardian's current `guardianStake` into `_voteStake[proposalId][msg.sender]` on first vote for the proposal. **Guardians MAY change their vote, but only up until `reviewEnd - (reviewPeriod * LATE_VOTE_LOCKOUT_BPS / 10_000)`** — i.e. the last 10% of the window is locked. Changing in an earlier window subtracts the guardian's `_voteStake` from the old side's tally and adds it to the new side; does NOT re-snapshot stake (prevents up-stake then late-switch gaming). Vote-change updates `_approvers` / `_blockers` array membership; both arrays use index mappings for O(1) removal. Calling with the same support you already recorded reverts with `NoVoteChange`; calling during the lockout window reverts with `VoteChangeLockedOut`; switching from Block → Approve reverts with `NewSideFull` if Approve cap is already reached. Approves are capped at `MAX_APPROVERS_PER_PROPOSAL` (emits `ApproverCapReached`); Blocks are uncapped. Honest vote-change in the early window is essential to prevent the cartel-slashing equilibrium (honest early Approver is strictly worse off than abstainer without it).
 
 Owner role:
 - `prepareOwnerStake(uint256 amount)` — pull WOOD into the registry under `_prepared[msg.sender]`. Does **not** yet bind to a vault. Must be ≥ `minOwnerStake` (the floor) — at prepare time we don't know which vault the stake will bind to, so we can't check the TVL-scaled bond yet. If the chosen vault's TVL-scaled bond exceeds the prepared amount at `bindOwnerStake` time, the bind reverts and the owner must top up and re-bind. One prepared stake per owner at a time.
@@ -245,7 +251,7 @@ Minimal changes, scoped to what the governor has to know.
 - **Storage:** add `address private _guardianRegistry`. Governor storage layout is fresh — no `__gap` gymnastics needed.
 - **Initializer:** accept `guardianRegistry` address.
 - **`propose()` signature:** unchanged from today (no `reviewPeriodOverride`). Single global `reviewPeriod` from the registry applies to every proposal. If specific strategies later demand shorter windows, that belongs in V1.5 alongside stake-at-risk controls for the proposer — not as a free knob in V1.
-- **`propose()` body:** after computing `voteEnd` (non-collaborative) or when collaborative consent completes in **`approveCollaboration()`**, stamp `reviewEnd = voteEnd + registry.reviewPeriod()` and shift `executeBy = reviewEnd + executionWindow` (execution window is measured from the *end of guardian review*, not the end of voting). This keeps the full lifecycle deterministic from creation — no mid-flight parameter drift and no registry call needed at Pending → GuardianReview transition.
+- **`propose()` body:** after computing `voteEnd` (non-collaborative) or when collaborative consent completes in **`approveCollaboration()`** (the existing entrypoint where the final co-proposer's approval stamps `voteEnd` for collaborative proposals — see `SyndicateGovernor.sol:378`), stamp `reviewEnd = voteEnd + registry.reviewPeriod()` and shift `executeBy = reviewEnd + executionWindow` (execution window is measured from the *end of guardian review*, not the end of voting). This keeps the full lifecycle deterministic from creation — no mid-flight parameter drift and no registry call needed at Pending → GuardianReview transition.
 - **`_resolveStateView` (view, non-mutating):** when `stored == Pending` and voting ended with no veto quorum:
   - If `block.timestamp <= proposal.reviewEnd`: return `GuardianReview`.
   - Else: **still return `GuardianReview`** until `_resolveState` (mutating path) runs `registry.resolveReview`. Read `registry.getReview(proposalId).resolved` — if `true`, return `Rejected` or `Approved` based on `blocked`. If `false`, return `GuardianReview` (resolution pending; the caller must run a mutating function to force resolution).
@@ -268,9 +274,9 @@ Minimal changes, scoped to what the governor has to know.
 
 ### 3.3 Modified: `SyndicateFactory.sol`
 
-- Store `address public immutable guardianRegistry` — **stamped at factory initialize() and never reassigned**. Matches the registry-side trust assumption (§3.1.Trust #2) that governor-registry and factory-registry cannot diverge. Any rewiring requires a full factory redeploy. The previously-proposed `setGuardianRegistry` timelocked setter is removed.
+- Store `address public guardianRegistry` — **set-once at factory `initialize()` and NEVER reassigned (no setter exists)**. UUPS proxies can't use Solidity's `immutable` keyword for initializer-set state, so the invariant is enforced by absence of a write path rather than by the compiler. Matches the registry-side trust assumption (§3.1.Trust #2) that governor-registry and factory-registry cannot diverge. Any rewiring requires a full factory redeploy (UUPS upgrade with new implementation + `initialize` cannot overwrite already-set storage). The previously-proposed `setGuardianRegistry` timelocked setter is removed.
 - In `createSyndicate`: before deploying the vault, call `guardianRegistry.canCreateVault(msg.sender)` (reverts if no prepared stake). After vault address is known, call `guardianRegistry.bindOwnerStake(msg.sender, vaultAddr)`. If bind fails, the whole creation reverts (atomic).
-- **Assert registry consistency at call sites that cross contracts**: `rotateOwner` verifies `SyndicateGovernor(_governor).guardianRegistry() == guardianRegistry` before calling `transferOwnerStakeSlot`. A `RegistryMismatch` error surfaces any governance-process bug that wires the two contracts to different registries.
+- **Assert registry consistency at call sites that cross contracts**: `rotateOwner` verifies `SyndicateGovernor(_governor).guardianRegistry() == guardianRegistry` before calling `transferOwnerStakeSlot`. A `RegistryMismatch` error surfaces any governance-process bug that wires the two contracts to different registries. `rotateOwner` is the primary cross-registry path; `createSyndicate` also reads both (via `canCreateVault` on the factory's registry and `addVault` on the governor), and both pointers are set-once-at-init on their respective contracts, so a post-init drift is the only failure mode — this `RegistryMismatch` guard surfaces it immediately.
 - **`rotateOwner(address vault, address newOwner)` — factory owner, timelocked.** Recovery path for vaults whose current owner has been slashed (or abandoned keys / rage-quit). Requires the current owner's stake to be **already slashed or fully unstaked** (`registry.hasOwnerStake(vault) == false`) — prevents hostile owner-takeover while a legitimate owner is staked. Calls `SyndicateVault.transferOwnership(newOwner)` and `registry.transferOwnerStakeSlot(vault, newOwner)` so the new owner can post fresh stake. Without this function, a slashed owner who walks away leaves the vault permanently unable to create new proposals — a dead-vault risk flagged by Carlos's review (PR #229). Timelock + multisig gating keeps it from being a bypass of the slashing economics.
 
 ### 3.4 Modified: `ISyndicateGovernor.sol`
@@ -312,7 +318,7 @@ New enum value, new struct field, new errors, new events, new function signature
 
 | Parameter | Default | Bounds | Rationale |
 |---|---|---|---|
-| `minGuardianStake` | 10_000 WOOD | ≥ 1 WOOD | Low enough for early ecosystem, high enough that slashing is a real cost. |
+| `minGuardianStake` | 10_000 WOOD | ≥ 1 WOOD | Mainnet floor set by multisig timelock; absolute `≥ 1 WOOD` bound is a testnet-only floor so dust-stake tests work. Timelock a real mainnet minimum before launch. |
 | `minOwnerStake` | 10_000 WOOD | ≥ 1_000 WOOD | Lowered from 50k per business review — onboarding friction for small creators. Floor only; effective bond per vault = `requiredOwnerBond(vault)` (see below). |
 | `ownerStakeTvlBps` | 0 (disabled) | [0, 500] (5% cap) | TVL-scaling multiplier. Effective owner bond = `max(minOwnerStake, totalAssets * ownerStakeTvlBps / 10_000)`. V1 ships at 0 (flat floor). Multisig timelocked flip activates scaling without a code change. Bond is checked at bind / rotate time only — no periodic top-up in V1. |
 | `coolDownPeriod` | 7 days | 1–30 days | Matches issue #227; aligns with Sherwood's existing multi-day governance rhythms. |
@@ -363,6 +369,7 @@ During the first 12 weeks after mainnet launch, the Sherwood protocol multisig c
 - Running a guardian agent that votes on **every** proposal across every registered vault.
 - Publishing weekly guardian-coverage reports in the Sherwood forum (proposals reviewed, Approves, Blocks, outcomes).
 - Staking ≥ `minGuardianStake` from protocol treasury.
+- **Funding `epochBudget` each week during bootstrap.** The multisig commits to calling `fundEpoch(currentEpoch, X)` at the start of each epoch, with `X` sized so the flat bounty lands above expected guardian gas costs per proposal. Unfunded epochs do NOT revert claims — guardians still accrue `epochGuardianBlockWeight` and can claim zero if no WOOD is allocated. This explicit bootstrap budget replaces the V1.5 Minter emissions wiring until it lands.
 
 This closes the "what if no guardians show up" failure mode during bootstrap and gives external guardians a reference implementation to benchmark against. After week 12, the multisig's guardian participation becomes optional and cohort health is measured independently (see §11).
 
@@ -375,7 +382,7 @@ Flow:
 2. Protocol governance (veWOOD voters) votes on the appeal; quorum and threshold set by tokenomics governance, not by this spec.
 3. If upheld, the protocol multisig calls `GuardianRegistry.refundSlash(recipient, amount)` — a permissioned, per-epoch-capped function that transfers WOOD from a dedicated **Slash Appeal Reserve** (funded via treasury allocation at deployment, topped up by governance vote).
 4. Refund cap per epoch prevents a compromised multisig from draining the reserve in a single transaction.
-5. All refunds emit `SlashRefunded(recipient, amount, appealId)` events for transparency.
+5. All refunds emit `SlashAppealRefunded(address indexed recipient, uint256 amount, uint256 epochId)` events for transparency (see §3.4 event list).
 
 This intentionally makes appeals expensive (requires governance vote) but possible (prevents "one wrongful slash kills the guardian narrative" outcome). The cap and governance gate together limit the damage from a compromised multisig.
 
@@ -453,21 +460,23 @@ Tracked via the existing Sherwood subgraph (new `Guardian`, `ProposalReview`, an
 | Remove `emergencySettle` + `_tryPrecommittedThenFallback` | **−800 to −1,500 bytes** (conservative; depends on solc optimizer) |
 | Add `unstick` (simple, no hash check) | +300 |
 | Add `emergencySettleWithCalls` (calldata → storage, hash commit) | +500 |
+| Add `cancelEmergencySettle` (owner self-recall, clears committed hash) | +200 |
 | Add `finalizeEmergencySettle` (hash reverify, calls loop, slashing branch) | +600 |
 | `_resolveStateView` / `_resolveState` new GuardianReview branch | +400 |
 | `reviewEnd` stamping in `propose()` / `approveCollaboration()` | +200 |
 | New errors + events | +150 |
-| Immutable `_guardianRegistry` init param + storage read (no setter) | +120 |
-| **Net estimated delta** | **+1,600 to +900 bytes** (range depends on how much `emergencySettle` removal saves) |
+| Set-once `_guardianRegistry` init param + storage read (no setter) | +120 |
+| **Additions subtotal** | **+2,470 bytes** |
+| **Net estimated delta after `emergencySettle` removal** | **+970 to +1,670 bytes** (larger number = worse; depends on solc optimizer) |
 
-Even the optimistic case blows the 53-byte margin. This must be mitigated before implementation or the governor won't deploy.
+Even the optimistic case (+970) blows the 53-byte margin. This must be mitigated before implementation or the governor won't deploy. Actual measurement required after Option B prototype lands.
 
 ### Mitigation options (in order of preference)
 
 **Option B — extract `GovernorEmergency.sol` abstract contract.** Preferred.
 
 - Create `contracts/src/GovernorEmergency.sol` — abstract, matching the pattern of `GovernorParameters.sol`.
-- Move `unstick`, `emergencySettleWithCalls`, `finalizeEmergencySettle`, and their internal helpers (`_tryPrecommittedSettle`, `_verifyCallsHash`) into it.
+- Move **all four** emergency entrypoints — `unstick`, `emergencySettleWithCalls`, `cancelEmergencySettle`, `finalizeEmergencySettle` — and their internal helpers (`_tryPrecommittedSettle`, `_verifyCallsHash`) into it. Keeping them together makes the abstract's state-machine single-purpose.
 - `SyndicateGovernor` inherits `GovernorEmergency` alongside `GovernorParameters`.
 - Virtual accessors (following the `GovernorParameters` pattern) let the abstract read `_proposals`, `_settlementCalls`, `_registry`.
 - Preserves the "governor owns lifecycle" invariant. No new cross-contract trust.
@@ -496,6 +505,7 @@ Even the optimistic case blows the 53-byte margin. This must be mitigated before
 - **Minter emissions → `fundEpoch`** — wire the existing Minter to call `GuardianRegistry.fundEpoch(currentEpoch, allocation)` each epoch, alongside the gauge emissions call. Requires a new "guardian emissions" slice in the Minter's allocation breakdown (proposed via tokenomics governance). V1 uses multisig-funded `fundEpoch`; V1.5 flips to Minter-funded.
 - **Correct-Approve rewards** — extends the epoch reward pool to also include Approvers whose votes matched the subsequent execution outcome (proposal executed successfully without emergency actions). Requires EAS schema for attestations (below). The Block-side reward (§3.1) is already live in V1; what's deferred is the Approve-side and the attestation scheme feeding it.
 - **EAS attestation schema** — `GUARDIAN_REVIEW_VOTE` schema capturing (proposalId, guardian, support, reasoning hash). Feeds reward computation.
+- **`bindAgentId(uint256 agentId)`** — V2 migration entrypoint for guardians who staked with `agentId = 0` during V1 bootstrap. Required when the EAS reputation layer lands (Approve-side rewards + slash-appeal reputation). Verifies `IdentityRegistry.ownerOf(agentId) == msg.sender`, stores once per guardian, immutable thereafter.
 - **LLM knowledge base** — compiled good/bad attestations + reasoning → off-chain dataset for Hermes guardian skill training.
 - **Shareholder challenge (Option C)** — post-settlement jury-style adjudication for malicious proposals that slipped past guardians.
 - **Vault-asset slash redirect** — swap slashed WOOD to vault asset at slash time, pay directly to LPs harmed.

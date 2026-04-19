@@ -148,37 +148,45 @@ Track record is built on-chain via PnL attestations (EAS) minted at settlement �
 
 ```
               ┌─────────┐
-              │ Pending  │  (created, voting not started — or voting active)
+              │ Pending  │  (voting active)
               └────┬─────┘
-                   │ votingPeriod expires
-          ┌────────┼────────┐
-          ▼        │        ▼
-    ┌──────────┐   │  ┌──────────┐
-    │ Approved │   │  │ Rejected │  (votesAgainst >= votesFor, or quorum not met)
-    └────┬─────┘   │  └──────────┘
-         │         │
-         │         ▼
-         │   ┌──────────┐
-         │   │ Expired  │  (execution window passed without execution)
-         │   └──────────┘
-         ▼
-   ┌──────────┐
-   │ Executed │  (agent called executeProposal within window)
-   └────┬─────┘
-        │
-        ▼
-   ┌──────────┐
-   │ Settled  │  (P&L calculated, fee distributed, attestation minted)
-   └──────────┘
-        │
-        ▼
-   ┌──────────┐
-   │ Cooldown │  (vault: redemptions open, no new executions)
-   └──────────┘
+                   │ voteEnd elapses, no veto quorum
+                   ▼
+           ┌────────────────┐
+           │ GuardianReview │  (PR #229: staked guardians review calldata; 24h default)
+           └────┬───────────┘
+                │
+      ┌─────────┼──────────────┐
+      │         │              │
+      ▼ block   ▼ reviewEnd,   ▼ AGAINST ≥ veto threshold
+               │   no quorum       (set at voteEnd resolution)
+   ┌──────────┐│  ┌──────────┐  ┌──────────┐
+   │ Rejected ││  │ Approved │  │ Rejected │
+   │ (approvers slashed)     │  │          │
+   └──────────┘│  └────┬─────┘  └──────────┘
+               │       │
+               │       │ executeBy elapsed
+               │       ▼
+               │  ┌──────────┐
+               │  │ Expired  │
+               │  └──────────┘
+               │       │
+               │       │ proposer calls executeProposal
+               │       ▼
+               │  ┌──────────┐
+               │  │ Executed │
+               │  └────┬─────┘
+               │       │ settleProposal / unstick / finalizeEmergencySettle
+               │       ▼
+               │  ┌──────────┐
+               │  │ Settled  │  (P&L, fees, cooldown begins)
+               │  └──────────┘
+               ▼
 
-   At any point before settlement:
-   - Proposer can Cancel their own proposal
-   - Owner can Emergency Cancel any proposal
+   Cancellation paths (narrowed by PR #229):
+   - Proposer can Cancel during Draft or Pending only
+   - Owner emergencyCancel: Draft or Pending only
+   - Owner vetoProposal: Pending only (guardians own the GuardianReview window)
 ```
 
 ---

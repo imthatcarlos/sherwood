@@ -118,7 +118,7 @@ Roadmap, milestones, and a running log of everything shipped. Building in public
 - ⬜️ Tests: 20 must-pass scenarios + invariant harness
 - ⬜️ Audit — new primitive with economic slashing warrants a dedicated pass
 - ⬜️ Publish `mintlify-docs/learn/guardians.mdx` (bootstrap commitment + appeal policy)
-- ⬜️ Bootstrap cohort — protocol multisig runs guardian-of-last-resort weeks 1-12
+- ⬜️ Bootstrap cohort — protocol multisig runs guardian-of-last-resort weeks 1-12 (see spec §7.1 for mechanical details + `epochBudget` funding commitment)
 
 ### 8 — Growth & TVL
 **Not Started**

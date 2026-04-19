@@ -134,6 +134,14 @@ Grouped by domain. All require separate PRs.
 
 ---
 
+## 4.5 Weird-token findings (from #226 §7.5)
+
+| Ref | Finding | Severity | Fix |
+|---|---|---|---|
+| W-1 | USDC blacklist bricks settlement. If lead proposer / co-proposer / protocol-fee recipient / vault owner is USDC-blacklisted, `_distributeFees` reverts and `settleProposal` reverts with it — entire vault stuck. | MED | Wrap per-recipient transfers in try/catch; emit `FeeTransferFailed` on failure; escrow unclaimed fees for later pull-claim. Closes the A22 doc↔code mismatch. |
+| W-3 | No FOT accounting on `_pullFromVault` (no snapshot balanceOf before/after). | LOW | Snapshot balance around pull; assert expected delta. Matters only if USDC ever adds FOT semantics. |
+| W-4 | `PortfolioStrategy` accepts arbitrary tokens with no decimals check, no allowlist, no supply check. | LOW | Add minimum validation at allocation config; consider a protocol-level token allowlist. |
+
 ## 5. Fail-open defaults (from #226 §6)
 
 | Ref | Severity | Location | Default | Fix |
@@ -234,6 +242,6 @@ Ranked by effort-to-impact. PR #229 doesn't touch items 1–5, 7, 8, 9; it lands
 - **Writing a fix PR**: link the ref codes in your PR description (e.g. "fixes V-C1, V-C3"). Close them in this table.
 - **Reviewing a PR**: check whether it touches any open items here; if yes, require the ref in the PR description.
 - **Planning the audit**: the external auditor gets this doc plus #225 and #226 as their starting corpus.
-- **Updating mintlify docs**: every §6 row that says `mintlify-docs/...` is a task for the submodule PR.
+- **Updating mintlify docs**: every §6 row that says `mintlify-docs/...` routes through the submodule PR on `imthatcarlos/mintlify-docs`. Link both PRs (in-repo + submodule) when closing a row.
 
 This doc is the **canonical pre-mainnet tracker**. Individual issue comments on #225 / #226 can update status; when a fix PR merges, mark the row ✅ with the PR link.

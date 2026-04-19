@@ -463,7 +463,7 @@ At scale, the buyback becomes a significant supply sink — but only if the prot
 
 **All protocol operations are controlled by a 3-of-5 protocol multisig.** There is no on-chain governance via veWOOD. veWOOD is purely an economic mechanism for fee sharing.
 
-A separate **2-of-3 pause guardian multisig** can halt contracts in emergencies (faster response than 3-of-5). Unpausing requires the full 3-of-5 protocol multisig. The two multisigs share some but not all signers.
+A separate **2-of-3 pause authority multisig** can halt contracts in emergencies (faster response than 3-of-5). Unpausing requires the full 3-of-5 protocol multisig. The two multisigs share some but not all signers. (Note: "pause authority" here is distinct from the PR #229 "guardian" cohort — separate concepts, renamed to avoid terminology collision.)
 
 **Protocol multisig responsibilities:**
 - Protocol parameter changes (fee rates, bootstrapping schedule adjustments)
@@ -729,7 +729,7 @@ Wednesday 23:59 UTC — Epoch N ends
 
 7. **Non-transferable token edge cases:** BootstrapRewards non-transferable balances must not be usable as collateral, transferable via approval, or flashable. Internal accounting only — no ERC-20 balance until `convertToTransferable()` is called after 6 months.
 
-8. **Access control:** All pausable contracts use a 2-of-3 multisig as pause guardian. Unpausing requires a 3-of-5 protocol multisig to prevent premature restart.
+8. **Access control:** All pausable contracts use a 2-of-3 multisig as pause authority. Unpausing requires a 3-of-5 protocol multisig to prevent premature restart.
 
 9. **Upgradeability:** All WOOD contracts are deployed as **immutable** (not UUPS upgradeable). VotingEscrow holds locked tokens — upgradeability would introduce rug risk. Migration path for bugs: (a) pause affected contract, (b) deploy new contract, (c) snapshot state, (d) users migrate via claim mechanism.
 
@@ -847,7 +847,7 @@ Reduced from 5 phases (v3) to 2 phases. Fewer contracts = faster deployment.
 - **If gate not met within 8 weeks — Path A:** Increase bootstrapping rewards front-loading (pull from months 4-6 budget into months 1-3). Reduce veWOOD lock minimum to 2 weeks temporarily.
 - **If gate still not met by week 16 — Path B:** Enter maintenance mode. Pause bootstrapping rewards. The protocol continues operating without token incentives until organic demand justifies resumption.
 
-**Emergency infrastructure:** All contracts include OpenZeppelin Pausable. Pause guardian (2-of-3 multisig) can halt any contract. Unpause requires 3-of-5 multisig.
+**Emergency infrastructure:** All contracts include OpenZeppelin Pausable. Pause authority (2-of-3 multisig) can halt any contract. Unpause requires 3-of-5 multisig.
 
 **Testnet deployment (before each phase):** Full deployment on Base Sepolia with simulated epochs, fee generation, and bootstrapping reward distribution.
 

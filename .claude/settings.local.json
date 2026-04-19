@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(code-review:code-review)",
+      "Bash(gh api:*)",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f'File: {c[\\\\\"path\\\\\"]}\\\\nComment: {c[\\\\\"body\\\\\"]}\\\\n---'\\) for c in data if 'strateg' in c.get\\('path',''\\).lower\\(\\) or 'strateg' in c.get\\('body',''\\).lower\\(\\)]\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f'File: {c[\\\\\"path\\\\\"]}\\\\nLine: {c.get\\(\\\\\"line\\\\\"\\)}\\\\nComment: {c[\\\\\"body\\\\\"]}\\\\n---'\\) for c in data]\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(json.dumps\\(data[:3], indent=2\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f'User: {c[\\\\\"user\\\\\"][\\\\\"login\\\\\"]}\\\\nComment: {c[\\\\\"body\\\\\"]}\\\\n---'\\) for c in data]\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f'User: {c[\\\\\"user\\\\\"][\\\\\"login\\\\\"]}\\\\nComment: {c[\\\\\"body\\\\\"][:2000]}\\\\n---'\\) for c in data]\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f'User: {c[\\\\\"user\\\\\"][\\\\\"login\\\\\"]}\\\\nComment: {c[\\\\\"body\\\\\"][:3000]}\\\\n---'\\) for c in data]\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f'File: {c[\\\\\"path\\\\\"]}\\\\nLine: {c.get\\(\\\\\"line\\\\\"\\)}\\\\nComment: {c[\\\\\"body\\\\\"][:2000]}\\\\n---'\\) for c in data]\")",
+      "Bash(python3 -c ':*)",
+      "Bash(xargs ls:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Branch:', d['headRefName']\\); [print\\(c['messageHeadline']\\) for c in d['commits']]\")",
+      "Bash(gh pr:*)",
+      "Bash(git checkout:*)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(c['path'], '|', c['body'][:200]\\) for c in data]\")",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(node:*)",
+      "Read(//tmp/**)",
+      "Bash(xargs curl:*)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/imthatcarlos/sherwood/feat/app-quality-batch-2/app/src/app/leaderboard/LeaderboardTabs.tsx\")",
+      "Bash(python3:*)",
+      "Bash(git fetch:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(grep -E \"app.*\\\\.tsx?$\")",
+      "Bash(grep:*)",
+      "Bash(xargs -I{} gh api repos/imthatcarlos/sherwood/commits/{} --jq '.sha[0:7] + \" \" + .commit.message[0:80]')",
+      "Bash(curl:*)",
+      "Bash(gh diff:*)",
+      "Bash(xargs '-I{}' sh -c 'hash=$\\(echo {} | cut -d\" \" -f1\\); git show $hash -- cli/src/agent/scoring.ts 2>/dev/null | grep -A3 \"ranging\" | head -5; echo \"--- $hash ---\"')",
+      "Bash(gh repo:*)",
+      "Bash(git log:*)"
+    ]
+  }
+}
