@@ -18,6 +18,7 @@ import { Reporter } from './reporter.js';
 import { DynamicTokenSelector } from './token-selector.js';
 import { PriceValidator } from './price-validator.js';
 import type { RiskGateConfig } from './risk-gate.js';
+import { LiveCalibrator } from './calibration-live.js';
 
 export interface LoopConfig {
   agent: AgentConfig;
@@ -55,6 +56,14 @@ export interface CycleResult {
   /** Number of short positions opened this cycle */
   shortsOpened?: number;
   errors: string[];
+  /** Calibration telemetry */
+  actionableSignals?: Array<{
+    token: string;
+    action: string;
+    calibrationFactor: number;
+    uncertaintyLevel: string;
+    sizeMultiplier: number;
+  }>;
 }
 
 export class AgentLoop {
@@ -67,6 +76,7 @@ export class AgentLoop {
   private riskManager: RiskManager;
   private coingecko: CoinGeckoProvider;
   private reporter: Reporter;
+  private liveCalibrator: LiveCalibrator;
   /** Rejects bad-price ticks (floor + 20% delta cap). Persisted to disk so
    *  anchors survive across cron invocations. */
   private priceValidator: PriceValidator;
@@ -89,6 +99,7 @@ export class AgentLoop {
 
     this.coingecko = new CoinGeckoProvider();
     this.reporter = new Reporter();
+    this.liveCalibrator = new LiveCalibrator();
     this.priceValidator = new PriceValidator();
     // Wire real portfolio state into the judge (replaces hardcoded zeros).
     this.agent.setPortfolioStateGetter(() => this.lastPortfolioState);
@@ -293,6 +304,7 @@ export class AgentLoop {
 
     // 5. Collect signals and execute trades for actionable ones
     const signals: CycleResult['signals'] = [];
+    const actionableSignals: CycleResult['actionableSignals'] = [];
 
     for (const result of results) {
       const { action, score } = result.decision;
@@ -324,25 +336,62 @@ export class AgentLoop {
           const currentPrice = check.price;
           const atr = result.data?.technicalSignals?.atr;
 
-          // Prepare market data for risk gate
+          // Prepare market data for risk gate.
           const marketData = {
             volume24hUsd: result.data?.volume24hUsd,
             marketCapUsd: result.data?.marketCapUsd,
-            volatility: result.data?.technicalSignals?.atr ?
-              (result.data.technicalSignals.atr / currentPrice) : undefined,
-            // Add bid/ask if available in result.data
+            volatility: result.data?.technicalSignals?.atr
+              ? (result.data.technicalSignals.atr / currentPrice)
+              : undefined,
             bid: result.data?.bid,
             ask: result.data?.ask,
           };
+
+          // Calculate calibration and uncertainty metrics for sizing telemetry.
+          let uncertaintyMetrics;
+          let calibrationFactor = 1.0;
+          let uncertaintyLevel = 'medium';
+          let sizeMultiplier = 0.8;
+
+          try {
+            const recentPrices = [currentPrice];
+            uncertaintyMetrics = this.liveCalibrator.calculateUncertainty(
+              result.decision.signals,
+              recentPrices,
+              result.token,
+            );
+
+            const actionFamily = action.includes('BUY') ? 'BUY' : 'SELL';
+            const calibrationData = this.liveCalibrator.getCalibrationFactor(
+              result.token,
+              result.regime?.regime ?? 'unknown',
+              actionFamily as 'BUY' | 'SELL',
+            );
+
+            calibrationFactor = calibrationData.factor;
+            uncertaintyLevel = uncertaintyMetrics.level;
+            sizeMultiplier = uncertaintyMetrics.sizeMultiplier;
+          } catch (error) {
+            console.warn(`[calibration] Warning: failed to calculate metrics for ${result.token}: ${(error as Error).message}`);
+          }
+
+          actionableSignals.push({
+            token: result.token,
+            action,
+            calibrationFactor,
+            uncertaintyLevel,
+            sizeMultiplier,
+          });
 
           const execResult = await this.executor.execute(
             result.decision,
             result.token,
             currentPrice,
             atr,
-            marketData
+            marketData,
+            undefined,
+            uncertaintyMetrics,
           );
-
           if (execResult.success) {
             tradesExecuted++;
             console.log(this.executor.formatExecution(execResult));
@@ -387,6 +436,7 @@ export class AgentLoop {
       longsOpened: riskGateCounters.longsOpened,
       shortsOpened: riskGateCounters.shortsOpened,
       errors,
+      actionableSignals: actionableSignals?.length > 0 ? actionableSignals : undefined,
     };
 
     // 7. Log and report
