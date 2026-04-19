@@ -85,21 +85,23 @@ struct PreparedOwnerStake {
 }
 mapping(address owner => PreparedOwnerStake) private _prepared;
 
-// Proposal review state (one entry per proposal; lazily created on first vote)
+// Proposal review state (created by permissionless openReview() at voteEnd)
 struct Review {
-    uint128 totalStakeAtOpen;   // snapshot of _totalGuardianStake on first vote; quorum denominator
+    bool opened;                // set true by openReview()
+    bool resolved;              // set true by resolveReview()
+    bool blocked;               // set true inside resolveReview() if block quorum
+    uint128 totalStakeAtOpen;   // _totalGuardianStake snapshot at openReview() call
     uint128 approveStakeWeight;
     uint128 blockStakeWeight;
-    bool resolved;
-    bool blocked;
 }
-// reviewEnd is NOT stored here — it lives on StrategyProposal.reviewEnd (governor),
-// stamped alongside voteEnd at propose() / approveCollaboration() time.
+// reviewEnd is NOT stored here — it lives on StrategyProposal.reviewEnd (governor).
 mapping(uint256 proposalId => Review) private _reviews;
 mapping(uint256 => mapping(address => VoteType)) private _votes;
-mapping(uint256 => mapping(address => uint128)) private _voteStake; // stake weight snapshot per (proposal, guardian) for vote-change math
-mapping(uint256 => address[]) private _approvers; // for batch-slashing at resolution
-mapping(uint256 => address[]) private _blockers;  // for epoch-reward accounting at resolution
+mapping(uint256 => mapping(address => uint128)) private _voteStake; // weight at vote time; used for tally math + epoch attribution
+mapping(uint256 => address[]) private _approvers;  // for batch-slashing — CAPPED at MAX_APPROVERS_PER_PROPOSAL
+mapping(uint256 => address[]) private _blockers;   // for epoch-reward accounting — UNCAPPED (only approvers get burned, so blocker iteration is bounded by total guardian count)
+// Slashing burn is pull-based as a fallback — see _slashApprovers for CEI reasoning
+mapping(address => uint256) private _pendingBurn;  // WOOD that couldn't be burned in a loop iteration; anyone can call flushBurn(guardian)
 
 // Epoch-based reward accounting (replaces fixed rewardPerBlockWood — see §5)
 uint256 public constant EPOCH_DURATION = 7 days; // matches Minter emissions cadence
@@ -124,20 +126,35 @@ mapping(uint256 => mapping(address => bool)) private _emergencyBlockVotes;
 // Parameters (timelocked; pattern mirrors GovernorParameters)
 uint256 public minGuardianStake;  // default: 10_000 WOOD
 uint256 public minOwnerStake;     // default: 10_000 WOOD  (floor — see §5 and requiredOwnerBond below)
-uint256 public ownerStakeTvlBps;  // default: 0 (disabled). bounds [0, 500] = 5% cap. Bond = max(floor, totalAssets*bps/10_000) at bind time
+uint256 public ownerStakeTvlBps;  // default: 0 (disabled). bounds [0, 500] = 5% cap. Bond = max(floor, totalAssets*bps/10_000) at bind/rotate/emergency-settle
 uint256 public coolDownPeriod;    // default: 7 days
 uint256 public reviewPeriod;      // default: 24 hours (single global value; no per-proposal override)
 uint256 public blockQuorumBps;    // default: 3000 (30% of total guardian stake)
-// Note: per-epoch reward *budget* is set by the protocol each epoch via fundEpoch() — no static rate
-//       parameter. See epochBudget mapping above and §11 (Follow-up: Minter emissions integration).
+
+// Hardened constants (not timelocked — load-bearing safety bounds)
+uint256 public constant MIN_COHORT_STAKE_AT_OPEN = 50_000 * 1e18; // cold-start fallback threshold (§ "Cold-start handling" below)
+uint256 public constant MAX_APPROVERS_PER_PROPOSAL = 100;          // bounds _slashApprovers gas
+uint256 public constant SWEEP_DELAY = 12 weeks;                    // sweepUnclaimed cannot fire earlier
+uint256 public constant LATE_VOTE_LOCKOUT_BPS = 1000;              // forbid vote-change in final 10% of review window
+uint256 public constant MAX_REFUND_PER_EPOCH_BPS = 2000;           // 20% of slash appeal reserve per epoch
+uint256 public constant DEADMAN_UNPAUSE_DELAY = 7 days;            // pause auto-lifts after this
+
+// Pause state (multisig-controllable circuit breaker for economic functions)
+bool public paused;
+uint64 public pausedAt;  // used for deadman auto-unpause
+
+// Slash Appeal Reserve (separate WOOD pool; topped up by treasury; refundSlash draws from here only)
+uint256 public slashAppealReserve;
+mapping(uint256 epochId => uint256) public refundedInEpoch;  // enforces MAX_REFUND_PER_EPOCH_BPS
 
 // Slashing: WOOD is burned (not sent to treasury) — see §5 rationale
 address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
-// Privileged addresses
-address public governor;
-address public factory;
-IERC20 public immutable wood;     // WOOD token
+// Privileged addresses (both settable only at init; see "Trust assumptions" section)
+address public governor;          // immutable after initialize() — see §3.1.Trust
+address public factory;           // immutable after initialize() — see §3.1.Trust
+address public minter;            // settable by owner (timelocked); authorizes fundEpoch() calls from the Minter
+IERC20 public immutable wood;     // WOOD token — see Trust Assumptions §3.1.Trust
 ```
 
 **Public / external functions:**
@@ -147,7 +164,8 @@ Guardian role:
 - `requestUnstakeGuardian()` — marks `unstakeRequestedAt = block.timestamp`. Guardian immediately loses voting power (removed from `_totalGuardianStake`). Cannot re-vote until unstake is either cancelled or claimed.
 - `cancelUnstakeGuardian()` — reverses an unstake request; stake becomes voting-eligible again.
 - `claimUnstakeGuardian()` — after `coolDownPeriod` elapses, releases WOOD to guardian. Zero-stake guardians are fully deregistered.
-- `voteOnProposal(uint256 proposalId, VoteType support)` — `Approve` or `Block`. The registry reads `reviewEnd` from the governor via `ISyndicateGovernor.getProposal(proposalId)` and the proposal's `voteEnd`; vote is allowed only when `voteEnd <= now < reviewEnd`. On the first vote for a given proposalId, snapshots `_totalGuardianStake` into `Review.totalStakeAtOpen` — this fixes the quorum denominator and prevents dilution by late-joining stakers. First vote also snapshots the guardian's current `guardianStake` into `_voteStake[proposalId][msg.sender]`. **Guardians MAY change their vote up until `reviewEnd`.** Changing a vote subtracts the guardian's stake weight (from `_voteStake`) from the old side's tally and adds it to the new side; does NOT re-snapshot stake. The guardian is added to / removed from `_approvers` and `_blockers` arrays to keep them consistent. Calling the function with the *same* support you already recorded reverts with `NoVoteChange`. Vote-change is essential because of the cartel attack: without it, an honest early Approver is strictly worse off than an abstainer, which kills the optimistic-Approve equilibrium the system needs.
+- `openReview(uint256 proposalId)` — **permissionless**. Callable once `block.timestamp >= proposal.voteEnd`. Snapshots `_totalGuardianStake` into `Review.totalStakeAtOpen` and marks `opened = true`. Subsequent calls are no-ops (idempotent). This is the **cold-start gate**: if `totalStakeAtOpen < MIN_COHORT_STAKE_AT_OPEN`, the review is treated as inactive-cohort — `resolveReview` returns `blocked = false` unconditionally and emits `CohortTooSmallToReview(proposalId, totalStakeAtOpen)`. Under cold-start conditions the owner's `vetoProposal` remains the only real defence. Moving the snapshot from first-vote to `openReview()` closes the denominator-manipulation attack where a cartel could freeze a high denominator then unstake honest supply. `openReview` can be called defensively by the governor at state-resolution time, by honest guardians before voting, or by anyone running a keeper.
+- `voteOnProposal(uint256 proposalId, VoteType support)` — `Approve` or `Block`. Requires `Review.opened == true` (otherwise the voter calls `openReview` first). Vote is allowed only when `voteEnd <= now < reviewEnd`. Snapshots the guardian's current `guardianStake` into `_voteStake[proposalId][msg.sender]` on first vote for the proposal. **Guardians MAY change their vote, but only up until `reviewEnd - (reviewPeriod * LATE_VOTE_LOCKOUT_BPS / 10_000)`** — i.e. the last 10% of the window is locked. Changing in an earlier window subtracts the guardian's `_voteStake` from the old side's tally and adds it to the new side; does NOT re-snapshot stake (prevents up-stake then late-switch gaming). Vote-change updates `_approvers` / `_blockers` array membership; both arrays use index mappings for O(1) removal. Calling with the same support you already recorded reverts with `NoVoteChange`; calling during the lockout window reverts with `VoteChangeLockedOut`. Approves are capped at `MAX_APPROVERS_PER_PROPOSAL` (emits `ApproverCapReached`); Blocks are uncapped. Honest vote-change in the early window is essential to prevent the cartel-slashing equilibrium (honest early Approver is strictly worse off than abstainer without it).
 
 Owner role:
 - `prepareOwnerStake(uint256 amount)` — pull WOOD into the registry under `_prepared[msg.sender]`. Does **not** yet bind to a vault. Must be ≥ `minOwnerStake` (the floor) — at prepare time we don't know which vault the stake will bind to, so we can't check the TVL-scaled bond yet. If the chosen vault's TVL-scaled bond exceeds the prepared amount at `bindOwnerStake` time, the bind reverts and the owner must top up and re-bind. One prepared stake per owner at a time.
@@ -156,11 +174,11 @@ Owner role:
 - `claimUnstakeOwner(address vault)` — after cool-down, releases WOOD. Post-claim the vault is in a **grace-period** state (`ownerStaked == false`): new proposals cannot be created until owner re-binds a fresh stake.
 
 Governor hooks:
-- `openEmergencyReview(uint256 proposalId, bytes32 callsHash)` — **onlyGovernor**. Commits the calldata hash when owner calls `emergencySettleWithCalls`. Opens the window and snapshots `totalStakeAtOpen` immediately (unlike the proposal-review path, there's no earlier vote to piggyback on).
-- `resolveReview(uint256 proposalId) returns (bool blocked)` — **permissionless** and idempotent. Reads `reviewEnd` from the governor; requires `block.timestamp >= reviewEnd`. If no `Review` was ever created (no votes cast), returns `blocked = false` immediately. Otherwise computes `blocked = (blockStakeWeight * 10_000 >= blockQuorumBps * totalStakeAtOpen)`, sets `resolved = true`, and if `blocked`, invokes internal `_slashApprovers`. Returns cached `blocked` on subsequent calls. Governor calls this defensively from `_resolveState`; guardians/keepers can also call it to trigger slashing without waiting for someone to execute.
-- `resolveEmergencyReview(uint256 proposalId) returns (bool blocked)` — **permissionless** and idempotent. Same shape as `resolveReview` but resolves the emergency-settle window (using its own `reviewEnd` stored on the `EmergencyReview` struct) and invokes `_slashOwner` when blocked.
+- `openEmergencyReview(uint256 proposalId, bytes32 callsHash)` — **onlyGovernor**. Commits the calldata hash when owner calls `emergencySettleWithCalls`. Opens the window and snapshots `totalStakeAtOpen` immediately (this path has no separate openReview since there are no pre-emergency votes).
+- `resolveReview(uint256 proposalId) returns (bool blocked)` — **permissionless**, **`nonReentrant`**, idempotent. Reads `reviewEnd` from the governor; requires `block.timestamp >= reviewEnd`. If `Review.opened == false` (nobody ever called `openReview`), returns `blocked = false` immediately — no activity means no block. If `totalStakeAtOpen < MIN_COHORT_STAKE_AT_OPEN`, returns `blocked = false` (cold-start cohort-too-small fallback). Otherwise computes `blocked = (blockStakeWeight * 10_000 >= blockQuorumBps * totalStakeAtOpen)`. **CEI ordering:** sets `resolved = true` and `blocked` flag BEFORE any token transfer. If `blocked == true`, calls `_slashApprovers` which zeros each approver's stake (state mutation) in a loop, then attempts a single bulk `wood.transfer(BURN_ADDRESS, total)` at the end — if that transfer reverts, the slashed amount is credited to `_pendingBurn[address(this)]` and anyone can call `flushBurn()` later to retry. State transitions already committed either way; review cannot get stuck. Governor calls this defensively from `_resolveState`; keepers can call it to trigger slashing independently.
+- `resolveEmergencyReview(uint256 proposalId) returns (bool blocked)` — **permissionless**, **`nonReentrant`**, idempotent. Same CEI + pull-based burn pattern as `resolveReview`. Invokes `_slashOwner` when blocked.
 
-**Note on lifecycle integration:** the Pending → GuardianReview transition happens implicitly via `_resolveStateView` once `block.timestamp > voteEnd`. No external registry call is required at transition time — the registry only learns about the proposal when a guardian casts the first vote (or when `resolveReview` is called after `reviewEnd`).
+**Note on lifecycle integration:** the Pending → GuardianReview transition happens via `_resolveStateView` once `block.timestamp > voteEnd`. The registry-side `Review` struct is created by `openReview()` (permissionless keeper call) rather than lazily on first vote — this closes the denominator-manipulation attack and serves as the cold-start detection point.
 
 Factory hooks (onlyFactory):
 - `bindOwnerStake(address owner, address vault)` — consumes `_prepared[owner]`, binds it as `_ownerStakes[vault]`. Reverts if no prepared stake, or if prepared amount `< requiredOwnerBond(vault)`. For the factory-creation path `totalAssets()` is 0, so the TVL term is 0 and only the floor applies.
@@ -169,19 +187,20 @@ Factory hooks (onlyFactory):
 Emergency-settle vote:
 - `voteBlockEmergencySettle(uint256 proposalId)` — active guardians vote to block. Any single vote adds their stake weight to `blockStakeWeight`. When `blockStakeWeight >= blockQuorumBps * _totalGuardianStake / 10_000`, the review is flagged blocked (resolved at `resolveEmergencyReview` time).
 
-Slashing (internal, triggered by governor):
-- `_slashApprovers(uint256 proposalId)` — internal; invoked from `resolveReview` when block quorum resolves, or from the governor when owner calls `emergencyCancel` on a proposal that had recorded Approves. Iterates `_approvers[proposalId]`, zeroes each approver's stake, and **burns** the total slashed WOOD by transferring to `BURN_ADDRESS`. Capped gas-wise by `MAX_APPROVERS_PER_PROPOSAL = 100` (see §6).
-- `_slashOwner(address vault)` — internal; invoked from `resolveEmergencyReview` when blocked. Zeros `_ownerStakes[vault].stakedAmount` and **burns** the slashed WOOD. Vault transitions into "owner must re-stake" state.
-- **Appeal path (off-chain → on-chain):** a slashed party can petition the protocol multisig for refund. Multisig executes `refundSlash(address recipient, uint256 amount)` — **onlyOwner** on the registry, capped per-epoch — which transfers WOOD from the treasury reserve to the refund recipient. Requires governance vote record; spec in §7 and §10. No on-chain slash reversal — the burn is final; refund is a new treasury-funded transfer.
+Slashing (internal, triggered by `resolveReview` / `resolveEmergencyReview` / governor):
+- `_slashApprovers(uint256 proposalId)` — internal. **CEI order**: (1) read approvers list, (2) compute total amount, (3) zero each approver's `_guardians[g].stakedAmount` and decrement `_totalGuardianStake`, (4) single `wood.transfer(BURN_ADDRESS, total)` at the end. If the transfer reverts, total is moved to `_pendingBurn[address(this)]` and `PendingBurnRecorded(total)` is emitted — anyone can call `flushBurn()` later. State mutations already committed, so review is never stuck. Bounded by `MAX_APPROVERS_PER_PROPOSAL = 100`.
+- `_slashOwner(address vault)` — internal. Same CEI + pull-burn pattern. Zeros `_ownerStakes[vault].stakedAmount`, burns WOOD via end-of-function transfer with `_pendingBurn` fallback.
+- `flushBurn()` — **permissionless**, **`nonReentrant`**. Retries pending bulk burn from `_pendingBurn[address(this)]` → `BURN_ADDRESS`. Emits `BurnFlushed(amount)`.
+- **Appeal path — `refundSlash(address recipient, uint256 amount)`:** **onlyOwner**, **`nonReentrant`**. Transfers WOOD from `slashAppealReserve` (a separate internal balance, NOT from the contract's general WOOD pool) to `recipient`. **Hard-coded cap per epoch**: `require(refundedInEpoch[currentEpoch()] + amount <= slashAppealReserve * MAX_REFUND_PER_EPOCH_BPS / 10_000)`. 20% ceiling means a compromised multisig cannot drain the reserve in a single call. `fundSlashAppealReserve(amount)` — **onlyOwner** — tops up the reserve via `wood.transferFrom(owner, registry, amount)`; no timelock since additions are always safe.
 
 Reward distribution (Block-side, epoch-based):
-- `fundEpoch(uint256 epochId, uint256 amount)` — **onlyOwner or onlyMinter**. Pulls WOOD and adds `amount` to `epochBudget[epochId]`. Can be called multiple times per epoch to top up. Can be called for past epochs (adds to the pool; guardians who hadn't claimed yet see the updated share; already-claimed guardians are not topped up — they can claim the marginal via `topUpClaim(epochId)` — or we just document that budget additions after an epoch ends require a re-distribution. V1 simplification: disallow `fundEpoch` for an epoch that already has any claims). The expected flow is one `fundEpoch` call per epoch from the Minter (deferred to V1.5 — V1 uses multisig until emissions wiring lands).
-- **How blocks accrue weight:** inside `resolveReview`, when the proposal resolves `blocked = true`, the registry iterates `_blockers[proposalId]` and for each guardian:
-  - `epochId = (proposal.reviewEnd - epochGenesis) / EPOCH_DURATION`  (the epoch the review ended in)
+- `fundEpoch(uint256 epochId, uint256 amount)` — **onlyOwner or onlyMinter**, **`nonReentrant`**. Pulls WOOD and adds `amount` to `epochBudget[epochId]`. Allowed for current and future epochs. For **past epochs**: allowed only if `epochTotalBlockWeight[epochId] == 0` (no accrued weight means no one has claimed yet) — prevents the race where a claim processes against an old budget then a top-up strands unclaimable surplus. Expected flow is one `fundEpoch` per epoch from the Minter (V1.5); in V1 the multisig funds each epoch.
+- **How blocks accrue weight:** inside `resolveReview`, when the proposal resolves `blocked = true`, the registry iterates `_blockers[proposalId]` (UNCAPPED; only approvers have a cap since only they are burned in a loop). For each guardian:
+  - `epochId = (block.timestamp - epochGenesis) / EPOCH_DURATION` — attribution uses the `resolveReview` *call* timestamp, not `proposal.reviewEnd`. This removes the proposer-side manipulation where a proposer picks a `reviewEnd` to land in a low-competition epoch (irrelevant once `reviewPeriodOverride` is gone, but still correct against future reintroduction).
   - `epochGuardianBlockWeight[epochId][guardian] += _voteStake[proposalId][guardian]`
   - `epochTotalBlockWeight[epochId] += _voteStake[proposalId][guardian]`
-- `claimEpochReward(uint256 epochId)` — active or unstaking guardians claim their pro-rata share of `epochBudget[epochId]` after the epoch ends (`block.timestamp >= epochGenesis + (epochId + 1) * EPOCH_DURATION`). Payout = `epochBudget[epochId] * epochGuardianBlockWeight[epochId][msg.sender] / epochTotalBlockWeight[epochId]`. Idempotent per (epochId, guardian) via `epochRewardClaimed`. Reverts with `NothingToClaim` if the guardian had zero block-weight that epoch.
-- **Unclaimed budget rolls to the next epoch** via an explicit `sweepUnclaimed(uint256 epochId)` — **onlyOwner**, callable 4 weeks after the epoch ends, transfers residual `epochBudget[epochId]` into `epochBudget[currentEpoch()]`. Keeps emissions productive if some guardians never claim.
+- `claimEpochReward(uint256 epochId)` — **`nonReentrant`**. Active or unstaking guardians claim pro-rata share after the epoch ends (`block.timestamp >= epochGenesis + (epochId + 1) * EPOCH_DURATION`). Payout = `epochBudget[epochId] * epochGuardianBlockWeight[epochId][msg.sender] / epochTotalBlockWeight[epochId]`. **CEI**: mark `epochRewardClaimed[epochId][msg.sender] = true` before the `wood.transfer` so reentrancy during an ERC-20 hook cannot double-claim. Reverts with `NothingToClaim` if zero block-weight.
+- `sweepUnclaimed(uint256 epochId)` — **permissionless** after `SWEEP_DELAY = 12 weeks` past epoch end. Transfers residual `epochBudget[epochId]` into `epochBudget[currentEpoch()]`. Previously owner-only with 4w delay; moving to 12w + permissionless prevents the owner-theft cycle where a compromised admin can `fundEpoch → wait → sweep → fundEpoch` against honest late claimants.
 - Note: no reward for correct Approve in V1. Correct-Approve rewards (the full "good guardians rewarded weekly" loop from issue #227) are deferred to V1.5 with EAS. V1 only rewards the *active-defence* action (Block) because that is the one that materially prevented an LP loss.
 
 Parameter setters (timelocked — reuses `GovernorParameters` timelock pattern):
@@ -193,6 +212,29 @@ Views:
 - `currentEpoch() returns (uint256)` — derives from `(block.timestamp - epochGenesis) / EPOCH_DURATION`.
 - `pendingEpochReward(address guardian, uint256 epochId) returns (uint256)` — computes the guardian's claimable amount for that epoch. Returns 0 if the epoch hasn't ended, if already claimed, or if the guardian had no Block weight.
 - `requiredOwnerBond(address vault) returns (uint256)` — returns `max(minOwnerStake, IERC4626(vault).totalAssets() * ownerStakeTvlBps / 10_000)`. Used by `bindOwnerStake` and `transferOwnerStakeSlot` to gate whether a prepared stake is sufficient. With `ownerStakeTvlBps = 0` (V1 default) this returns `minOwnerStake` unconditionally — the scaling pipe is wired but inert. A multisig parameter flip activates it without a code change, with the timelock giving owners advance notice to top up before any existing vault becomes undercollateralized on the next rotate.
+
+**Circuit breaker (pause / unpause):**
+- `pause()` — **onlyOwner**. Sets `paused = true`, `pausedAt = block.timestamp`. Freezes: `voteOnProposal`, `openReview`, `resolveReview`, `resolveEmergencyReview`, `voteBlockEmergencySettle`, `claimEpochReward`, `flushBurn`, `_slashApprovers`, `_slashOwner` call sites. Does NOT freeze `stakeAsGuardian`, `requestUnstake*`, `claimUnstake*`, `prepareOwnerStake` — guardians and owners must always be able to exit positions they control.
+- `unpause()` — **onlyOwner** or **permissionless** after `DEADMAN_UNPAUSE_DELAY = 7 days`. Deadman clause prevents a compromised/dead multisig from permanently halting the protocol. Emits `Unpaused(address caller, bool deadman)`.
+
+**Cold-start handling:**
+
+During weeks 1–12 (guardian cohort bootstrap), honest cohort size is small and `totalStakeAtOpen` may be below `MIN_COHORT_STAKE_AT_OPEN`. The gating is deterministic and on-chain:
+
+1. `openReview(proposalId)` snapshots `totalStakeAtOpen`. If below threshold, the review is flagged `cohortTooSmall` (bit on `Review`, not shown in storage schema for brevity).
+2. `resolveReview` on a cohort-too-small review returns `blocked = false` unconditionally. The review layer is effectively disabled for that proposal.
+3. During cohort-too-small windows, the only defence is the vault owner's `vetoProposal` (still allowed in `Pending` state). Spec §7.1 already commits the protocol multisig to running a guardian-of-last-resort, but that is policy — the `MIN_COHORT_STAKE_AT_OPEN` constant is the mechanical guarantee.
+4. Once cohort grows past threshold, the gating is automatic — no parameter flip needed.
+
+This closes the fail-open window while bootstrapping; no new failure mode beyond "governance falls back to today's optimistic model until guardians show up," which is the system's actual cold-start property.
+
+**Trust assumptions (explicit — codify in registry NatSpec):**
+
+1. **WOOD token is fixed-behavior ERC-20.** No transfer hooks (ERC-777/1363), no transfer fees, no rebasing, no upgradeability with semantic changes. The slashing burn path and claim path assume `wood.transfer(x, n)` transfers exactly `n` tokens to `x` with no callback to `msg.sender`. If WOOD is ever upgraded to an ERC-777-like token, the slashing path becomes reentrancy-exposed via `tokensReceived` callbacks. Documented as a trust assumption parallel to the existing "delegatecall to BatchExecutorLib only" assumption flagged in CLAUDE.md §Safety.
+2. **`governor` and `factory` addresses on the registry are stamped at `initialize()` and NEVER reassigned.** No `setGovernor` / `setFactory` setters. Any rewiring requires a full registry redeploy + upgrade — routed through UUPS, same multisig that controls governor upgrade. Closes the "registry drift" attack where governor and factory could point at different registries.
+3. **`BURN_ADDRESS` has no known private key.** Using `0x...dEaD` rather than `address(0)` because some tokens revert on transfers to `address(0)`.
+4. **Protocol multisig controls upgrade + pause + param timelock + refundSlash.** A compromised multisig can: pause for up to 7 days (deadman unpause), refund up to 20% of the slash appeal reserve per epoch, queue parameter changes (6h–7d timelock). Cannot: drain stakes, change governor/factory addresses, mint WOOD, or reverse a burn.
+5. **ERC-8004 `IdentityRegistry` is correctly deployed and `ownerOf(agentId)` is a reliable view.** Used in `stakeAsGuardian(agentId)`. If the registry is compromised, guardians could bind fake `agentId`s, but V1 does nothing with this data so the damage is zero.
 
 ### 3.2 Modified: `SyndicateGovernor.sol`
 
@@ -218,33 +260,34 @@ Minimal changes, scoped to what the governor has to know.
 - **`emergencyCancel`:** narrow — allow only `Draft` and `Pending`. Remove `Approved`/`GuardianReview` branches. In those states, if owner wants to stop execution, they stake WOOD as a guardian and vote Block like everyone else.
 - **Remove `emergencySettle`.** Replace with three functions:
   - `unstick(uint256 proposalId)` — owner-only. Runs only the pre-committed `_settlementCalls` (no fallback, no custom calldata). Intended for cases where the settlement calls themselves are correct but need to be force-triggered (e.g., after strategy duration elapsed and proposer is unresponsive). Reverts if calls revert. Transitions proposal to `Settled`. Replaces the owner-instant path in today's `emergencySettle`.
-  - `emergencySettleWithCalls(uint256 proposalId, BatchExecutorLib.Call[] calldata calls)` — owner-only. Stores `calls` as committed settlement override. Calls `registry.openEmergencyReview(proposalId, keccak256(abi.encode(calls)))`. Does **not** execute calls yet — opens the review window. Emits `EmergencySettleProposed(proposalId, owner, callsHash, reviewEnd)`.
+  - `emergencySettleWithCalls(uint256 proposalId, BatchExecutorLib.Call[] calldata calls)` — owner-only. **Re-checks owner bond at call time**: reverts with `OwnerBondInsufficient` if `registry.ownerStake(vault) < registry.requiredOwnerBond(vault)`. This prevents the "stake at TVL=0, drain at TVL=10M" attack — the bond must be sufficient for the vault's *current* size, not just what it was at bind time. Stores `calls` as committed settlement override. Calls `registry.openEmergencyReview(proposalId, keccak256(abi.encode(calls)))`. Does **not** execute calls yet — opens the review window. Emits `EmergencySettleProposed(proposalId, owner, callsHash, reviewEnd)`.
+  - `cancelEmergencySettle(uint256 proposalId)` — owner-only. Callable any time before `reviewEnd`. Clears the committed calldata hash, closes the emergency review window without slashing. Lets an owner self-recall a mistaken `emergencySettleWithCalls` (e.g. wrong calldata) rather than forcing them to wait through a guaranteed-blocked review and get slashed. Does NOT refund gas. Emits `EmergencySettleCancelled(proposalId, owner)`.
   - `finalizeEmergencySettle(uint256 proposalId, BatchExecutorLib.Call[] calldata calls)` — owner-only. Callable after `reviewEnd`. Reverifies `keccak256(abi.encode(calls)) == committed hash`. Calls `registry.resolveEmergencyReview(proposalId)`:
     - If `blocked`: registry slashes owner; function reverts (owner must try `unstick` or propose new calls, posting fresh stake first).
     - If not blocked: executes calls via `vault.executeGovernorBatch(calls)`, transitions proposal to `Settled`.
 
 ### 3.3 Modified: `SyndicateFactory.sol`
 
-- Store `address public guardianRegistry` (owner-settable, timelock-gated same as `governor`).
+- Store `address public immutable guardianRegistry` — **stamped at factory initialize() and never reassigned**. Matches the registry-side trust assumption (§3.1.Trust #2) that governor-registry and factory-registry cannot diverge. Any rewiring requires a full factory redeploy. The previously-proposed `setGuardianRegistry` timelocked setter is removed.
 - In `createSyndicate`: before deploying the vault, call `guardianRegistry.canCreateVault(msg.sender)` (reverts if no prepared stake). After vault address is known, call `guardianRegistry.bindOwnerStake(msg.sender, vaultAddr)`. If bind fails, the whole creation reverts (atomic).
-- `setGuardianRegistry(address)` — factory owner, timelocked.
+- **Assert registry consistency at call sites that cross contracts**: `rotateOwner` verifies `SyndicateGovernor(_governor).guardianRegistry() == guardianRegistry` before calling `transferOwnerStakeSlot`. A `RegistryMismatch` error surfaces any governance-process bug that wires the two contracts to different registries.
 - **`rotateOwner(address vault, address newOwner)` — factory owner, timelocked.** Recovery path for vaults whose current owner has been slashed (or abandoned keys / rage-quit). Requires the current owner's stake to be **already slashed or fully unstaked** (`registry.hasOwnerStake(vault) == false`) — prevents hostile owner-takeover while a legitimate owner is staked. Calls `SyndicateVault.transferOwnership(newOwner)` and `registry.transferOwnerStakeSlot(vault, newOwner)` so the new owner can post fresh stake. Without this function, a slashed owner who walks away leaves the vault permanently unable to create new proposals — a dead-vault risk flagged by Carlos's review (PR #229). Timelock + multisig gating keeps it from being a bypass of the slashing economics.
 
 ### 3.4 Modified: `ISyndicateGovernor.sol`
 
 New enum value, new struct field, new errors, new events, new function signatures:
 
-- Errors: `NotInGuardianReview`, `EmergencySettleBlocked`, `EmergencySettleNotReady`, `EmergencySettleMismatch`, `RegistryNotSet`.
-- Events (governor-side): `GuardianReviewResolved(uint256 indexed proposalId, bool blocked)`, `EmergencySettleProposed(uint256 indexed proposalId, address indexed owner, bytes32 callsHash, uint256 reviewEnd)`, `EmergencySettleFinalized(uint256 indexed proposalId, int256 pnl)`, `GuardianRegistryUpdated(address old, address new)`.
-- Events (registry-side): `EpochFunded(uint256 indexed epochId, address indexed funder, uint256 amount)`, `EpochRewardClaimed(uint256 indexed epochId, address indexed guardian, uint256 amount)`, `EpochUnclaimedSwept(uint256 indexed fromEpoch, uint256 indexed toEpoch, uint256 amount)`, `ApproverCapReached(uint256 indexed proposalId)`.
-- Function changes: drop `emergencySettle`; add `unstick`, `emergencySettleWithCalls`, `finalizeEmergencySettle`. `propose()` signature unchanged (no `reviewPeriodOverride`).
+- Errors: `NotInGuardianReview`, `EmergencySettleBlocked`, `EmergencySettleNotReady`, `EmergencySettleMismatch`, `RegistryNotSet`, `OwnerBondInsufficient`, `RegistryMismatch`, `VoteChangeLockedOut`, `NoVoteChange`, `NewSideFull`, `CohortTooSmallToReview` (event, not error — informational), `Paused`.
+- Events (governor-side): `GuardianReviewResolved(uint256 indexed proposalId, bool blocked)`, `EmergencySettleProposed(uint256 indexed proposalId, address indexed owner, bytes32 callsHash, uint256 reviewEnd)`, `EmergencySettleCancelled(uint256 indexed proposalId, address indexed owner)`, `EmergencySettleFinalized(uint256 indexed proposalId, int256 pnl)`.
+- Events (registry-side): `ReviewOpened(uint256 indexed proposalId, uint128 totalStakeAtOpen)`, `CohortTooSmallToReview(uint256 indexed proposalId, uint256 totalStakeAtOpen)`, `EpochFunded(uint256 indexed epochId, address indexed funder, uint256 amount)`, `EpochRewardClaimed(uint256 indexed epochId, address indexed guardian, uint256 amount)`, `EpochUnclaimedSwept(uint256 indexed fromEpoch, uint256 indexed toEpoch, uint256 amount)`, `ApproverCapReached(uint256 indexed proposalId)`, `PendingBurnRecorded(uint256 amount)`, `BurnFlushed(uint256 amount)`, `Paused(address indexed by)`, `Unpaused(address indexed by, bool deadman)`, `SlashAppealRefunded(address indexed recipient, uint256 amount, uint256 epochId)`, `SlashAppealReserveFunded(address indexed by, uint256 amount)`.
+- Function changes: drop `emergencySettle`; add `unstick`, `emergencySettleWithCalls`, `cancelEmergencySettle`, `finalizeEmergencySettle`. `propose()` signature unchanged.
 
 ## 4. Data flow — key scenarios
 
 **Normal happy path:**
 1. Agent submits proposal → `Pending` → voting. On `propose()` the governor already stamped `reviewEnd = voteEnd + reviewPeriod` and `executeBy = reviewEnd + executionWindow`.
 2. `voteEnd` elapses. State derivation in `_resolveStateView` returns `GuardianReview` (no transactions needed).
-3. Guardians vote Approve (majority) / Block (minority); first vote snapshots `totalStakeAtOpen` in the registry. Neither tally hits block quorum.
+3. After `voteEnd`, any keeper (including an honest guardian) calls `openReview(proposalId)` — this snapshots `totalStakeAtOpen` in the registry. Guardians then vote Approve (majority) / Block (minority); neither tally hits block quorum.
 4. `reviewEnd` elapses. Anyone calls `executeProposal`; governor calls `registry.resolveReview` defensively → `resolved=true, blocked=false`. Transitions to `Approved` then immediately proceeds through execution logic.
 5. Strategy runs; proposer calls `settleProposal`. Proposal → `Settled`. No slashing.
 
@@ -276,14 +319,23 @@ New enum value, new struct field, new errors, new events, new function signature
 | `reviewPeriod` | 24 hours | 6h–7 days | Single global review window. No per-proposal override in V1 — if a strategy needs a shorter window, that's a V1.5 question tied to proposer stake-at-risk, not a V1 knob. |
 | `blockQuorumBps` | 3000 (30%) | 1000–10000 | Below 50% so a motivated guardian minority can stop clearly malicious proposals; high enough that random dissent doesn't grief. |
 | `EPOCH_DURATION` | 7 days | — (constant) | Matches the Minter emissions epoch so guardian rewards can be wired into the same weekly cycle once V1.5 lands. |
+| `MIN_COHORT_STAKE_AT_OPEN` | 50_000 WOOD | — (constant) | Cold-start threshold. Reviews opened with less stake than this fall back to `blocked=false` + owner-only defence. Mechanical guarantee that the review layer cannot be the *sole* defence during bootstrap. |
+| `MAX_APPROVERS_PER_PROPOSAL` | 100 | — (constant) | Bounds `_slashApprovers` gas. `ApproverCapReached` event fires when reached. No corresponding cap on blockers — intentionally asymmetric, see §6. |
+| `SWEEP_DELAY` | 12 weeks | — (constant) | Minimum time after epoch end before `sweepUnclaimed` is callable. Long window protects honest late claimants. Permissionless after the delay. |
+| `LATE_VOTE_LOCKOUT_BPS` | 1000 (10%) | — (constant) | Final 10% of the review window is locked for vote changes. Prevents cartel stake-up + late-switch gaming. |
+| `MAX_REFUND_PER_EPOCH_BPS` | 2000 (20%) | — (constant) | Ceiling on `refundSlash` per epoch, enforced in-code. Compromised multisig cannot drain the slash appeal reserve in a single call. |
+| `DEADMAN_UNPAUSE_DELAY` | 7 days | — (constant) | If owner pauses and goes silent, anyone can unpause after this delay. |
 | Per-epoch reward budget | **set per-epoch** | — | No static rate parameter. The protocol calls `fundEpoch(epochId, amount)` each epoch with whatever WOOD it chooses to allocate (initially via multisig; later via Minter emissions). Guardians split the epoch's pool pro-rata by their Block-vote stake weight on proposals that resolved blocked during that epoch. |
-| **Slash destination** | **BURN** (`0x…dEaD`) | — | Chosen over treasury per business review: cleaner regulatory posture (slash is not protocol-controlled revenue), aligns with WOOD scarcity narrative, removes any treasury-capture incentive to over-slash. Wrongful slashes are made whole via the appeal path (see §7), funded from a separate treasury reserve, not from burned tokens. |
+| **Slash destination** | **BURN** (`0x…dEaD`) | — | Chosen over treasury per business review: cleaner regulatory posture (slash is not protocol-controlled revenue), aligns with WOOD scarcity narrative, removes any treasury-capture incentive to over-slash. Wrongful slashes are made whole via the appeal path (see §7), funded from a separate slash appeal reserve (internal balance, separate from general WOOD pool, capped at 20% refund per epoch). |
 
 All parameters are timelocked using the same queue/finalize pattern as `GovernorParameters.sol`, with `MIN_PARAM_CHANGE_DELAY = 6 hours` and `MAX_PARAM_CHANGE_DELAY = 7 days`.
 
 ## 6. Security notes
 
-- **Gas-bounded iteration:** `_slashApprovers` iterates `_approvers[proposalId]`; the blocked-resolution epoch-weight attribution iterates `_blockers[proposalId]`. Both are bounded by invariant caps `MAX_APPROVERS_PER_PROPOSAL = 100` and `MAX_BLOCKERS_PER_PROPOSAL = 100`. Guardians attempting to join a full side revert; they can still join the other side or wait for a subsequent proposal. This prevents griefing via thousands of dust-stakers joining to brick slash-resolution or epoch-reward resolution.
+- **Gas-bounded iteration — asymmetric by design.** `_slashApprovers` iterates `_approvers[proposalId]` AND zeroes each stake AND does a token transfer — bounded by `MAX_APPROVERS_PER_PROPOSAL = 100`. `_blockers[proposalId]` iteration inside `resolveReview` only updates epoch-weight mappings (no token transfers, no per-element SSTORE to zero) — does NOT need a cap. Capping blockers would create a DoS against honest defence (a 100-wallet cartel could fill the Block side on every proposal; later honest blockers would revert). No `MAX_BLOCKERS_PER_PROPOSAL` constant exists in this spec.
+- **CEI on slash + pull-based burn fallback.** `_slashApprovers` / `_slashOwner` write all state (zero stakes, decrement `_totalGuardianStake`, set `resolved = true`, set `blocked = true`) BEFORE the `wood.transfer(BURN_ADDRESS, total)`. If the transfer reverts (pathological WOOD upgrade, paused token, etc.), the amount moves to `_pendingBurn[address(this)]` and `flushBurn()` can retry later — state transition is already committed, so the review is never stuck.
+- **Pause mechanism + deadman auto-unpause.** Registry has `pause()` / `unpause()` gated by owner, with a 7-day deadman clause that lets anyone unpause if the owner goes silent. Freezes `voteOnProposal`, `openReview`, both `resolve*`, `voteBlockEmergencySettle`, `claimEpochReward`, `flushBurn`, and the slashing call sites. Intentionally does NOT freeze unstake/claim paths — positions must remain exitable.
+- **Reentrancy:** every external entrypoint that moves WOOD is `nonReentrant`: `stakeAsGuardian`, `claimUnstakeGuardian`, `prepareOwnerStake`, `cancelPreparedStake`, `claimUnstakeOwner`, `fundEpoch`, `claimEpochReward`, `sweepUnclaimed`, `flushBurn`, `refundSlash`, `fundSlashAppealReserve`, `resolveReview`, `resolveEmergencyReview`. Plus the trust assumption that WOOD has no transfer hooks (§3.1.Trust #1) — belt + suspenders.
 - **Stake snapshot vs. current:** guardian vote weight = `stakedAmount` at vote time (snapshotted into `_votes`). If a guardian tops up after voting, the extra doesn't count. Prevents sandwich-style weight manipulation.
 - **Unstake griefing:** requesting unstake immediately removes voting weight, but the guardian's past votes already count toward their proposal reviews. Slashing still applies during cool-down (stake is held in contract, just earmarked for release). This is critical — otherwise a guardian could Approve a malicious proposal and immediately unstake to dodge slashing.
 - **Owner re-stake after slash:** a slashed owner can restake and resume governance powers, but past slashing events are recorded and queryable. Off-chain reputation is out-of-scope for V1.
@@ -339,7 +391,7 @@ All tests live in `contracts/test/`. New files:
 
 Must-pass scenarios:
 1. Happy path — proposal survives review, executes, settles.
-2. Block-quorum rejection — Approvers slashed, Blockers keep stake.
+2. Block-quorum rejection — Approvers slashed, Blockers keep stake and accrue epoch-weight.
 3. Unstake griefing — guardian Approves then requests unstake; slashing still applies before claim.
 4. Owner attempts `vetoProposal` during `GuardianReview` → reverts.
 5. Owner attempts `emergencyCancel` on `Approved` → reverts.
@@ -347,7 +399,17 @@ Must-pass scenarios:
 7. `emergencySettleWithCalls` not blocked → executes normally after `reviewEnd`.
 8. `unstick` with working pre-committed settlement calls → succeeds.
 9. Factory `createSyndicate` without prepared owner stake → reverts.
-10. Max-approvers cap — 101st Approve reverts, 101st Block succeeds.
+10. Max-approvers cap — 101st Approve reverts, 101st Block succeeds (blockers uncapped).
+11. **Cold-start fallback** — proposal opens with `totalStakeAtOpen < MIN_COHORT_STAKE_AT_OPEN`, block votes cast, `resolveReview` returns `blocked=false` regardless of tally, `CohortTooSmallToReview` emitted.
+12. **Denominator-manipulation** — attempt to freeze `totalStakeAtOpen` before Block votes by having a cartel vote dust early; asserts that `openReview` was called at `voteEnd` and cartel can't pre-empt the snapshot.
+13. **Late-vote lockout** — vote-change in final 10% of review window reverts with `VoteChangeLockedOut`.
+14. **CEI + pull-burn** — mock WOOD transfer to reject on first call; `resolveReview` still sets `resolved=true`, amount goes to `_pendingBurn`, `flushBurn()` succeeds on retry.
+15. **Pause + deadman** — owner pauses, tries to vote → reverts; wait 7 days + 1 second, any address calls `unpause()` → succeeds.
+16. **Refund cap** — multisig calls `refundSlash` for >20% of reserve in one epoch → reverts; second call same epoch staying under cumulative cap → succeeds.
+17. **Sweep delay** — `sweepUnclaimed(epochId)` before `SWEEP_DELAY` elapses → reverts; after → permissionless success.
+18. **`emergencySettleWithCalls` with insufficient bond** — owner staked 10k, vault TVL grew to $10M with `ownerStakeTvlBps = 50`; `emergencySettleWithCalls` reverts with `OwnerBondInsufficient` until owner tops up.
+19. **`cancelEmergencySettle`** — owner submits bad calldata, self-recalls before `reviewEnd`, no slash; re-submits correct calldata.
+20. **Registry mismatch** — factory `rotateOwner` with a governor whose `guardianRegistry != factory.guardianRegistry` reverts with `RegistryMismatch`.
 
 Fuzz targets:
 - Randomized vote sequences; assert `blockStakeWeight + approveStakeWeight <= totalGuardianStakeAtReviewOpen`.
@@ -359,7 +421,7 @@ Fuzz targets:
 2. Configure initial parameters (see §5).
 3. Deploy new `SyndicateGovernor` implementation. Proxy upgrade existing governor (still pre-mainnet — no in-flight proposals to migrate).
 4. Deploy new `SyndicateFactory` implementation. Proxy upgrade.
-5. Protocol multisig calls `factory.setGuardianRegistry(registry)` and `governor.setGuardianRegistry(registry)` (both timelocked).
+5. Factory and governor are deployed with `guardianRegistry` stamped at their `initialize()` — there is no post-deploy setter. Address consistency between governor and factory is enforced via the immutable stamp + the `rotateOwner` `RegistryMismatch` assert.
 6. Seed initial guardian cohort (protocol team + launch partners) by distributing WOOD and having them call `stakeAsGuardian`.
 7. Existing vault owners (if any on testnets) call `prepareOwnerStake` + a new `factory.bindExistingVault(vault)` admin function (owner-only, one-time, used only for pre-mainnet migration of Base Sepolia test vaults) OR we simply redeploy vaults as part of the mainnet redeployment branch already in flight.
 
@@ -395,7 +457,7 @@ Tracked via the existing Sherwood subgraph (new `Guardian`, `ProposalReview`, an
 | `_resolveStateView` / `_resolveState` new GuardianReview branch | +400 |
 | `reviewEnd` stamping in `propose()` / `approveCollaboration()` | +200 |
 | New errors + events | +150 |
-| `setGuardianRegistry` setter + init param + storage read | +250 |
+| Immutable `_guardianRegistry` init param + storage read (no setter) | +120 |
 | **Net estimated delta** | **+1,600 to +900 bytes** (range depends on how much `emergencySettle` removal saves) |
 
 Even the optimistic case blows the 53-byte margin. This must be mitigated before implementation or the governor won't deploy.
@@ -518,7 +580,29 @@ Three parallel ToB skill reviews (`guidelines-advisor`, `insecure-defaults`, `en
 
 Full review output retained in the PR #229 comment thread.
 
-## 18. Open questions (remaining)
+## 18. Changelog — ToB review fixes applied (2026-04-19)
+
+All ToB review findings applied except `ownerStakeTvlBps = 50` default (intentionally left at 0 per user — will be flipped by timelocked parameter change when TVL scaling is desired).
+
+| Finding | Fix applied | Where |
+|---|---|---|
+| First-vote snapshot manipulable | `openReview(proposalId)` permissionless keeper at `voteEnd`; snapshots `totalStakeAtOpen` once. | §3.1 `openReview` |
+| Cold-start fail-open (0-2 guardians) | `MIN_COHORT_STAKE_AT_OPEN = 50k WOOD` constant; reviews below threshold return `blocked=false` + emit `CohortTooSmallToReview`. Owner-veto remains active defence during bootstrap. | §3.1 Cold-start subsection |
+| CEI violation + DoS on `_slashApprovers` | State committed before token transfer; single bulk burn with pull-based `_pendingBurn` fallback + `flushBurn()`. Review never stuck. | §3.1 Slashing |
+| No pause mechanism | `pause()` / `unpause()` + 7-day deadman auto-unpause. Freezes vote/resolve/claim paths; preserves stake-exit paths. | §3.1 Circuit breaker |
+| Implicit reentrancy | `nonReentrant` explicitly mandated on every WOOD-transfer entrypoint. | §3.1 and §6 |
+| `MAX_BLOCKERS_PER_PROPOSAL` DoS | Cap dropped. Only approvers need the cap (slashing iteration); blockers only accrue epoch-weight. | §3.1 storage + §6 |
+| Unbounded `refundSlash` | `MAX_REFUND_PER_EPOCH_BPS = 2000` (20%) hardcoded; separate `slashAppealReserve` internal balance. Compromised multisig cannot drain. | §3.1 Slashing |
+| Registry drift between governor/factory | Both registry pointers made **immutable** after init. `RegistryMismatch` assert at `rotateOwner`. No `setGuardianRegistry` setter anywhere. | §3.1 storage, §3.3 |
+| Vote-change stake gaming | `LATE_VOTE_LOCKOUT_BPS = 1000` — final 10% of review window locks vote changes. Vote-change stake weight never re-snapshots (original first-vote weight preserved). | §3.1 `voteOnProposal` |
+| `requiredOwnerBond` only checked at bind | Also checked at `emergencySettleWithCalls` call time. Reverts `OwnerBondInsufficient` if vault outgrew owner's stake. | §3.2 |
+| `sweepUnclaimed` owner-theft cycle | 4w → 12w delay; permissionless after delay (no longer owner-gated). | §3.1 Reward |
+| Epoch attribution via `reviewEnd` | Changed to `block.timestamp` of `resolveReview` — no proposer-side epoch targeting. | §3.1 Reward |
+| Missing `cancelEmergencySettle` | Added — owner can self-recall a mistaken emergency settle before `reviewEnd`, no slash. | §3.2 |
+| Implicit WOOD trust | "Trust assumptions" block added explicitly: WOOD is non-hook/non-fee/non-rebasing; governor+factory immutable; `BURN_ADDRESS` secure; multisig upper bounds. | §3.1 Trust assumptions |
+| `minOwnerStake` symmetric to guardian | Left at 10_000 WOOD floor; TVL scaling via `ownerStakeTvlBps` is wired-and-inert per user direction. Bond now re-checked at `emergencySettleWithCalls` so staying at floor is only safe until vault TVL grows. |
+
+## 19. Open questions (remaining)
 
 1. **Slash Appeal Reserve sizing** — opening allocation and per-epoch refund cap. Owned by tokenomics governance (WOOD emissions + treasury allocation), not this spec. Will be resolved by a separate governance vote before mainnet launch.
 
