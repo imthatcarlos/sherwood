@@ -134,11 +134,11 @@ IERC20 public immutable wood;     // WOOD token
 **Public / external functions:**
 
 Guardian role:
-- `stakeAsGuardian(uint256 amount)` — pull WOOD, register caller as active guardian. Requires `amount >= minGuardianStake`. Idempotent: existing guardians can top up.
+- `stakeAsGuardian(uint256 amount, uint256 agentId)` — pull WOOD, register caller as active guardian. Requires `amount >= minGuardianStake`. Idempotent: existing guardians can top up (agentId is recorded once on first stake; subsequent calls ignore the agentId arg). The `agentId` is the caller's ERC-8004 identity NFT token ID; verified via `IdentityRegistry.ownerOf(agentId) == msg.sender`. V1 does nothing with this data beyond storage + event emission, but storing it now means the V2 reputation/EAS layer can read it without a migration. V1 accepts `agentId = 0` as "unregistered" for easier bootstrap — V2 migration will require a one-time `bindAgentId` call.
 - `requestUnstakeGuardian()` — marks `unstakeRequestedAt = block.timestamp`. Guardian immediately loses voting power (removed from `_totalGuardianStake`). Cannot re-vote until unstake is either cancelled or claimed.
 - `cancelUnstakeGuardian()` — reverses an unstake request; stake becomes voting-eligible again.
 - `claimUnstakeGuardian()` — after `coolDownPeriod` elapses, releases WOOD to guardian. Zero-stake guardians are fully deregistered.
-- `voteOnProposal(uint256 proposalId, VoteType support)` — `Approve` or `Block`. The registry reads `reviewEnd` from the governor via `ISyndicateGovernor.getProposal(proposalId)` and the proposal's `voteEnd`; vote is allowed only when `voteEnd <= now < reviewEnd`. On the first vote for a given proposalId, snapshots `_totalGuardianStake` into `Review.totalStakeAtOpen` — this fixes the quorum denominator and prevents dilution by late-joining stakers. One vote per guardian per proposal; subsequent calls revert.
+- `voteOnProposal(uint256 proposalId, VoteType support)` — `Approve` or `Block`. The registry reads `reviewEnd` from the governor via `ISyndicateGovernor.getProposal(proposalId)` and the proposal's `voteEnd`; vote is allowed only when `voteEnd <= now < reviewEnd`. On the first vote for a given proposalId, snapshots `_totalGuardianStake` into `Review.totalStakeAtOpen` — this fixes the quorum denominator and prevents dilution by late-joining stakers. **Guardians MAY change their vote up until `reviewEnd`.** Changing a vote subtracts the guardian's previously-recorded stake weight from the old side (Approve/Block), adds the same stake weight (snapshotted from first vote, not re-snapshotted) to the new side, and (for Approve → Block changes) removes the guardian from `_approvers[proposalId]`. Calling the function with the *same* support you already recorded reverts with `NoVoteChange`. Vote-change is essential because of the cartel attack: without it, an honest early Approver is strictly worse off than an abstainer, which kills the optimistic-Approve equilibrium the system needs.
 
 Owner role:
 - `prepareOwnerStake(uint256 amount)` — pull WOOD into the registry under `_prepared[msg.sender]`. Does **not** yet bind to a vault. Must be ≥ `minOwnerStake`. One prepared stake per owner at a time.
@@ -185,10 +185,14 @@ Minimal changes, scoped to what the governor has to know.
 - **Initializer:** accept `guardianRegistry` address.
 - **`propose()` signature change:** adds a trailing `uint256 reviewPeriodOverride` parameter. Proposer passes `0` to use `registry.defaultReviewPeriod()`, or a concrete value in `[registry.minReviewPeriod(), registry.maxReviewPeriod()]`. This gives time-sensitive strategies (funding-rate, oracle-reactive) a path to a shorter review at the cost of a higher perceived risk to guardians. Governor reverts with `InvalidReviewPeriod` if the override is outside the registry bounds at propose time.
 - **`propose()` body:** after computing `voteEnd` (non-collaborative) or when collaborative consent completes in **`approveCollaboration()`**, stamp `reviewEnd = voteEnd + resolvedReviewPeriod` and shift `executeBy = reviewEnd + executionWindow` (execution window is measured from the *end of guardian review*, not the end of voting). This keeps the full lifecycle deterministic from creation — no mid-flight parameter drift and no registry call needed at Pending → GuardianReview transition.
-- **`_resolveStateView` / `_resolveState`:** when `stored == Pending` and voting ended with no veto quorum:
-  - If `block.timestamp <= proposal.reviewEnd`: return `GuardianReview` (lazy transition; no registry call).
-  - Else: call `registry.resolveReview(proposalId)` → if `blocked == true`, transition to `Rejected` (registry auto-slashes approvers inside `resolveReview`). Else transition to `Approved`.
-  - When `stored == GuardianReview`: same logic as above after voteEnd.
+- **`_resolveStateView` (view, non-mutating):** when `stored == Pending` and voting ended with no veto quorum:
+  - If `block.timestamp <= proposal.reviewEnd`: return `GuardianReview`.
+  - Else: **still return `GuardianReview`** until `_resolveState` (mutating path) runs `registry.resolveReview`. Read `registry.getReview(proposalId).resolved` — if `true`, return `Rejected` or `Approved` based on `blocked`. If `false`, return `GuardianReview` (resolution pending; the caller must run a mutating function to force resolution).
+  - The view never returns the final terminal state until the on-chain resolution has actually occurred. This is the tradeoff for keeping `resolveReview` mutating (needed for slashing + state caching).
+  - **UI / indexer guidance** (added to `ISyndicateGovernor` NatSpec): do not poll `getProposalState(id)` to detect `Rejected`. Subscribe to the `GuardianReviewResolved` event, or call `registry.resolveReview(id)` yourself (permissionless) to force resolution.
+- **`_resolveState` (mutating):** when a state transition out of `GuardianReview` is required (called from `executeProposal`, `cancelProposal`, `vetoProposal`, or any other function that reads/writes state after voteEnd):
+  - If `block.timestamp <= proposal.reviewEnd`: persist as `GuardianReview`, return `GuardianReview`.
+  - Else: call `registry.resolveReview(proposalId)` → if `blocked == true`, persist as `Rejected` (registry auto-slashes approvers inside `resolveReview`). Else persist as `Approved`.
   - `Approved` → `Expired` logic is unchanged, just using the shifted `executeBy`.
 - **`executeProposal`:** unchanged preconditions — still requires `state == Approved`. (The new gate is earlier: `Approved` is now only reachable after successful guardian review.)
 - **`vetoProposal`:** narrow — allow only `Pending` state. Remove `Approved`/`GuardianReview` branch. (Rationale: once the proposal is in `GuardianReview`, owner unilateral veto is disempowering to guardians and bypasses the economic-security layer.)
@@ -204,7 +208,8 @@ Minimal changes, scoped to what the governor has to know.
 
 - Store `address public guardianRegistry` (owner-settable, timelock-gated same as `governor`).
 - In `createSyndicate`: before deploying the vault, call `guardianRegistry.canCreateVault(msg.sender)` (reverts if no prepared stake). After vault address is known, call `guardianRegistry.bindOwnerStake(msg.sender, vaultAddr)`. If bind fails, the whole creation reverts (atomic).
-- `setGuardianRegistry(address)` — owner, timelocked.
+- `setGuardianRegistry(address)` — factory owner, timelocked.
+- **`rotateOwner(address vault, address newOwner)` — factory owner, timelocked.** Recovery path for vaults whose current owner has been slashed (or abandoned keys / rage-quit). Requires the current owner's stake to be **already slashed or fully unstaked** (`registry.hasOwnerStake(vault) == false`) — prevents hostile owner-takeover while a legitimate owner is staked. Calls `SyndicateVault.transferOwnership(newOwner)` and `registry.transferOwnerStakeSlot(vault, newOwner)` so the new owner can post fresh stake. Without this function, a slashed owner who walks away leaves the vault permanently unable to create new proposals — a dead-vault risk flagged by Carlos's review (PR #229). Timelock + multisig gating keeps it from being a bypass of the slashing economics.
 
 ### 3.4 Modified: `ISyndicateGovernor.sol`
 
@@ -267,6 +272,13 @@ All parameters are timelocked using the same queue/finalize pattern as `Governor
 - **Reentrancy:** slashing and cool-down claims touch WOOD ERC-20 transfers. Reuse `nonReentrant` modifier pattern from existing governor.
 - **Owner can't front-run guardian block:** owner's `emergencyCancel` is narrowed to `Draft`/`Pending`. Once in `GuardianReview`, the only cancel vector is guardian Block quorum.
 - **`unstick` abuse:** owner could spam `unstick` on a proposal that legitimately needs emergency settle. Mitigation: `unstick` is only callable after the proposal's strategy duration has elapsed (same precondition as current `emergencySettle`), and the call reverts if pre-committed settlement calls themselves revert. This matches current behavior.
+- **Keeper incentive for `resolveReview`:** the function is permissionless but expensive (~500k gas to iterate 100 approvers + SSTORE zero + token burn). Nobody has a first-party incentive to pay. In practice, the next call to `executeProposal` forces resolution and the proposer pays — proposer becomes an unwilling keeper. This is acceptable for V1 (proposer is rewarded with execution anyway), but document it. V2 can add a small gas rebate from the burn amount (e.g. 0.5%) to any address that calls `resolveReview` first.
+- **Blocker free-ride / V1 DoS attack surface:** Block voters have no stake at risk (slashing only hits Approvers). A 30%-stake cartel can Block every proposal across every vault with zero cost. V1 accepts this as a known attack surface — the mitigation belongs to V1.5:
+  - Correct-Approve rewards (deferred, V1.5) create positive expectancy for honest guardians, diluting the cartel's relative weight.
+  - A per-guardian "blocked but later refuted" penalty requires the shareholder-challenge / jury system (Option C, deferred).
+  - Reputation-weighted quorum via EAS attestations (deferred, V1.5) breaks stake-concentration cartels.
+  Document in `mintlify-docs/learn/guardians.mdx` so new guardians understand the honeymoon period.
+- **ApproverCapReached signaling:** emit `ApproverCapReached(proposalId)` when the 101st Approve attempt reverts. Off-chain monitors use this to flag proposals where the system's participation assumption is being tested. Revisit the cap at >50 active independent guardians.
 
 ## 7. Bootstrap policy & appeal path
 
@@ -350,7 +362,54 @@ Tracked via the existing Sherwood subgraph (new `Guardian`, `ProposalReview`, an
 | New-syndicate-creation rate (vs. 30-day pre-launch baseline) | ≥ 70% | ≥ 90% | ≥ 100% | Sustained >30% drop → owner-stake friction too high, lower `minOwnerStake` |
 | `emergencySettleWithCalls` events | — | — | — | Any single event here is a live fire-drill — track outcomes (blocked vs. executed) individually |
 
-## 11. Follow-up specs (explicitly out of scope)
+## 11. Bytecode impact & mitigation
+
+`SyndicateGovernor` runtime: **24,523 / 24,576 bytes (53-byte margin)** as of 2026-04 (per `CLAUDE.md`). The proposed changes to the governor are net-additive:
+
+| Change | Estimated delta |
+|---|---|
+| Remove `emergencySettle` + `_tryPrecommittedThenFallback` | **−800 to −1,500 bytes** (conservative; depends on solc optimizer) |
+| Add `unstick` (simple, no hash check) | +300 |
+| Add `emergencySettleWithCalls` (calldata → storage, hash commit) | +500 |
+| Add `finalizeEmergencySettle` (hash reverify, calls loop, slashing branch) | +600 |
+| `_resolveStateView` / `_resolveState` new GuardianReview branch | +400 |
+| `reviewEnd` stamping in `propose()` / `approveCollaboration()` | +200 |
+| New errors + events | +150 |
+| `setGuardianRegistry` setter + init param + storage read | +250 |
+| **Net estimated delta** | **+1,600 to +900 bytes** (range depends on how much `emergencySettle` removal saves) |
+
+Even the optimistic case blows the 53-byte margin. This must be mitigated before implementation or the governor won't deploy.
+
+### Mitigation options (in order of preference)
+
+**Option B — extract `GovernorEmergency.sol` abstract contract.** Preferred.
+
+- Create `contracts/src/GovernorEmergency.sol` — abstract, matching the pattern of `GovernorParameters.sol`.
+- Move `unstick`, `emergencySettleWithCalls`, `finalizeEmergencySettle`, and their internal helpers (`_tryPrecommittedSettle`, `_verifyCallsHash`) into it.
+- `SyndicateGovernor` inherits `GovernorEmergency` alongside `GovernorParameters`.
+- Virtual accessors (following the `GovernorParameters` pattern) let the abstract read `_proposals`, `_settlementCalls`, `_registry`.
+- Preserves the "governor owns lifecycle" invariant. No new cross-contract trust.
+- Expected net bytecode after split: ~23,500 bytes (governor) + standalone abstract bytecode. Safe margin.
+
+**Option A — move post-vote lifecycle math into `GuardianRegistry`.** Fallback if Option B doesn't buy enough.
+
+- Registry becomes the state-machine oracle for `Pending` → `GuardianReview` → `Approved|Rejected`.
+- Governor's `_resolveStateView` / `_resolveState` become thin delegates that read from registry.
+- Biggest refactor; highest V1 risk; cleanest long-term shape.
+- Defer to this only if Option B still lands over 24,400 bytes after implementation.
+
+**Option C — move owner-settlement externals onto `SyndicateVault`.** Not recommended.
+
+- Puts state-machine entry points on the vault (`unstick`, `emergencySettleWithCalls`) which already has `executeGovernorBatch`.
+- Saves 1–1.5kB from governor but breaks the "governor owns lifecycle" invariant and forces every vault to carry the logic. Also harder to upgrade since vaults are non-upgradeable in the current factory.
+
+### Required before implementation
+
+1. Prototype Option B in a scratch branch; run `forge build --sizes` on the resulting `SyndicateGovernor`.
+2. If governor > 24,400: add Option A on top.
+3. CI check: add `forge build --sizes` to the contracts CI workflow; fail if any deployed contract > 24,400 bytes. (Complements the existing `CLAUDE.md` rule.)
+
+## 12. Follow-up specs (explicitly out of scope)
 
 - **Correct-Approve rewards + weekly cron** — Minter emissions allocated to guardians whose Approve votes matched the subsequent execution outcome (proposal executed successfully without emergency actions). Requires EAS schema for attestations. (V1 already ships the **Block**-side reward via `rewardPerBlockWood` from treasury — see §3.1. What's deferred is the Minter-emissions funding source and the correct-Approve reward loop.)
 - **EAS attestation schema** — `GUARDIAN_REVIEW_VOTE` schema capturing (proposalId, guardian, support, reasoning hash). Feeds reward computation.
@@ -360,7 +419,7 @@ Tracked via the existing Sherwood subgraph (new `Guardian`, `ProposalReview`, an
 - **Guardian reputation decay** — aged-out stake, repeated-correct-vote multipliers.
 - **Hermes `guardian` skill** — off-chain agent runtime that scans proposals across all syndicates and calls `voteOnProposal`.
 
-## 12. Changelog — scope changes from business review (2026-04-19)
+## 13. Changelog — scope changes from business review (2026-04-19)
 
 Applied wholesale from the business-analyst review of this spec:
 
@@ -371,10 +430,24 @@ Applied wholesale from the business-analyst review of this spec:
 - **Bootstrap commitments:** multisig runs guardian weeks 1–12, appeal path via treasury reserve. See §7.
 - **Success metrics:** cohort size, coverage, correct-block ratio, wrongful-slash ratio, creator-onboarding drag. See §10.
 
-## 13. Open questions (want your call before writing the plan)
+## 14. Changelog — Carlos code-review changes (2026-04-19 PR #229)
 
-1. **`unstick` access control**: owner-only, or permissionless after strategy duration + N hours? Today's `emergencySettle` is owner-only; unchanged here, but worth flagging.
-2. **Guardian cap per proposal**: is 100 the right ceiling for `MAX_APPROVERS_PER_PROPOSAL`? Too low risks legitimate large cohorts not all being able to Approve. Too high risks gas griefing on slash.
-3. **Factory `bindOwnerStake` atomicity**: spec has factory calling registry *after* vault deploy. If bind reverts, the whole `createSyndicate` reverts and vault deployment is rolled back — confirm this is the desired ordering vs. binding before deploy (which requires computing vault address via CREATE2).
-4. **Slash Appeal Reserve sizing**: opening allocation (e.g. 1% of total WOOD supply?) and per-epoch refund cap. Propose via tokenomics governance, not fixed here.
-5. **Owner dual-use optimization**: should vault owners be allowed to double-count their owner-stake as guardian-stake on *other* vaults (so their capital isn't fully idle)? Adds reward-eligibility and active participation incentive, at the cost of extra accounting. Flag for V1.5 unless there's pressure to ship in V1.
+Applied from Carlos's review in response to blockers:
+
+- **Bytecode mitigation plan added as §11** — Option B (`GovernorEmergency.sol` abstract extraction) recommended; Option A fallback documented. Prototype + `forge build --sizes` gate required before implementation.
+- **View/mutation state-machine split** — `_resolveStateView` now returns `GuardianReview` (not transitioned) until `_resolveState` or direct `registry.resolveReview` runs. Indexer guidance added to `ISyndicateGovernor` NatSpec. See §3.2.
+- **Guardians can change their vote** until `reviewEnd` — stake weight preserved from first vote, `_approvers` array kept consistent. Fixes cartel-slashing equilibrium flaw. See §3.1.
+- **Owner rotation path** — `SyndicateFactory.rotateOwner(vault, newOwner)` behind owner + timelock. Only callable when current owner's stake is slashed or fully unstaked. See §3.3.
+- **Guardian `agentId`** — `stakeAsGuardian` now takes ERC-8004 `agentId`; stored for V2 reputation layer, not used in V1. See §3.1.
+- **Keeper incentive note** — proposer pays via `executeProposal`; V2 can add gas rebate from burn. See §6.
+- **V1 blocker free-ride attack surface documented** — explicit V1 limitation; mitigations defer to V1.5 (correct-Approve rewards, EAS reputation). See §6.
+- **`ApproverCapReached(proposalId)` event** added. See §6.
+- **Open question 4 (factory bind ordering) resolved** as "bind-after-deploy, atomic via revert" per Carlos. Dropped.
+- **Open question 3 resolved** — 100-approver cap retained; `ApproverCapReached` event added.
+
+## 15. Open questions (remaining after #229 review)
+
+1. **`unstick` access control**: Carlos leans owner-only for V1 (already spec default). Confirmed — treating as decided unless anyone pushes back.
+2. **Slash Appeal Reserve sizing**: opening allocation (e.g. 1% of total WOOD supply?) and per-epoch refund cap. Propose via tokenomics governance, not fixed here.
+3. **Owner stake TVL scaling**: add a `FLOOR + totalAssets * k / 10_000` formula in V1 (with `k = 0`, i.e. floor-only) so the scaling pipe is wired even if inactive, or leave scaling entirely for V2 and accept that flat 10k WOOD is under-collateralized for large vaults? Carlos flagged this explicitly.
+4. **Owner dual-use optimization**: should vault owners be allowed to double-count their owner-stake as guardian-stake on *other* vaults (so their capital isn't fully idle)? Adds reward-eligibility and active participation incentive, at the cost of extra accounting. Flag for V1.5 unless there's pressure to ship in V1.
