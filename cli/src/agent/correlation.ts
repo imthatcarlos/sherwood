@@ -85,28 +85,43 @@ export class CorrelationGuard {
   }
 
   private async getBtcStructure(): Promise<BtcStructure> {
-    // Check cache first
+    // Check cache first. Cache holds successful fetches ONLY — fallback structures
+    // (price === 0, returned when CoinGecko throws / 429s) are never persisted, so a
+    // rate-limited minute doesn't poison the cache for the next hour.
+    let cached: CorrelationCache | undefined;
     try {
-      const cached = await this.loadCache();
-      const now = Date.now();
-      const cacheAge = now - cached.timestamp;
-      const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
-
+      cached = await this.loadCache();
+      const cacheAge = Date.now() - cached.timestamp;
+      const CACHE_DURATION = 60 * 60 * 1000; // 60 minutes — CG free-tier rate limits
+      //                                        punish frequent 90-day OHLC calls.
       if (cacheAge < CACHE_DURATION) {
         return cached.btcStructure;
       }
     } catch {
-      // Cache miss or invalid, continue to fresh analysis
+      // Cache miss or invalid — continue to fresh analysis.
     }
 
     // Fetch fresh BTC data
     const btcStructure = await this.analyzeBtcStructure();
 
-    // Save to cache
-    try {
-      await this.saveCache(btcStructure);
-    } catch {
-      // Non-critical, continue without caching
+    // Only cache successful analyses. price === 0 is the fallback sentinel from the
+    // catch branch in analyzeBtcStructure — caching it would mean a single CoinGecko
+    // 429 sticks the correlation score at neutral for the full TTL window.
+    if (btcStructure.price > 0) {
+      try {
+        await this.saveCache(btcStructure);
+      } catch {
+        // Non-critical — continue without caching.
+      }
+      return btcStructure;
+    }
+
+    // Fetch failed and the neutral fallback was returned. If we have a stale-but-real
+    // cached structure, prefer it over the fallback — the market doesn't regime-shift
+    // in a single CG retry window, and a valid-but-stale btcBias is strictly more
+    // informative than `price: 0, score: 0`.
+    if (cached && cached.btcStructure.price > 0) {
+      return cached.btcStructure;
     }
 
     return btcStructure;

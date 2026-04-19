@@ -86,4 +86,42 @@ describe('CorrelationGuard', () => {
     // Should produce a valid bias (not the string literal 'error' or similar).
     expect(['bullish', 'bearish', 'neutral']).toContain(result.btcBias);
   });
+
+  it('should NOT persist the neutral fallback structure to cache when CoinGecko throws', async () => {
+    // Spy on saveCache via a helper the test can inspect.
+    const saveCacheSpy = vi.fn().mockResolvedValue(undefined);
+    (correlationGuard as unknown as { saveCache: typeof saveCacheSpy }).saveCache = saveCacheSpy;
+    // Force a cache miss so analyzeBtcStructure runs.
+    (correlationGuard as unknown as { loadCache: () => Promise<never> }).loadCache =
+      () => Promise.reject(new Error('no cache'));
+    // Simulate the 429 / rate-limit branch by making the OHLC fetch throw.
+    const mockCoingecko = vi.mocked(correlationGuard['coingecko']);
+    mockCoingecko.getOHLC = vi.fn().mockRejectedValue(new Error('429 rate limited'));
+
+    await correlationGuard.checkCorrelation('ethereum');
+
+    // Critical invariant: the catch-branch fallback (price===0) must never be cached.
+    // A cached price===0 would stick the correlation score at neutral for 60 min after
+    // a single transient 429, stranding alt long-entry suppression in the dead zone.
+    expect(saveCacheSpy).not.toHaveBeenCalled();
+  });
+
+  it('should prefer a stale-but-real cached structure over a fresh fallback', async () => {
+    // Stale cache older than 60min — the TTL bumped from 10min to 60min.
+    const STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
+    (correlationGuard as unknown as { loadCache: () => Promise<{ timestamp: number; btcStructure: { price: number; ema50: number; ema200: number; rsi: number; macdDirection: string; score: number } }> }).loadCache =
+      () => Promise.resolve({
+        timestamp: Date.now() - STALE_MS,
+        btcStructure: { price: 70000, ema50: 68000, ema200: 65000, rsi: 55, macdDirection: 'bullish', score: 0.4 },
+      });
+
+    const mockCoingecko = vi.mocked(correlationGuard['coingecko']);
+    mockCoingecko.getOHLC = vi.fn().mockRejectedValue(new Error('429 rate limited'));
+
+    const result = await correlationGuard.checkCorrelation('ethereum');
+
+    // Real-but-stale beats fresh fallback. We should see a bullish bias from the stored
+    // structure (score 0.4), NOT the neutral fallback (score 0, price 0).
+    expect(result.btcBias).toBe('bullish');
+  });
 });
