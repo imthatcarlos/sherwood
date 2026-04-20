@@ -9,6 +9,13 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
+/// @dev Minimal governor surface consumed by the registry. Intentionally a
+///      three-function stub so that GuardianRegistry does not depend on the
+///      full ISyndicateGovernor ABI (which would pull in proposal structs).
+interface IGovernorMinimal {
+    function getActiveProposal(address vault) external view returns (uint256);
+}
+
 /// @title GuardianRegistry
 /// @notice UUPS-upgradeable registry for guardian stake, review votes, slashing,
 ///         epoch rewards, and slash-appeal reserve. Skeleton only — subsequent
@@ -285,12 +292,44 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         emit PreparedStakeCancelled(msg.sender, amount);
     }
 
-    function requestUnstakeOwner(address) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Vault owner signals intent to exit. Blocked while the vault has an
+    ///      active proposal (any governor state between `Pending` and `Executed`)
+    ///      to prevent rage-quit around malicious executions. Immediately stamps
+    ///      `unstakeRequestedAt`; WOOD stays escrowed until `claimUnstakeOwner`.
+    function requestUnstakeOwner(address vault) external {
+        OwnerStake storage s = _ownerStakes[vault];
+        if (s.owner != msg.sender || s.stakedAmount == 0) revert NoActiveStake();
+        if (s.unstakeRequestedAt != 0) revert UnstakeAlreadyRequested();
+        if (IGovernorMinimal(governor).getActiveProposal(vault) != 0) {
+            revert VaultHasActiveProposal();
+        }
+
+        s.unstakeRequestedAt = uint64(block.timestamp);
+
+        emit OwnerUnstakeRequested(vault, block.timestamp);
     }
 
-    function claimUnstakeOwner(address) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev After `coolDownPeriod` from `unstakeRequestedAt`, releases WOOD to the
+    ///      recorded owner and deletes `_ownerStakes[vault]` entirely — the vault
+    ///      then enters grace-period state (`ownerStaked == false`). New proposals
+    ///      cannot be created until owner re-binds a fresh stake via the factory.
+    function claimUnstakeOwner(address vault) external nonReentrant {
+        OwnerStake storage s = _ownerStakes[vault];
+        if (s.owner != msg.sender || s.stakedAmount == 0) revert NoActiveStake();
+        if (s.unstakeRequestedAt == 0) revert UnstakeNotRequested();
+        if (block.timestamp < uint256(s.unstakeRequestedAt) + coolDownPeriod) {
+            revert CooldownNotElapsed();
+        }
+
+        uint256 amount = s.stakedAmount;
+        address recipient = s.owner;
+        delete _ownerStakes[vault];
+
+        wood.safeTransfer(recipient, amount);
+
+        emit OwnerUnstakeClaimed(vault, recipient, amount);
     }
 
     // ── Factory-only ──

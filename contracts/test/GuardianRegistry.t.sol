@@ -7,6 +7,7 @@ import {IGuardianRegistry} from "../src/interfaces/IGuardianRegistry.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {MockERC4626Vault} from "./mocks/MockERC4626Vault.sol";
+import {MockGovernorMinimal} from "./mocks/MockGovernorMinimal.sol";
 
 contract GuardianRegistryInitTest is Test {
     GuardianRegistry registry;
@@ -460,5 +461,110 @@ contract GuardianRegistryOwnerBindTest is Test {
         vm.prank(stranger);
         vm.expectRevert(IGuardianRegistry.NotFactory.selector);
         registry.transferOwnerStakeSlot(address(vault), newCreator);
+    }
+}
+
+contract GuardianRegistryOwnerUnstakeTest is Test {
+    using stdStorage for StdStorage;
+
+    GuardianRegistry registry;
+    ERC20Mock wood;
+    MockERC4626Vault vault;
+    MockGovernorMinimal governor;
+    address owner = address(0xA11CE);
+    address factory = address(0xFAC10);
+    address creator = address(0xC0FFEE);
+    address stranger = address(0xBAD);
+
+    uint256 constant COOL_DOWN = 7 days;
+
+    function setUp() public {
+        wood = new ERC20Mock("WOOD", "WOOD", 18);
+        governor = new MockGovernorMinimal();
+
+        GuardianRegistry impl = new GuardianRegistry();
+        bytes memory initData = abi.encodeCall(
+            GuardianRegistry.initialize,
+            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 0, COOL_DOWN, 24 hours, 3000)
+        );
+        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
+
+        vault = new MockERC4626Vault();
+        vault.setOwner(creator);
+
+        wood.mint(creator, 100_000e18);
+        vm.prank(creator);
+        wood.approve(address(registry), type(uint256).max);
+
+        // Creator prepares and binds an owner stake.
+        vm.prank(creator);
+        registry.prepareOwnerStake(10_000e18);
+        vm.prank(factory);
+        registry.bindOwnerStake(creator, address(vault));
+    }
+
+    function test_requestUnstakeOwner_setsTimestamp() public {
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.OwnerUnstakeRequested(address(vault), block.timestamp);
+        vm.prank(creator);
+        registry.requestUnstakeOwner(address(vault));
+    }
+
+    function test_requestUnstakeOwner_revertsIfActiveProposal() public {
+        governor.setActiveProposal(address(vault), 42);
+        vm.prank(creator);
+        vm.expectRevert(IGuardianRegistry.VaultHasActiveProposal.selector);
+        registry.requestUnstakeOwner(address(vault));
+    }
+
+    function test_requestUnstakeOwner_onlyCurrentOwner() public {
+        vm.prank(stranger);
+        vm.expectRevert(IGuardianRegistry.NoActiveStake.selector);
+        registry.requestUnstakeOwner(address(vault));
+    }
+
+    function test_claimUnstakeOwner_afterCoolDown_transfersWood() public {
+        vm.prank(creator);
+        registry.requestUnstakeOwner(address(vault));
+        uint256 requestedAt = block.timestamp;
+
+        uint256 balBefore = wood.balanceOf(creator);
+        vm.warp(requestedAt + COOL_DOWN);
+
+        vm.expectEmit(true, true, false, true);
+        emit IGuardianRegistry.OwnerUnstakeClaimed(address(vault), creator, 10_000e18);
+        vm.prank(creator);
+        registry.claimUnstakeOwner(address(vault));
+
+        assertEq(wood.balanceOf(creator), balBefore + 10_000e18);
+        assertEq(registry.ownerStake(address(vault)), 0);
+        assertFalse(registry.hasOwnerStake(address(vault)));
+    }
+
+    function test_claimUnstakeOwner_revertsBeforeCoolDown() public {
+        vm.prank(creator);
+        registry.requestUnstakeOwner(address(vault));
+        uint256 requestedAt = block.timestamp;
+
+        vm.warp(requestedAt + COOL_DOWN - 1);
+        vm.prank(creator);
+        vm.expectRevert(IGuardianRegistry.CooldownNotElapsed.selector);
+        registry.claimUnstakeOwner(address(vault));
+    }
+
+    function test_claimUnstakeOwner_revertsIfNotRequested() public {
+        vm.prank(creator);
+        vm.expectRevert(IGuardianRegistry.UnstakeNotRequested.selector);
+        registry.claimUnstakeOwner(address(vault));
+    }
+
+    function test_claimUnstakeOwner_onlyCurrentOwner() public {
+        vm.prank(creator);
+        registry.requestUnstakeOwner(address(vault));
+        vm.warp(block.timestamp + COOL_DOWN);
+
+        vm.prank(stranger);
+        vm.expectRevert(IGuardianRegistry.NoActiveStake.selector);
+        registry.claimUnstakeOwner(address(vault));
     }
 }
