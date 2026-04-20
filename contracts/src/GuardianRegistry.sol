@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {IGuardianRegistry} from "./interfaces/IGuardianRegistry.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -12,7 +13,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///         epoch rewards, and slash-appeal reserve. Skeleton only — subsequent
 ///         tasks fill in each function body. See
 ///         `docs/superpowers/plans/2026-04-20-guardian-review-lifecycle.md`.
-contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradeable {
+contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     // ── Constants ──
@@ -164,9 +165,29 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    // ── Guardian fns — implemented in later tasks ──
-    function stakeAsGuardian(uint256, uint256) external {
-        revert();
+    // ── Guardian fns ──
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Idempotent top-up: on first stake records `agentId` and activates
+    ///      the guardian; on subsequent calls the `agentId` arg is ignored.
+    function stakeAsGuardian(uint256 amount, uint256 agentId) external nonReentrant {
+        if (paused) revert ProtocolPaused();
+
+        Guardian storage g = _guardians[msg.sender];
+        uint256 newTotal = uint256(g.stakedAmount) + amount;
+        if (newTotal < minGuardianStake) revert InsufficientStake();
+
+        wood.safeTransferFrom(msg.sender, address(this), amount);
+
+        bool wasInactive = g.stakedAmount == 0;
+        g.stakedAmount = uint128(newTotal);
+        if (wasInactive) {
+            g.stakedAt = uint64(block.timestamp);
+            g.agentId = agentId; // recorded once; ignored on top-ups
+            activeGuardianCount += 1;
+        }
+        totalGuardianStake += amount;
+
+        emit GuardianStaked(msg.sender, amount, agentId);
     }
 
     function requestUnstakeGuardian() external {
