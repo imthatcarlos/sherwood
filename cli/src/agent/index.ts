@@ -146,9 +146,15 @@ export class TradingAgent {
     let candles: Candle[] | undefined;
     let sentimentZScore: number | undefined;
 
-    // Phase 1: Parallel basic data fetching (OHLC, Fear & Greed, TVL, Hyperliquid)
-    const [ohlcResult, fearGreedResult, tvlResult, hyperliquidResult] = await Promise.allSettled([
-      // 1. Fetch OHLC data from CoinGecko
+    // Phase 1: Parallel basic data fetching
+    // PRIMARY candle source is Hyperliquid (free, no rate limits, includes volume).
+    // CoinGecko OHLC is FALLBACK only — the free tier 429s after ~5 tokens and the
+    // circuit breaker kills the remaining 9+, leaving them with zero technical data.
+    const [hlCandleResult, ohlcResult, fearGreedResult, tvlResult, hyperliquidResult] = await Promise.allSettled([
+      // 1a. PRIMARY: Hyperliquid candles (4h over 30 days ≈ 180 bars — more than enough for EMA/RSI/MACD)
+      this.hyperliquid.getCandles(tokenId, '4h', 30 * 24 * 60 * 60 * 1000),
+
+      // 1b. FALLBACK: CoinGecko OHLC (rate-limited on free tier)
       this.coingecko.getOHLC(tokenId, 30).then(async (ohlcRaw) => {
         if (!ohlcRaw || ohlcRaw.length <= 10) return null;
 
@@ -201,9 +207,13 @@ export class TradingAgent {
       this.hyperliquid.getHyperliquidData(tokenId)
     ]);
 
-    // Process OHLC results
-    if (ohlcResult.status === 'fulfilled' && ohlcResult.value) {
-      candles = ohlcResult.value;
+    // Process candle results — prefer Hyperliquid (free, unlimited) over CoinGecko (rate-limited)
+    const hlCandles = hlCandleResult.status === 'fulfilled' ? hlCandleResult.value : null;
+    const cgCandles = ohlcResult.status === 'fulfilled' ? ohlcResult.value : null;
+    const resolvedCandles = (hlCandles && hlCandles.length > 10) ? hlCandles : cgCandles;
+
+    if (resolvedCandles && resolvedCandles.length > 10) {
+      candles = resolvedCandles;
       technicalSignals = getLatestSignals(candles);
       signals.push(scoreTechnical(technicalSignals));
 

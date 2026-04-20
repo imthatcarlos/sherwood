@@ -43,6 +43,7 @@ const TOKEN_TO_COIN: Record<string, string> = {
   uniswap: 'UNI',
   dogecoin: 'DOGE',
   avalanche: 'AVAX',
+  'avalanche-2': 'AVAX',
   near: 'NEAR',
   sui: 'SUI',
   aptos: 'APT',
@@ -59,6 +60,18 @@ const TOKEN_TO_COIN: Record<string, string> = {
   polkadot: 'DOT',
   render: 'RENDER',
   jupiter: 'JUP',
+  // Extended for full agent watchlist — all HL perps
+  hyperliquid: 'HYPE',
+  ethena: 'ENA',
+  zcash: 'ZEC',
+  ripple: 'XRP',
+  bittensor: 'TAO',
+  fartcoin: 'FARTCOIN',
+  binancecoin: 'BNB',
+  blur: 'BLUR',
+  'worldcoin-wld': 'WLD',
+  'pudgy-penguins': 'PENGU',
+  'fetch-ai': 'FET',
 };
 
 export interface HyperliquidData {
@@ -296,6 +309,58 @@ export class HyperliquidProvider {
 
     if (!response.ok) return null;
     return await response.json() as L2Book;
+  }
+
+  /**
+   * Fetch OHLCV candles from Hyperliquid. Free, no rate limit, real-time.
+   * Replaces CoinGecko OHLC as the primary candle source so the technical
+   * signal stack doesn't go blind when CG's free tier 429s.
+   *
+   * @param tokenId CoinGecko token ID (resolved via TOKEN_TO_COIN)
+   * @param interval  HL interval string: '1h', '4h', '1d'
+   * @param lookbackMs  How far back to fetch (default 30 days)
+   * @returns Array of Candle objects, or null if the token isn't mapped
+   */
+  async getCandles(
+    tokenId: string,
+    interval: '1h' | '4h' | '1d' = '4h',
+    lookbackMs: number = 30 * 24 * 60 * 60 * 1000,
+  ): Promise<Array<{ timestamp: number; open: number; high: number; low: number; close: number; volume: number }> | null> {
+    const coin = TOKEN_TO_COIN[tokenId];
+    if (!coin) return null;
+
+    try {
+      const now = Date.now();
+      const response = await fetch(HYPERLIQUID_BASE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'candleSnapshot',
+          req: { coin, interval, startTime: now - lookbackMs, endTime: now },
+        }),
+      });
+
+      if (!response.ok) return null;
+
+      const raw = await response.json() as Array<{
+        t: number; T: number; s: string; i: string;
+        o: string; c: string; h: string; l: string; v: string; n: number;
+      }>;
+
+      if (!Array.isArray(raw) || raw.length === 0) return null;
+
+      return raw.map(c => {
+        const o = safeNumber(c.o);
+        const h = safeNumber(c.h);
+        const l = safeNumber(c.l);
+        const close = safeNumber(c.c);
+        const v = safeNumber(c.v);
+        if (o === null || h === null || l === null || close === null) return null;
+        return { timestamp: c.t, open: o, high: h, low: l, close, volume: v ?? 0 };
+      }).filter((c): c is NonNullable<typeof c> => c !== null);
+    } catch {
+      return null;
+    }
   }
 
   /** Fetch recent trades for a coin. */
