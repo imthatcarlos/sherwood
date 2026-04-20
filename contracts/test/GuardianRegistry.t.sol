@@ -568,3 +568,65 @@ contract GuardianRegistryOwnerUnstakeTest is Test {
         registry.claimUnstakeOwner(address(vault));
     }
 }
+
+contract GuardianRegistryBondTest is Test {
+    using stdStorage for StdStorage;
+
+    GuardianRegistry registry;
+    ERC20Mock wood;
+    MockERC4626Vault vault;
+    address owner = address(0xA11CE);
+    address governor = address(0x9000);
+    address factory = address(0xFAC10);
+
+    function setUp() public {
+        wood = new ERC20Mock("WOOD", "WOOD", 18);
+        GuardianRegistry impl = new GuardianRegistry();
+        bytes memory initData = abi.encodeCall(
+            GuardianRegistry.initialize,
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+        );
+        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
+
+        vault = new MockERC4626Vault();
+    }
+
+    function test_requiredOwnerBond_zeroBps_returnsFloor() public {
+        // V1 default: ownerStakeTvlBps == 0 → floor regardless of totalAssets.
+        vault.setTotalAssets(1_000_000e18);
+        assertEq(registry.requiredOwnerBond(address(vault)), 10_000e18);
+
+        vault.setTotalAssets(0);
+        assertEq(registry.requiredOwnerBond(address(vault)), 10_000e18);
+    }
+
+    function test_requiredOwnerBond_nonzeroBps_scales() public {
+        // Flip bps to 50 (0.5%) via direct storage write (timelocked setter not
+        // implemented until Task 24). For a WOOD-denominated vault (18 decimals,
+        // matching the floor units) with TVL = 10_000_000e18, scaled bond =
+        // 10_000_000e18 * 50 / 10_000 = 50_000e18 — above the 10_000e18 floor.
+        stdstore.target(address(registry)).sig("ownerStakeTvlBps()").checked_write(uint256(50));
+        vault.setTotalAssets(10_000_000e18);
+
+        assertEq(registry.requiredOwnerBond(address(vault)), 50_000e18);
+    }
+
+    function test_requiredOwnerBond_nonzeroBps_floorDominatesAtLowTvl() public {
+        // At low TVL the scaled term is below the floor → floor wins.
+        // bps = 50, TVL = 1_000_000e18 → scaled = 5_000e18 < floor 10_000e18.
+        stdstore.target(address(registry)).sig("ownerStakeTvlBps()").checked_write(uint256(50));
+        vault.setTotalAssets(1_000_000e18);
+
+        assertEq(registry.requiredOwnerBond(address(vault)), 10_000e18);
+    }
+
+    function test_requiredOwnerBond_nonzeroBps_boundary() public {
+        // Exact floor: scaled == floor → tie goes to floor (scaled > floor is strict).
+        stdstore.target(address(registry)).sig("ownerStakeTvlBps()").checked_write(uint256(100));
+        vault.setTotalAssets(1_000_000e18); // 1% of 1M = 10_000e18 == floor
+        assertEq(registry.requiredOwnerBond(address(vault)), 10_000e18);
+
+        vault.setTotalAssets(1_000_001e18); // nudge above
+        assertEq(registry.requiredOwnerBond(address(vault)), 10_000.01e18);
+    }
+}
