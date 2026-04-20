@@ -7,6 +7,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /// @title GuardianRegistry
 /// @notice UUPS-upgradeable registry for guardian stake, review votes, slashing,
@@ -165,6 +166,12 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
+    // ── Modifiers ──
+    modifier onlyFactory() {
+        if (msg.sender != factory) revert NotFactory();
+        _;
+    }
+
     // ── Guardian fns ──
     /// @inheritdoc IGuardianRegistry
     /// @dev Idempotent top-up: on first stake records `agentId` and activates
@@ -287,12 +294,40 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     }
 
     // ── Factory-only ──
-    function bindOwnerStake(address, address) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Consumes `_prepared[owner]` and binds it to `_ownerStakes[vault]`. Called
+    ///      by `SyndicateFactory.createSyndicate` after the vault address is known.
+    ///      Reverts if the prepared amount is below `requiredOwnerBond(vault)` — at
+    ///      factory-creation time `totalAssets()` is 0, so only the floor applies.
+    function bindOwnerStake(address owner_, address vault) external onlyFactory nonReentrant {
+        PreparedOwnerStake storage p = _prepared[owner_];
+        if (p.amount == 0 || p.bound) revert PreparedStakeNotFound();
+        if (p.amount < requiredOwnerBond(vault)) revert OwnerBondInsufficient();
+
+        _ownerStakes[vault] = OwnerStake({stakedAmount: p.amount, unstakeRequestedAt: 0, owner: owner_});
+        p.bound = true;
+
+        emit OwnerStakeBound(owner_, vault, p.amount);
     }
 
-    function transferOwnerStakeSlot(address, address) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Reassigns `_ownerStakes[vault]` to `newOwner`'s prepared stake after the
+    ///      previous owner's stake has been slashed or fully unstaked (guarded by
+    ///      `stakedAmount == 0`). `newOwner` must have called `prepareOwnerStake`
+    ///      with ≥ `requiredOwnerBond(vault)`.
+    function transferOwnerStakeSlot(address vault, address newOwner) external onlyFactory nonReentrant {
+        OwnerStake storage existing = _ownerStakes[vault];
+        address oldOwner = existing.owner;
+        if (existing.stakedAmount != 0) revert VaultHasActiveProposal();
+
+        PreparedOwnerStake storage p = _prepared[newOwner];
+        if (p.amount == 0 || p.bound) revert PreparedStakeNotFound();
+        if (p.amount < requiredOwnerBond(vault)) revert OwnerBondInsufficient();
+
+        _ownerStakes[vault] = OwnerStake({stakedAmount: p.amount, unstakeRequestedAt: 0, owner: newOwner});
+        p.bound = true;
+
+        emit OwnerStakeSlotTransferred(vault, oldOwner, newOwner);
     }
 
     // ── Governor-only ──
@@ -406,8 +441,23 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         return _prepared[o].amount >= minOwnerStake && !_prepared[o].bound;
     }
 
-    function requiredOwnerBond(address) external view returns (uint256) {
-        return minOwnerStake; // Task 10 adds TVL scaling
+    /// @inheritdoc IGuardianRegistry
+    /// @dev `max(minOwnerStake, totalAssets(vault) * ownerStakeTvlBps / 10_000)`.
+    ///      With `ownerStakeTvlBps == 0` (V1 default) this degenerates to the floor
+    ///      unconditionally. Task 10 adds dedicated tests for the scaled case.
+    ///
+    ///      Unit caveat: the formula mixes `minOwnerStake` (WOOD, 18 decimals) with
+    ///      `totalAssets()` (vault asset decimals — 6 for USDC). For vaults whose
+    ///      underlying is 18-decimal the result is consistent; for 6-decimal assets
+    ///      the scaled term is numerically 10^12 times too small and the floor will
+    ///      dominate. The spec §3.1 writes the formula this way and the V1 default
+    ///      (`bps = 0`) sidesteps the issue. Flagged for review before `bps` is ever
+    ///      flipped on via the timelocked setter. See plan 2026-04-20 Task 10.
+    function requiredOwnerBond(address vault) public view returns (uint256) {
+        uint256 floor = minOwnerStake;
+        if (ownerStakeTvlBps == 0) return floor;
+        uint256 scaled = (IERC4626(vault).totalAssets() * ownerStakeTvlBps) / 10_000;
+        return scaled > floor ? scaled : floor;
     }
 
     function currentEpoch() external view returns (uint256) {

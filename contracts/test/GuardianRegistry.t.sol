@@ -6,6 +6,7 @@ import {GuardianRegistry} from "../src/GuardianRegistry.sol";
 import {IGuardianRegistry} from "../src/interfaces/IGuardianRegistry.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
+import {MockERC4626Vault} from "./mocks/MockERC4626Vault.sol";
 
 contract GuardianRegistryInitTest is Test {
     GuardianRegistry registry;
@@ -316,5 +317,148 @@ contract GuardianRegistryOwnerPrepareTest is Test {
         vm.prank(creator);
         vm.expectRevert(IGuardianRegistry.PreparedStakeNotFound.selector);
         registry.cancelPreparedStake();
+    }
+}
+
+contract GuardianRegistryOwnerBindTest is Test {
+    using stdStorage for StdStorage;
+
+    GuardianRegistry registry;
+    ERC20Mock wood;
+    MockERC4626Vault vault;
+    address owner = address(0xA11CE);
+    address governor = address(0x9000);
+    address factory = address(0xFAC10);
+    address creator = address(0xC0FFEE);
+    address newCreator = address(0xC0FFEE2);
+    address stranger = address(0xBAD);
+
+    function setUp() public {
+        wood = new ERC20Mock("WOOD", "WOOD", 18);
+        GuardianRegistry impl = new GuardianRegistry();
+        bytes memory initData = abi.encodeCall(
+            GuardianRegistry.initialize,
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+        );
+        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
+
+        vault = new MockERC4626Vault();
+        vault.setOwner(creator);
+
+        wood.mint(creator, 100_000e18);
+        vm.prank(creator);
+        wood.approve(address(registry), type(uint256).max);
+        wood.mint(newCreator, 100_000e18);
+        vm.prank(newCreator);
+        wood.approve(address(registry), type(uint256).max);
+    }
+
+    function test_bindOwnerStake_onlyFactory() public {
+        vm.prank(creator);
+        registry.prepareOwnerStake(10_000e18);
+
+        vm.prank(stranger);
+        vm.expectRevert(IGuardianRegistry.NotFactory.selector);
+        registry.bindOwnerStake(creator, address(vault));
+    }
+
+    function test_bindOwnerStake_consumesPrepared() public {
+        vm.prank(creator);
+        registry.prepareOwnerStake(10_000e18);
+
+        vm.expectEmit(true, true, false, true);
+        emit IGuardianRegistry.OwnerStakeBound(creator, address(vault), 10_000e18);
+        vm.prank(factory);
+        registry.bindOwnerStake(creator, address(vault));
+
+        // Prepared slot is consumed (still recorded but marked bound, so a fresh
+        // prepareOwnerStake is allowed for this creator).
+        assertFalse(registry.canCreateVault(creator));
+        assertEq(registry.ownerStake(address(vault)), 10_000e18);
+        assertTrue(registry.hasOwnerStake(address(vault)));
+    }
+
+    function test_bindOwnerStake_revertsIfNoPrepared() public {
+        vm.prank(factory);
+        vm.expectRevert(IGuardianRegistry.PreparedStakeNotFound.selector);
+        registry.bindOwnerStake(creator, address(vault));
+    }
+
+    function test_bindOwnerStake_revertsIfBondInsufficient() public {
+        // Creator prepares only the floor.
+        vm.prank(creator);
+        registry.prepareOwnerStake(10_000e18);
+
+        // Activate TVL scaling and give the vault enough TVL that requiredOwnerBond
+        // exceeds the prepared amount. With WOOD-denominated vault (18 decimals) and
+        // bps = 100 (1%), TVL of 2_000_000e18 implies a bond of 20_000e18 — 2x the
+        // floor, so the bind must revert.
+        stdstore.target(address(registry)).sig("ownerStakeTvlBps()").checked_write(uint256(100));
+        vault.setTotalAssets(2_000_000e18);
+
+        vm.prank(factory);
+        vm.expectRevert(IGuardianRegistry.OwnerBondInsufficient.selector);
+        registry.bindOwnerStake(creator, address(vault));
+    }
+
+    function test_bindOwnerStake_revertsIfAlreadyBound() public {
+        vm.prank(creator);
+        registry.prepareOwnerStake(10_000e18);
+        vm.prank(factory);
+        registry.bindOwnerStake(creator, address(vault));
+
+        vm.prank(factory);
+        vm.expectRevert(IGuardianRegistry.PreparedStakeNotFound.selector);
+        registry.bindOwnerStake(creator, address(vault));
+    }
+
+    function test_transferOwnerStakeSlot_reassigns() public {
+        // Original owner binds.
+        vm.prank(creator);
+        registry.prepareOwnerStake(10_000e18);
+        vm.prank(factory);
+        registry.bindOwnerStake(creator, address(vault));
+
+        // Simulate that the previous owner's stake has been slashed or fully
+        // unstaked by zeroing _ownerStakes[vault].stakedAmount. We use stdstore
+        // to write into the mapping slot for the OwnerStake struct's first 128
+        // bits (`stakedAmount`). Simpler: prank the registry itself is not
+        // feasible, so we expose this via a request+claim style in production;
+        // here we write via a direct slot manipulation helper.
+        // The struct lives at _ownerStakes[vault]. Slot math: find mapping slot
+        // via stdstore (targets the getter) — ownerStake(vault) returns stakedAmount.
+        stdstore.target(address(registry)).sig("ownerStake(address)").with_key(address(vault)).checked_write(uint256(0));
+
+        // New owner prepares.
+        vm.prank(newCreator);
+        registry.prepareOwnerStake(10_000e18);
+
+        vm.expectEmit(true, true, true, true);
+        emit IGuardianRegistry.OwnerStakeSlotTransferred(address(vault), creator, newCreator);
+        vm.prank(factory);
+        registry.transferOwnerStakeSlot(address(vault), newCreator);
+
+        assertEq(registry.ownerStake(address(vault)), 10_000e18);
+        assertFalse(registry.canCreateVault(newCreator)); // consumed
+    }
+
+    function test_transferOwnerStakeSlot_revertsIfPreviousOwnerStillStaked() public {
+        vm.prank(creator);
+        registry.prepareOwnerStake(10_000e18);
+        vm.prank(factory);
+        registry.bindOwnerStake(creator, address(vault));
+
+        vm.prank(newCreator);
+        registry.prepareOwnerStake(10_000e18);
+
+        vm.prank(factory);
+        vm.expectRevert(IGuardianRegistry.VaultHasActiveProposal.selector);
+        registry.transferOwnerStakeSlot(address(vault), newCreator);
+    }
+
+    function test_transferOwnerStakeSlot_onlyFactory() public {
+        vm.prank(stranger);
+        vm.expectRevert(IGuardianRegistry.NotFactory.selector);
+        registry.transferOwnerStakeSlot(address(vault), newCreator);
     }
 }
