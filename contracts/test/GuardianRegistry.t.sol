@@ -101,13 +101,16 @@ contract GuardianRegistryStakeTest is Test {
         registry.stakeAsGuardian(1, 42);
     }
 
-    function test_stakeAsGuardian_revertsIfPaused() public {
-        vm.skip(true); // TODO(task-22): re-enable after pause() is implemented
+    function test_stakeAsGuardian_NOT_frozen_while_paused() public {
+        // Per spec: stake/unstake/claim paths MUST remain usable while paused so
+        // guardians can exit. Pausing freezes review voting and claim/sweep,
+        // not position management.
         vm.prank(owner);
         registry.pause();
         vm.prank(alice);
-        vm.expectRevert(IGuardianRegistry.ProtocolPaused.selector);
         registry.stakeAsGuardian(10_000e18, 42);
+        assertEq(registry.guardianStake(alice), 10_000e18);
+        assertTrue(registry.isActiveGuardian(alice));
     }
 
     function test_stakeAsGuardian_transfersWoodFromCaller() public {
@@ -2121,5 +2124,141 @@ contract GuardianRegistryAppealTest is Test {
 
         assertEq(wood.balanceOf(recipient), recBalBefore + 500e18);
         assertEq(registry.slashAppealReserve(), 9_500e18);
+    }
+}
+
+contract GuardianRegistryPauseTest is Test {
+    GuardianRegistry registry;
+    ERC20Mock wood;
+    MockGovernorMinimal governor;
+    address owner = address(0xA11CE);
+    address factory = address(0xFAC10);
+    address alice = address(0xA11CE5);
+    address stranger = address(0xBAD);
+
+    uint256 constant REVIEW_PERIOD = 24 hours;
+    uint256 constant PROPOSAL_ID = 1;
+
+    function setUp() public {
+        wood = new ERC20Mock("WOOD", "WOOD", 18);
+        governor = new MockGovernorMinimal();
+
+        GuardianRegistry impl = new GuardianRegistry();
+        bytes memory initData = abi.encodeCall(
+            GuardianRegistry.initialize,
+            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, REVIEW_PERIOD, 3000)
+        );
+        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
+
+        for (uint256 i = 0; i < 5; i++) {
+            address g = address(uint160(0xAA01 + i));
+            wood.mint(g, 100_000e18);
+            vm.prank(g);
+            wood.approve(address(registry), type(uint256).max);
+            vm.prank(g);
+            registry.stakeAsGuardian(10_000e18, 1 + i);
+        }
+
+        wood.mint(alice, 100_000e18);
+        vm.prank(alice);
+        wood.approve(address(registry), type(uint256).max);
+    }
+
+    function _openProposal() internal returns (uint256 voteEnd_, uint256 reviewEnd_) {
+        voteEnd_ = block.timestamp;
+        reviewEnd_ = voteEnd_ + REVIEW_PERIOD;
+        governor.setProposal(PROPOSAL_ID, voteEnd_, reviewEnd_);
+        registry.openReview(PROPOSAL_ID);
+    }
+
+    function test_pause_onlyOwner() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.pause();
+    }
+
+    function test_pause_freezesVoteOnProposal() public {
+        _openProposal();
+
+        vm.prank(owner);
+        registry.pause();
+
+        address g = address(uint160(0xAA01));
+        vm.prank(g);
+        vm.expectRevert(IGuardianRegistry.ProtocolPaused.selector);
+        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
+    }
+
+    function test_pause_freezesClaimEpochReward() public {
+        vm.prank(owner);
+        registry.pause();
+
+        // Warp past an epoch so caller isn't blocked by EpochNotEnded first.
+        vm.warp(registry.epochGenesis() + registry.EPOCH_DURATION());
+        vm.prank(alice);
+        vm.expectRevert(IGuardianRegistry.ProtocolPaused.selector);
+        registry.claimEpochReward(0);
+    }
+
+    function test_pause_doesNotFreezeClaimUnstake() public {
+        // Guardian has staked; request unstake, pause, then claim after cooldown.
+        address g = address(uint160(0xAA01));
+        vm.prank(g);
+        registry.requestUnstakeGuardian();
+
+        vm.prank(owner);
+        registry.pause();
+
+        vm.warp(block.timestamp + 7 days);
+        vm.prank(g);
+        registry.claimUnstakeGuardian(); // must not revert
+        assertEq(registry.guardianStake(g), 0);
+    }
+
+    function test_pause_doesNotFreezeStake() public {
+        vm.prank(owner);
+        registry.pause();
+
+        vm.prank(alice);
+        registry.stakeAsGuardian(10_000e18, 42); // must not revert
+        assertEq(registry.guardianStake(alice), 10_000e18);
+    }
+
+    function test_unpause_byOwner_immediate() public {
+        vm.prank(owner);
+        registry.pause();
+        assertTrue(registry.paused());
+
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.Unpaused(owner, false);
+        vm.prank(owner);
+        registry.unpause();
+        assertFalse(registry.paused());
+        assertEq(registry.pausedAt(), 0);
+    }
+
+    function test_unpause_deadman_afterDelay() public {
+        vm.prank(owner);
+        registry.pause();
+
+        vm.warp(block.timestamp + registry.DEADMAN_UNPAUSE_DELAY() + 1);
+
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.Unpaused(stranger, true);
+        vm.prank(stranger);
+        registry.unpause();
+        assertFalse(registry.paused());
+    }
+
+    function test_unpause_deadman_beforeDelay_reverts() public {
+        vm.prank(owner);
+        registry.pause();
+
+        // Just before the deadman delay elapses.
+        vm.warp(block.timestamp + registry.DEADMAN_UNPAUSE_DELAY() - 1);
+
+        vm.prank(stranger);
+        vm.expectRevert(IGuardianRegistry.NotPausedOrDeadmanNotElapsed.selector);
+        registry.unpause();
     }
 }

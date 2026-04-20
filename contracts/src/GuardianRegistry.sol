@@ -211,8 +211,8 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @dev Idempotent top-up: on first stake records `agentId` and activates
     ///      the guardian; on subsequent calls the `agentId` arg is ignored.
     function stakeAsGuardian(uint256 amount, uint256 agentId) external nonReentrant {
-        if (paused) revert ProtocolPaused();
-
+        // Stake intentionally not gated by pause: guardians must be able to
+        // manage their position (stake/unstake/claim) even during an incident.
         Guardian storage g = _guardians[msg.sender];
         uint256 newTotal = uint256(g.stakedAmount) + amount;
         if (newTotal < minGuardianStake) revert InsufficientStake();
@@ -287,8 +287,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      `MAX_APPROVERS_PER_PROPOSAL`; Blockers are uncapped. Vote-change
     ///      semantics are added in a later task — any existing vote currently
     ///      reverts.
-    function voteOnProposal(uint256 proposalId, GuardianVoteType support) external {
-        if (paused) revert ProtocolPaused();
+    function voteOnProposal(uint256 proposalId, GuardianVoteType support) external whenNotPaused {
         if (support == GuardianVoteType.None) revert();
 
         Review storage r = _reviews[proposalId];
@@ -534,8 +533,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      `cohortTooSmall`; `resolveReview` will then short-circuit to
     ///      `blocked = false` regardless of any votes (cold-start fallback).
     ///      Idempotent: subsequent calls are no-ops.
-    function openReview(uint256 proposalId) external {
-        if (paused) revert ProtocolPaused();
+    function openReview(uint256 proposalId) external whenNotPaused {
         Review storage r = _reviews[proposalId];
         if (r.opened) return; // idempotent
 
@@ -564,7 +562,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      credits blockers' weights to the current epoch's block-weight
     ///      tallies (spec §3.1, epoch attribution uses resolve-time
     ///      `block.timestamp`).
-    function resolveReview(uint256 proposalId) external nonReentrant returns (bool) {
+    function resolveReview(uint256 proposalId) external nonReentrant whenNotPaused returns (bool) {
         IGovernorMinimal.ProposalView memory p = IGovernorMinimal(governor).getProposal(proposalId);
         if (p.reviewEnd == 0 || block.timestamp < p.reviewEnd) revert ReviewNotReadyForResolve();
 
@@ -665,7 +663,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      `blocked = (blockStakeWeight * 10_000 >= blockQuorumBps * totalStakeAtOpen)`.
     ///      CEI: commits `resolved`/`blocked` flags BEFORE any transfer. On
     ///      block, slashes the vault owner (spec §3.1 emergency path).
-    function resolveEmergencyReview(uint256 proposalId) external nonReentrant returns (bool) {
+    function resolveEmergencyReview(uint256 proposalId) external nonReentrant whenNotPaused returns (bool) {
         EmergencyReview storage er = _emergencyReviews[proposalId];
         if (er.reviewEnd == 0 || block.timestamp < er.reviewEnd) revert ReviewNotReadyForResolve();
         if (er.resolved) return er.blocked; // idempotent
@@ -694,8 +692,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @dev Active-guardian-only. Block-only side (no Approve pool for
     ///      emergency reviews). One vote per guardian — double-votes revert.
     ///      Weight is the caller's current `guardianStake` at call time.
-    function voteBlockEmergencySettle(uint256 proposalId) external {
-        if (paused) revert ProtocolPaused();
+    function voteBlockEmergencySettle(uint256 proposalId) external whenNotPaused {
         EmergencyReview storage er = _emergencyReviews[proposalId];
         if (er.reviewEnd == 0 || block.timestamp >= er.reviewEnd) revert ReviewNotOpen();
         if (!_isActiveGuardian(msg.sender)) revert NotActiveGuardian();
@@ -738,7 +735,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      token is still broken the whole tx reverts and the pending amount
     ///      stays queued (state update and transfer are atomic within the
     ///      `nonReentrant` guard). No-op when queue is empty.
-    function flushBurn() external nonReentrant {
+    function flushBurn() external nonReentrant whenNotPaused {
         uint256 amt = _pendingBurn[address(this)];
         if (amt == 0) return;
         _pendingBurn[address(this)] = 0;
@@ -841,12 +838,31 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     }
 
     // ── Pause ──
-    function pause() external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Owner-only. Freezes review voting, claim, sweep, and flushBurn.
+    ///      Stake/unstake paths and admin ops (fundEpoch, fundSlashAppealReserve,
+    ///      refundSlash, parameter setters) stay callable so guardians can
+    ///      exit and the owner can capitalize the reserve during an incident.
+    function pause() external onlyOwner {
+        paused = true;
+        pausedAt = uint64(block.timestamp);
+        emit Paused(msg.sender);
     }
 
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Owner can unpause at any time. After `DEADMAN_UNPAUSE_DELAY`
+    ///      (7 days) has elapsed since `pausedAt`, any address can unpause
+    ///      to prevent the protocol from being indefinitely frozen by an
+    ///      absentee / compromised owner.
     function unpause() external {
-        revert();
+        if (!paused) revert NotPausedOrDeadmanNotElapsed();
+        bool deadman = msg.sender != owner();
+        if (deadman && block.timestamp < uint256(pausedAt) + DEADMAN_UNPAUSE_DELAY) {
+            revert NotPausedOrDeadmanNotElapsed();
+        }
+        paused = false;
+        pausedAt = 0;
+        emit Unpaused(msg.sender, deadman);
     }
 
     // ── Parameter setters (timelocked — Task 24) ──
