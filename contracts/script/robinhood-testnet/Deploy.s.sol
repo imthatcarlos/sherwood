@@ -69,6 +69,8 @@ contract DeployRobinhoodTestnet is ScriptBase {
 
         // 4. Deploy SyndicateFactory (UUPS proxy, no ENS registrar, no agent registry)
         SyndicateFactory factoryImpl = new SyndicateFactory();
+        // TODO(guardian-registry): deploy GuardianRegistry and wire it here.
+        address guardianRegistryPlaceholder = deployer;
         bytes memory factoryInitData = abi.encodeCall(
             SyndicateFactory.initialize,
             (SyndicateFactory.InitParams({
@@ -78,7 +80,8 @@ contract DeployRobinhoodTestnet is ScriptBase {
                     ensRegistrar: L2_REGISTRAR,
                     agentRegistry: AGENT_REGISTRY,
                     governor: governorProxy,
-                    managementFeeBps: 50
+                    managementFeeBps: 50,
+                    guardianRegistry: guardianRegistryPlaceholder
                 }))
         );
         SyndicateFactory factory = SyndicateFactory(address(new ERC1967Proxy(address(factoryImpl), factoryInitData)));

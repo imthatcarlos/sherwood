@@ -156,6 +156,9 @@ contract DeploySherwood is ScriptBase {
         internal
         returns (address)
     {
+        // TODO(guardian-registry): replace placeholder once GuardianRegistry is wired into Deploy.s.sol.
+        // The factory's `initialize` requires a non-zero guardianRegistry (set-once).
+        address guardianRegistryPlaceholder = d.deployer;
         bytes memory initData = abi.encodeCall(
             SyndicateFactory.initialize,
             (SyndicateFactory.InitParams({
@@ -165,7 +168,8 @@ contract DeploySherwood is ScriptBase {
                     ensRegistrar: cfg.ensRegistrar,
                     agentRegistry: cfg.agentRegistry,
                     governor: d.governorProxy,
-                    managementFeeBps: cfg.managementFeeBps
+                    managementFeeBps: cfg.managementFeeBps,
+                    guardianRegistry: guardianRegistryPlaceholder
                 }))
         );
         return c3.deploy(

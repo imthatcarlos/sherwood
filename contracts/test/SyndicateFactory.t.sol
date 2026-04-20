@@ -6,6 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {SyndicateVault} from "../src/SyndicateVault.sol";
 import {BatchExecutorLib} from "../src/BatchExecutorLib.sol";
 import {SyndicateFactory} from "../src/SyndicateFactory.sol";
+import {IGuardianRegistry} from "../src/interfaces/IGuardianRegistry.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {MockL2Registrar} from "./mocks/MockL2Registrar.sol";
 import {MockAgentRegistry} from "./mocks/MockAgentRegistry.sol";
@@ -22,6 +23,7 @@ contract SyndicateFactoryTest is Test {
     address public creator1 = makeAddr("creator1");
     address public creator2 = makeAddr("creator2");
     address public governorAddr = makeAddr("governor");
+    address public guardianRegistryAddr = makeAddr("guardianRegistry");
 
     uint256 public creator1AgentId;
     uint256 public creator2AgentId;
@@ -44,7 +46,8 @@ contract SyndicateFactoryTest is Test {
                     ensRegistrar: address(ensRegistrar),
                     agentRegistry: address(agentRegistry),
                     governor: governorAddr,
-                    managementFeeBps: 50
+                    managementFeeBps: 50,
+                    guardianRegistry: guardianRegistryAddr
                 }))
         );
         factory = SyndicateFactory(address(new ERC1967Proxy(address(factoryImpl), factoryInit)));
@@ -55,6 +58,11 @@ contract SyndicateFactoryTest is Test {
 
         // Mock governor.getActiveProposal() so vault deposits work (no active proposals)
         vm.mockCall(governorAddr, abi.encodeWithSignature("getActiveProposal(address)"), abi.encode(uint256(0)));
+        // Task 26: mock registry to pass the prepared-stake gate + bind path during create.
+        vm.mockCall(
+            guardianRegistryAddr, abi.encodeWithSelector(IGuardianRegistry.canCreateVault.selector), abi.encode(true)
+        );
+        vm.mockCall(guardianRegistryAddr, abi.encodeWithSelector(IGuardianRegistry.bindOwnerStake.selector), "");
     }
 
     function _defaultConfig() internal view returns (SyndicateFactory.SyndicateConfig memory) {

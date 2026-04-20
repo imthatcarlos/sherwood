@@ -11,6 +11,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {SyndicateVault} from "./SyndicateVault.sol";
 import {ISyndicateVault} from "./interfaces/ISyndicateVault.sol";
 import {ISyndicateGovernor} from "./interfaces/ISyndicateGovernor.sol";
+import {IGuardianRegistry} from "./interfaces/IGuardianRegistry.sol";
 import {IL2Registrar} from "./interfaces/IL2Registrar.sol";
 
 /**
@@ -46,6 +47,12 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     error UpgradesDisabled();
     error VaultNotDeployed();
     error StrategyActive();
+    // ── Task 26: owner-stake binding + rotation errors ──
+    error InvalidGuardianRegistry();
+    error PreparedStakeNotFound();
+    error VaultStillStaked();
+    error RegistryMismatch();
+    error ZeroAddress();
 
     struct SyndicateConfig {
         string metadataURI; // ipfs://Qm... (name, description, strategies)
@@ -108,8 +115,14 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     /// @notice Whether vault upgrades are enabled (default: false)
     bool public upgradesEnabled;
 
-    /// @dev Reserved for future storage — reduce by 1 for each new slot added
-    uint256[50] private __gap;
+    /// @notice Guardian registry used to gate vault creation on prepared owner stake
+    ///         and to coordinate owner-stake slot transfers on `rotateOwner`.
+    /// @dev Set once at `initialize` and never rewired. The governor and factory
+    ///      MUST share the same registry — `rotateOwner` asserts this invariant.
+    address public guardianRegistry;
+
+    /// @dev Reserved for future storage — reduced by 1 for `guardianRegistry`
+    uint256[49] private __gap;
 
     // ── Events ──
 
@@ -124,6 +137,7 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     event ManagementFeeBpsUpdated(uint256 oldBps, uint256 newBps);
     event VaultUpgraded(address indexed vault, address indexed newImpl);
     event UpgradesEnabledUpdated(bool enabled);
+    event OwnerRotated(address indexed vault, address indexed newOwner);
 
     struct InitParams {
         address owner;
@@ -133,6 +147,7 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         address agentRegistry;
         address governor;
         uint256 managementFeeBps;
+        address guardianRegistry;
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -145,6 +160,7 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         if (p.vaultImpl == address(0)) revert InvalidVaultImpl();
         // NOTE: ensRegistrar and agentRegistry can be address(0) on chains without ENS/ERC-8004
         if (p.governor == address(0)) revert InvalidGovernor();
+        if (p.guardianRegistry == address(0)) revert InvalidGuardianRegistry();
 
         __Ownable_init(p.owner);
 
@@ -153,6 +169,7 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         ensRegistrar = IL2Registrar(p.ensRegistrar);
         agentRegistry = IERC721(p.agentRegistry);
         governor = p.governor;
+        guardianRegistry = p.guardianRegistry;
         if (p.managementFeeBps > 1000) revert ManagementFeeTooHigh();
         managementFeeBps = p.managementFeeBps;
     }
@@ -168,6 +185,10 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         external
         returns (uint256 syndicateId, address vault)
     {
+        // Gate on prepared owner stake BEFORE any side effects (Task 26).
+        IGuardianRegistry reg = IGuardianRegistry(guardianRegistry);
+        if (!reg.canCreateVault(msg.sender)) revert PreparedStakeNotFound();
+
         // Collect creation fee (if set)
         if (creationFee > 0) {
             if (address(creationFeeToken) == address(0)) revert InvalidFeeToken();
@@ -202,6 +223,10 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
 
         // Register vault with the governor so it can receive proposals
         ISyndicateGovernor(governor).addVault(vault);
+
+        // Bind the prepared owner stake to the newly deployed vault (Task 26).
+        // Reverts roll back the whole creation tx — atomic.
+        reg.bindOwnerStake(msg.sender, vault);
 
         // Register ENS subname — vault is both address record + NFT owner
         if (address(ensRegistrar) != address(0)) {
@@ -282,6 +307,33 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     function setUpgradesEnabled(bool enabled) external onlyOwner {
         upgradesEnabled = enabled;
         emit UpgradesEnabledUpdated(enabled);
+    }
+
+    /// @notice Transfer a vault's ownership to `newOwner` and rebind the owner-stake
+    ///         slot in the guardian registry.
+    /// @dev Owner-only. Requires the old owner to have already unstaked
+    ///      (`hasOwnerStake(vault) == false`) — otherwise rotating would strand
+    ///      the old stake. Asserts the factory + governor point at the same
+    ///      registry to catch misconfiguration. `newOwner` must have a prepared
+    ///      stake sized ≥ `requiredOwnerBond(vault)`; the registry's
+    ///      `transferOwnerStakeSlot` enforces this.
+    function rotateOwner(address vault, address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert ZeroAddress();
+        if (vaultToSyndicate[vault] == 0) revert VaultNotDeployed();
+
+        IGuardianRegistry reg = IGuardianRegistry(guardianRegistry);
+        if (reg.hasOwnerStake(vault)) revert VaultStillStaked();
+        // Registry-consistency invariant: governor and factory must share one registry.
+        if (ISyndicateGovernor(governor).guardianRegistry() != guardianRegistry) revert RegistryMismatch();
+
+        SyndicateVault(payable(vault)).rotateOwnership(newOwner);
+        reg.transferOwnerStakeSlot(vault, newOwner);
+
+        // Keep creator record in sync so downstream invariants (e.g. NotCreator
+        // gates on updateMetadata / deactivate) follow the active owner.
+        syndicates[vaultToSyndicate[vault]].creator = newOwner;
+
+        emit OwnerRotated(vault, newOwner);
     }
 
     /// @notice Upgrade a vault to a new implementation. Callable by the syndicate owner (vault owner).

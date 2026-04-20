@@ -234,6 +234,17 @@ contract SyndicateVault is
         _unpause();
     }
 
+    /// @notice Transfers vault ownership to `newOwner` via the factory.
+    /// @dev Factory-only. Used by `SyndicateFactory.rotateOwner` alongside the
+    ///      registry's `transferOwnerStakeSlot`, so the old owner's slashed /
+    ///      unstaked position can be rebound to a fresh operator without
+    ///      redeploying the vault.
+    function rotateOwnership(address newOwner) external {
+        if (msg.sender != _factory) revert NotFactory();
+        if (newOwner == address(0)) revert ZeroAddress();
+        _transferOwnership(newOwner);
+    }
+
     // ==================== GOVERNOR ====================
 
     modifier onlyGovernor() {
