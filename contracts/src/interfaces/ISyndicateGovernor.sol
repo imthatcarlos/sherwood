@@ -247,7 +247,11 @@ interface ISyndicateGovernor {
 
     function emergencyCancel(uint256 proposalId) external;
 
-    /// @notice Vault owner vetoes a pending or approved proposal, setting it to Rejected.
+    /// @notice Vault owner vetoes a Pending proposal only, setting it to Rejected.
+    /// @dev Narrowed in PR #229 (Task 25) so guardians own post-review blocks —
+    ///      once a proposal has passed voting and entered `GuardianReview`, the
+    ///      guardian cohort and execution window drive the outcome rather than
+    ///      unilateral owner action. Use `emergencyCancel` for Draft/Pending.
     function vetoProposal(uint256 proposalId) external;
 
     // ── Collaborative proposal functions ──
