@@ -138,7 +138,7 @@ export class TradingAgent {
   }
 
   /** Analyze a single token — gather all data and score. */
-  async analyzeToken(tokenId: string, opts?: { skipX402?: boolean }): Promise<TokenAnalysis> {
+  async analyzeToken(tokenId: string, opts?: { skipX402?: boolean; groupReturns?: Record<string, number> }): Promise<TokenAnalysis> {
     const signals: Signal[] = [];
     let technicalSignals: TechnicalSignals | undefined;
     let fearAndGreedValue: number | undefined;
@@ -504,6 +504,7 @@ export class TradingAgent {
         twitterData, // from phase 3
         hyperliquidData, // from phase 3
         tokenSymbol, // from phase 3
+        groupReturns: opts?.groupReturns, // cross-sectional momentum
       };
 
       let strategySignals = await runStrategies(stratCtx, this.config.strategyConfigs);
@@ -647,13 +648,37 @@ export class TradingAgent {
     const topN = this.config.x402TopN;
     const shouldTwoPass = this.config.useX402 && topN && topN > 0 && topN < this.config.tokens.length;
 
+    // ── Cross-sectional momentum: pre-compute 7-day returns for all tokens ──
+    // Fetches 1d candles (8 days lookback) from Hyperliquid for each token.
+    // These are lightweight requests (8 data points each) and Hyperliquid has
+    // no rate limit, so the overhead is minimal (~50-100ms total, parallelized).
+    const groupReturns: Record<string, number> = {};
+    try {
+      const returnFetches = this.config.tokens.map(async (token) => {
+        const candles = await this.hyperliquid.getCandles(token, '1d', 8 * 24 * 60 * 60 * 1000);
+        if (candles && candles.length >= 2) {
+          const firstClose = candles[0]!.close;
+          const lastClose = candles[candles.length - 1]!.close;
+          if (firstClose > 0) {
+            groupReturns[token] = (lastClose / firstClose) - 1;
+          }
+        }
+      });
+      await Promise.all(returnFetches);
+    } catch (err) {
+      console.error(chalk.dim(`  Cross-sectional group returns failed: ${(err as Error).message}`));
+    }
+    const hasGroupReturns = Object.keys(groupReturns).length >= 3;
+
     let results: TokenAnalysis[];
 
     if (!shouldTwoPass) {
       // Original single-pass: analyze all tokens with whatever x402 config says
       results = [];
       for (const token of this.config.tokens) {
-        const result = await this.analyzeToken(token);
+        const result = await this.analyzeToken(token, {
+          groupReturns: hasGroupReturns ? groupReturns : undefined,
+        });
         results.push(result);
       }
     } else {
@@ -661,7 +686,10 @@ export class TradingAgent {
       console.error(chalk.dim(`  x402 top-${topN} mode: scoring all ${this.config.tokens.length} tokens with free signals first...`));
       const freeResults: TokenAnalysis[] = [];
       for (const token of this.config.tokens) {
-        const result = await this.analyzeToken(token, { skipX402: true });
+        const result = await this.analyzeToken(token, {
+          skipX402: true,
+          groupReturns: hasGroupReturns ? groupReturns : undefined,
+        });
         freeResults.push(result);
       }
 
@@ -675,7 +703,9 @@ export class TradingAgent {
       // Pass 2: re-analyze top N with x402 enabled
       const enrichedMap = new Map<string, TokenAnalysis>();
       for (const token of topTokens) {
-        const enriched = await this.analyzeToken(token);
+        const enriched = await this.analyzeToken(token, {
+          groupReturns: hasGroupReturns ? groupReturns : undefined,
+        });
         enrichedMap.set(token, enriched);
       }
 

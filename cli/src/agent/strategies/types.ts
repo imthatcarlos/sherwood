@@ -56,6 +56,7 @@ export interface StrategyContext {
     largeTradesBias: number;
   };
   tokenSymbol?: string;       // resolved symbol (e.g. "ETH" for "ethereum")
+  groupReturns?: Record<string, number>;  // cross-sectional: 7-day returns for all tokens in cycle
 }
 
 export interface Strategy {
