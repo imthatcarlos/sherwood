@@ -639,8 +639,19 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         revert();
     }
 
-    function flushBurn() external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Permissionless retry of a stuck slash burn. Reads
+    ///      `_pendingBurn[address(this)]`, zeros it, then `safeTransfer`s to
+    ///      `BURN_ADDRESS`. `safeTransfer` reverts on failure — if the WOOD
+    ///      token is still broken the whole tx reverts and the pending amount
+    ///      stays queued (state update and transfer are atomic within the
+    ///      `nonReentrant` guard). No-op when queue is empty.
+    function flushBurn() external nonReentrant {
+        uint256 amt = _pendingBurn[address(this)];
+        if (amt == 0) return;
+        _pendingBurn[address(this)] = 0;
+        wood.safeTransfer(BURN_ADDRESS, amt);
+        emit BurnFlushed(amt);
     }
 
     function sweepUnclaimed(uint256) external {

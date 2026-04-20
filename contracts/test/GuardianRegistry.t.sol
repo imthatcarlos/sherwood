@@ -8,6 +8,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {MockERC4626Vault} from "./mocks/MockERC4626Vault.sol";
 import {MockGovernorMinimal} from "./mocks/MockGovernorMinimal.sol";
+import {RevertingERC20Mock} from "./mocks/RevertingERC20Mock.sol";
 
 contract GuardianRegistryInitTest is Test {
     GuardianRegistry registry;
@@ -1221,5 +1222,110 @@ contract GuardianRegistryResolveTest is Test {
         assertEq(logs.length, 0);
         assertEq(second, first);
         assertEq(wood.balanceOf(BURN_ADDRESS), burnedBalance);
+    }
+}
+
+contract GuardianRegistryBurnTest is Test {
+    GuardianRegistry registry;
+    RevertingERC20Mock wood;
+    MockGovernorMinimal governor;
+    address owner = address(0xA11CE);
+    address factory = address(0xFAC10);
+
+    uint256 constant REVIEW_PERIOD = 24 hours;
+    uint256 constant PROPOSAL_ID = 1;
+    uint256 constant BLOCK_QUORUM_BPS = 3000; // 30%
+
+    address internal constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
+    function setUp() public {
+        wood = new RevertingERC20Mock("WOOD", "WOOD", 18);
+        governor = new MockGovernorMinimal();
+
+        GuardianRegistry impl = new GuardianRegistry();
+        bytes memory initData = abi.encodeCall(
+            GuardianRegistry.initialize,
+            (
+                owner,
+                address(governor),
+                factory,
+                address(wood),
+                10_000e18,
+                10_000e18,
+                0,
+                7 days,
+                REVIEW_PERIOD,
+                BLOCK_QUORUM_BPS
+            )
+        );
+        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
+    }
+
+    function _guardian(uint256 i) internal pure returns (address) {
+        return address(uint160(0xAA00 + i + 1));
+    }
+
+    function test_flushBurn_noopWhenZero() public {
+        // No pending burn → call must no-op cleanly, no transfer, no emission.
+        vm.recordLogs();
+        registry.flushBurn();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 0);
+        assertEq(wood.balanceOf(BURN_ADDRESS), 0);
+    }
+
+    function test_flushBurn_retriesPendingBurn() public {
+        // Stand up a 5-guardian cohort and 2-Approve / 2-Block tally → quorum
+        // met, slash targets 20_000e18.
+        for (uint256 i = 0; i < 5; i++) {
+            address g = _guardian(i);
+            wood.mint(g, 100_000e18);
+            vm.prank(g);
+            wood.approve(address(registry), type(uint256).max);
+            vm.prank(g);
+            registry.stakeAsGuardian(10_000e18, 1 + i);
+        }
+        uint256 voteEnd_ = block.timestamp;
+        uint256 reviewEnd_ = voteEnd_ + REVIEW_PERIOD;
+        governor.setProposal(PROPOSAL_ID, voteEnd_, reviewEnd_);
+        registry.openReview(PROPOSAL_ID);
+
+        vm.prank(_guardian(0));
+        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
+        vm.prank(_guardian(1));
+        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
+        vm.prank(_guardian(2));
+        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
+        vm.prank(_guardian(3));
+        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
+
+        // Block transfers TO the burn address — the slash-path transfer must
+        // fail and route into _pendingBurn, emitting PendingBurnRecorded.
+        wood.setTransferBlocked(BURN_ADDRESS, true);
+
+        vm.warp(reviewEnd_);
+        vm.expectEmit(false, false, false, true);
+        emit IGuardianRegistry.PendingBurnRecorded(20_000e18);
+        bool blocked = registry.resolveReview(PROPOSAL_ID);
+        assertTrue(blocked);
+        // Burn address still empty — amount queued instead.
+        assertEq(wood.balanceOf(BURN_ADDRESS), 0);
+        // Registry still holds the slashed WOOD.
+        assertEq(wood.balanceOf(address(registry)), 50_000e18);
+
+        // Unblock and retry via flushBurn — must transfer + emit BurnFlushed.
+        wood.setTransferBlocked(BURN_ADDRESS, false);
+        vm.expectEmit(false, false, false, true);
+        emit IGuardianRegistry.BurnFlushed(20_000e18);
+        registry.flushBurn();
+
+        assertEq(wood.balanceOf(BURN_ADDRESS), 20_000e18);
+        assertEq(wood.balanceOf(address(registry)), 30_000e18);
+
+        // Second call after queue is drained → no-op.
+        vm.recordLogs();
+        registry.flushBurn();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 0);
     }
 }
