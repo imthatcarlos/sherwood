@@ -287,12 +287,23 @@ export class AgentLoop {
       // Only execute on BUY/SELL signals
       if (action === 'STRONG_BUY' || action === 'BUY' || action === 'SELL' || action === 'STRONG_SELL') {
         try {
-          // Get current price for the token
-          const priceData = await this.coingecko.getPrice([result.token], ['usd']);
-          const rawPrice = priceData?.[result.token]?.usd;
+          // Get current price — prefer Hyperliquid markPrice (free, real-time, no rate limit),
+          // fall back to CoinGecko. The prior CG-only path failed when the circuit breaker was
+          // open, blocking execution of valid signals (e.g. SOL SELL at -0.119 failed with
+          // "CoinGecko circuit breaker open" despite HL markPrice being available in the
+          // analysis result).
+          let rawPrice: number | undefined = result.data?.price as number | undefined;
+          if (typeof rawPrice !== 'number' || rawPrice <= 0) {
+            try {
+              const priceData = await this.coingecko.getPrice([result.token], ['usd']);
+              rawPrice = priceData?.[result.token]?.usd;
+            } catch {
+              // CG unavailable — rawPrice stays undefined, handled below
+            }
+          }
 
           if (typeof rawPrice !== 'number' || rawPrice <= 0) {
-            errors.push(`No price data for ${result.token}`);
+            errors.push(`No price data for ${result.token} (HL + CG both failed)`);
             continue;
           }
 
