@@ -46,6 +46,17 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     uint256 public constant DEADMAN_UNPAUSE_DELAY = 7 days;
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
+    // ── Parameter timelock ──
+    bytes32 public constant PARAM_MIN_GUARDIAN_STAKE = keccak256("minGuardianStake");
+    bytes32 public constant PARAM_MIN_OWNER_STAKE = keccak256("minOwnerStake");
+    bytes32 public constant PARAM_OWNER_STAKE_TVL_BPS = keccak256("ownerStakeTvlBps");
+    bytes32 public constant PARAM_COOLDOWN = keccak256("coolDownPeriod");
+    bytes32 public constant PARAM_REVIEW_PERIOD = keccak256("reviewPeriod");
+    bytes32 public constant PARAM_BLOCK_QUORUM_BPS = keccak256("blockQuorumBps");
+
+    uint256 public constant MIN_PARAM_CHANGE_DELAY = 6 hours;
+    uint256 public constant MAX_PARAM_CHANGE_DELAY = 7 days;
+
     // ── Storage — see spec §3.1 for layout ──
     struct Guardian {
         uint128 stakedAmount;
@@ -865,33 +876,111 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         emit Unpaused(msg.sender, deadman);
     }
 
-    // ── Parameter setters (timelocked — Task 24) ──
-    function setMinGuardianStake(uint256) external {
-        revert();
+    // ── Parameter setters (timelocked) ──
+
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Validates bound at queue time; re-validation is implicit since
+    ///      only owner can finalize and the bound check is stateless.
+    function setMinGuardianStake(uint256 newValue) external onlyOwner {
+        if (newValue < 1e18) revert InvalidParameter();
+        _queueChange(PARAM_MIN_GUARDIAN_STAKE, newValue);
     }
 
-    function setMinOwnerStake(uint256) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    function setMinOwnerStake(uint256 newValue) external onlyOwner {
+        if (newValue < 1_000 * 1e18) revert InvalidParameter();
+        _queueChange(PARAM_MIN_OWNER_STAKE, newValue);
     }
 
-    function setOwnerStakeTvlBps(uint256) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    function setOwnerStakeTvlBps(uint256 newValue) external onlyOwner {
+        if (newValue > 500) revert InvalidParameter();
+        _queueChange(PARAM_OWNER_STAKE_TVL_BPS, newValue);
     }
 
-    function setCoolDownPeriod(uint256) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    function setCoolDownPeriod(uint256 newValue) external onlyOwner {
+        if (newValue < 1 days || newValue > 30 days) revert InvalidParameter();
+        _queueChange(PARAM_COOLDOWN, newValue);
     }
 
-    function setReviewPeriod(uint256) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    function setReviewPeriod(uint256 newValue) external onlyOwner {
+        if (newValue < 6 hours || newValue > 7 days) revert InvalidParameter();
+        _queueChange(PARAM_REVIEW_PERIOD, newValue);
     }
 
-    function setBlockQuorumBps(uint256) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    function setBlockQuorumBps(uint256 newValue) external onlyOwner {
+        if (newValue < 1_000 || newValue > 10_000) revert InvalidParameter();
+        _queueChange(PARAM_BLOCK_QUORUM_BPS, newValue);
     }
 
-    function setMinter(address) external {
-        revert();
+    /// @notice Finalize a queued parameter change once `effectiveAt` has passed.
+    /// @dev Owner-only. Writes the pending value into the target storage var,
+    ///      clears the pending slot, emits `ParameterChangeFinalized`.
+    function finalizeParameterChange(bytes32 paramKey) external onlyOwner {
+        PendingChange storage change = _pendingChanges[paramKey];
+        if (!change.exists) revert NoChangePending();
+        if (block.timestamp < change.effectiveAt) revert ChangeNotReady();
+
+        uint256 newValue = change.newValue;
+        uint256 oldValue = _applyChange(paramKey, newValue);
+
+        delete _pendingChanges[paramKey];
+        emit ParameterChangeFinalized(paramKey, oldValue, newValue);
+    }
+
+    /// @notice Cancel a queued parameter change.
+    function cancelParameterChange(bytes32 paramKey) external onlyOwner {
+        if (!_pendingChanges[paramKey].exists) revert NoChangePending();
+        delete _pendingChanges[paramKey];
+        emit ParameterChangeCancelled(paramKey);
+    }
+
+    /// @notice Owner-instant minter rotation. Not timelocked: minter can only
+    ///         top up the epoch treasury pool, so owner must be free to pick
+    ///         and rotate implementations as the minter evolves.
+    function setMinter(address newMinter) external onlyOwner {
+        address old = minter;
+        minter = newMinter;
+        emit MinterUpdated(old, newMinter);
+    }
+
+    /// @notice View helper mirroring the governor-param pattern.
+    function getPendingChange(bytes32 paramKey) external view returns (PendingChange memory) {
+        return _pendingChanges[paramKey];
+    }
+
+    function _queueChange(bytes32 paramKey, uint256 newValue) private {
+        if (_pendingChanges[paramKey].exists) revert ChangeAlreadyPending();
+        uint64 effectiveAt = uint64(block.timestamp + parameterChangeDelay);
+        _pendingChanges[paramKey] = PendingChange({newValue: newValue, effectiveAt: effectiveAt, exists: true});
+        emit ParameterChangeQueued(paramKey, newValue, effectiveAt);
+    }
+
+    function _applyChange(bytes32 paramKey, uint256 newValue) private returns (uint256 old) {
+        if (paramKey == PARAM_MIN_GUARDIAN_STAKE) {
+            old = minGuardianStake;
+            minGuardianStake = newValue;
+        } else if (paramKey == PARAM_MIN_OWNER_STAKE) {
+            old = minOwnerStake;
+            minOwnerStake = newValue;
+        } else if (paramKey == PARAM_OWNER_STAKE_TVL_BPS) {
+            old = ownerStakeTvlBps;
+            ownerStakeTvlBps = newValue;
+        } else if (paramKey == PARAM_COOLDOWN) {
+            old = coolDownPeriod;
+            coolDownPeriod = newValue;
+        } else if (paramKey == PARAM_REVIEW_PERIOD) {
+            old = reviewPeriod;
+            reviewPeriod = newValue;
+        } else if (paramKey == PARAM_BLOCK_QUORUM_BPS) {
+            old = blockQuorumBps;
+            blockQuorumBps = newValue;
+        } else {
+            revert InvalidParameter();
+        }
     }
 
     // ── Views (minimal now; full impl in later tasks) ──

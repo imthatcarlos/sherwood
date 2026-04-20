@@ -42,6 +42,10 @@ interface IGuardianRegistry {
     error NotPausedOrDeadmanNotElapsed();
     error RefundCapExceeded();
     error InvalidAgentId();
+    error ChangeAlreadyPending();
+    error NoChangePending();
+    error ChangeNotReady();
+    error InvalidParameter();
 
     // ── Events ──
     event GuardianStaked(address indexed guardian, uint256 amount, uint256 agentId);
@@ -76,6 +80,10 @@ interface IGuardianRegistry {
     event Unpaused(address indexed by, bool deadman);
     event SlashAppealReserveFunded(address indexed by, uint256 amount);
     event SlashAppealRefunded(address indexed recipient, uint256 amount, uint256 epochId);
+    event ParameterChangeQueued(bytes32 indexed paramKey, uint256 newValue, uint256 effectiveAt);
+    event ParameterChangeFinalized(bytes32 indexed paramKey, uint256 oldValue, uint256 newValue);
+    event ParameterChangeCancelled(bytes32 indexed paramKey);
+    event MinterUpdated(address oldMinter, address newMinter);
 
     // ── Guardian fns ──
     function stakeAsGuardian(uint256 amount, uint256 agentId) external;

@@ -2262,3 +2262,212 @@ contract GuardianRegistryPauseTest is Test {
         registry.unpause();
     }
 }
+
+contract GuardianRegistryParamTest is Test {
+    GuardianRegistry registry;
+    ERC20Mock wood;
+    address owner = address(0xA11CE);
+    address governor = address(0x9000);
+    address factory = address(0xFAC10);
+    address stranger = address(0xBAD);
+
+    uint256 constant PARAM_DELAY = 24 hours;
+
+    // Initial values (match the initialize call below).
+    uint256 constant INIT_MIN_GUARDIAN_STAKE = 10_000e18;
+    uint256 constant INIT_MIN_OWNER_STAKE = 10_000e18;
+    uint256 constant INIT_OWNER_TVL_BPS = 0;
+    uint256 constant INIT_COOLDOWN = 7 days;
+    uint256 constant INIT_REVIEW_PERIOD = 24 hours;
+    uint256 constant INIT_BLOCK_QUORUM = 3000;
+
+    function setUp() public {
+        wood = new ERC20Mock("WOOD", "WOOD", 18);
+        GuardianRegistry impl = new GuardianRegistry();
+        bytes memory initData = abi.encodeCall(
+            GuardianRegistry.initialize,
+            (
+                owner,
+                governor,
+                factory,
+                address(wood),
+                INIT_MIN_GUARDIAN_STAKE,
+                INIT_MIN_OWNER_STAKE,
+                INIT_OWNER_TVL_BPS,
+                INIT_COOLDOWN,
+                INIT_REVIEW_PERIOD,
+                INIT_BLOCK_QUORUM
+            )
+        );
+        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
+        // parameterChangeDelay defaults to 24h per the initializer.
+    }
+
+    function _key(bytes memory label) internal pure returns (bytes32) {
+        return keccak256(label);
+    }
+
+    // ── Queue + finalize happy path ──
+    function test_setMinGuardianStake_queuesAndFinalizes() public {
+        uint256 target = 20_000e18;
+        bytes32 key = registry.PARAM_MIN_GUARDIAN_STAKE();
+        vm.prank(owner);
+        registry.setMinGuardianStake(target);
+
+        // Value unchanged before finalize.
+        assertEq(registry.minGuardianStake(), INIT_MIN_GUARDIAN_STAKE);
+
+        vm.warp(block.timestamp + PARAM_DELAY + 1);
+        vm.prank(owner);
+        registry.finalizeParameterChange(key);
+        assertEq(registry.minGuardianStake(), target);
+    }
+
+    // ── Bound validation ──
+    function test_setMinGuardianStake_boundsEnforced() public {
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
+        registry.setMinGuardianStake(0);
+    }
+
+    function test_setMinOwnerStake_boundsEnforced() public {
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
+        registry.setMinOwnerStake(999e18);
+
+        // Exactly 1_000e18 should succeed.
+        vm.prank(owner);
+        registry.setMinOwnerStake(1_000e18);
+    }
+
+    function test_setOwnerStakeTvlBps_boundsEnforced() public {
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
+        registry.setOwnerStakeTvlBps(501);
+
+        vm.startPrank(owner);
+        registry.setOwnerStakeTvlBps(0); // OK
+        registry.cancelParameterChange(registry.PARAM_OWNER_STAKE_TVL_BPS());
+        registry.setOwnerStakeTvlBps(500); // boundary OK
+        vm.stopPrank();
+    }
+
+    function test_setCoolDownPeriod_boundsEnforced() public {
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
+        registry.setCoolDownPeriod(1 days - 1);
+
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
+        registry.setCoolDownPeriod(30 days + 1);
+
+        vm.startPrank(owner);
+        registry.setCoolDownPeriod(1 days);
+        registry.cancelParameterChange(registry.PARAM_COOLDOWN());
+        registry.setCoolDownPeriod(30 days);
+        vm.stopPrank();
+    }
+
+    function test_setReviewPeriod_boundsEnforced() public {
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
+        registry.setReviewPeriod(5 hours);
+
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
+        registry.setReviewPeriod(8 days);
+
+        vm.startPrank(owner);
+        registry.setReviewPeriod(6 hours);
+        registry.cancelParameterChange(registry.PARAM_REVIEW_PERIOD());
+        registry.setReviewPeriod(7 days);
+        vm.stopPrank();
+    }
+
+    function test_setBlockQuorumBps_boundsEnforced() public {
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
+        registry.setBlockQuorumBps(999);
+
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
+        registry.setBlockQuorumBps(10_001);
+
+        vm.startPrank(owner);
+        registry.setBlockQuorumBps(1_000);
+        registry.cancelParameterChange(registry.PARAM_BLOCK_QUORUM_BPS());
+        registry.setBlockQuorumBps(10_000);
+        vm.stopPrank();
+    }
+
+    // ── Finalize path reverts ──
+    function test_finalizeParameterChange_revertsIfNotReady() public {
+        bytes32 key = registry.PARAM_REVIEW_PERIOD();
+        vm.prank(owner);
+        registry.setReviewPeriod(12 hours);
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.ChangeNotReady.selector);
+        registry.finalizeParameterChange(key);
+    }
+
+    function test_finalizeParameterChange_revertsIfNoPending() public {
+        bytes32 key = registry.PARAM_REVIEW_PERIOD();
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.NoChangePending.selector);
+        registry.finalizeParameterChange(key);
+    }
+
+    // ── Cancel path ──
+    function test_cancelParameterChange_clearsPending() public {
+        bytes32 key = registry.PARAM_REVIEW_PERIOD();
+        vm.startPrank(owner);
+        registry.setReviewPeriod(12 hours);
+        registry.cancelParameterChange(key);
+        // Now we can re-queue.
+        registry.setReviewPeriod(18 hours);
+        vm.stopPrank();
+    }
+
+    // ── Double-queue guard ──
+    function test_queueChange_revertsIfAlreadyPending() public {
+        vm.prank(owner);
+        registry.setReviewPeriod(12 hours);
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.ChangeAlreadyPending.selector);
+        registry.setReviewPeriod(18 hours);
+    }
+
+    // ── Minter (owner-instant) ──
+    function test_setMinter_ownerInstant_emitsEvent() public {
+        address m = address(0x1234);
+        vm.expectEmit(true, true, false, true);
+        emit IGuardianRegistry.MinterUpdated(address(0), m);
+        vm.prank(owner);
+        registry.setMinter(m);
+        assertEq(registry.minter(), m);
+    }
+
+    function test_setMinter_onlyOwner() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.setMinter(address(0xBEEF));
+    }
+
+    // ── Owner-only access on the other setters ──
+    function test_setters_onlyOwner() public {
+        vm.startPrank(stranger);
+        vm.expectRevert();
+        registry.setMinGuardianStake(20_000e18);
+        vm.expectRevert();
+        registry.setMinOwnerStake(20_000e18);
+        vm.expectRevert();
+        registry.setOwnerStakeTvlBps(100);
+        vm.expectRevert();
+        registry.setCoolDownPeriod(2 days);
+        vm.expectRevert();
+        registry.setReviewPeriod(12 hours);
+        vm.expectRevert();
+        registry.setBlockQuorumBps(2_000);
+        vm.stopPrank();
+    }
+}
