@@ -21,6 +21,7 @@ interface IGovernorMinimal {
     struct ProposalView {
         uint256 voteEnd;
         uint256 reviewEnd;
+        address vault;
     }
 
     function getActiveProposal(address vault) external view returns (uint256);
@@ -187,6 +188,11 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     // ── Modifiers ──
     modifier onlyFactory() {
         if (msg.sender != factory) revert NotFactory();
+        _;
+    }
+
+    modifier onlyGovernor() {
+        if (msg.sender != governor) revert NotGovernor();
         _;
     }
 
@@ -493,8 +499,19 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     }
 
     // ── Governor-only ──
-    function openEmergencyReview(uint256, bytes32) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Opens a block-only emergency review window. Unlike the standard
+    ///      review path there is no separate keeper — `totalStakeAtOpen` is
+    ///      snapshotted at open time from the live `totalGuardianStake`.
+    ///      Called by the governor when an emergency settle is staged
+    ///      (spec §3.1).
+    function openEmergencyReview(uint256 proposalId, bytes32 callsHash) external onlyGovernor {
+        EmergencyReview storage er = _emergencyReviews[proposalId];
+        uint64 newReviewEnd = uint64(block.timestamp + reviewPeriod);
+        er.callsHash = callsHash;
+        er.reviewEnd = newReviewEnd;
+        er.totalStakeAtOpen = uint128(totalGuardianStake);
+        emit EmergencyReviewOpened(proposalId, callsHash, newReviewEnd);
     }
 
     // ── Permissionless ──
@@ -631,12 +648,77 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         }
     }
 
-    function resolveEmergencyReview(uint256) external returns (bool) {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Permissionless. Idempotent. Requires
+    ///      `block.timestamp >= reviewEnd`. If the cohort was empty at open
+    ///      (`totalStakeAtOpen == 0`), short-circuits to `false`. Otherwise:
+    ///      `blocked = (blockStakeWeight * 10_000 >= blockQuorumBps * totalStakeAtOpen)`.
+    ///      CEI: commits `resolved`/`blocked` flags BEFORE any transfer. On
+    ///      block, slashes the vault owner (spec §3.1 emergency path).
+    function resolveEmergencyReview(uint256 proposalId) external nonReentrant returns (bool) {
+        EmergencyReview storage er = _emergencyReviews[proposalId];
+        if (er.reviewEnd == 0 || block.timestamp < er.reviewEnd) revert ReviewNotReadyForResolve();
+        if (er.resolved) return er.blocked; // idempotent
+        if (er.totalStakeAtOpen == 0) {
+            er.resolved = true;
+            emit EmergencyReviewResolved(proposalId, false, 0);
+            return false;
+        }
+
+        bool blocked_ = (uint256(er.blockStakeWeight) * 10_000 >= blockQuorumBps * uint256(er.totalStakeAtOpen));
+
+        // CEI: commit state BEFORE external transfer.
+        er.resolved = true;
+        er.blocked = blocked_;
+
+        uint256 slashed;
+        if (blocked_) {
+            slashed = _slashOwner(proposalId);
+        }
+
+        emit EmergencyReviewResolved(proposalId, blocked_, slashed);
+        return blocked_;
     }
 
-    function voteBlockEmergencySettle(uint256) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Active-guardian-only. Block-only side (no Approve pool for
+    ///      emergency reviews). One vote per guardian — double-votes revert.
+    ///      Weight is the caller's current `guardianStake` at call time.
+    function voteBlockEmergencySettle(uint256 proposalId) external {
+        if (paused) revert ProtocolPaused();
+        EmergencyReview storage er = _emergencyReviews[proposalId];
+        if (er.reviewEnd == 0 || block.timestamp >= er.reviewEnd) revert ReviewNotOpen();
+        if (!_isActiveGuardian(msg.sender)) revert NotActiveGuardian();
+        if (_emergencyBlockVotes[proposalId][msg.sender]) revert AlreadyVoted();
+
+        uint128 weight = _guardians[msg.sender].stakedAmount;
+        _emergencyBlockVotes[proposalId][msg.sender] = true;
+        er.blockStakeWeight += weight;
+
+        emit EmergencyBlockVoteCast(proposalId, msg.sender, weight);
+    }
+
+    /// @dev Slashes the vault owner's stake when an emergency review resolves
+    ///      as blocked. Looks up the vault via `governor.getProposal().vault`,
+    ///      zeros `_ownerStakes[vault].stakedAmount`, and attempts a single
+    ///      `wood.transfer(BURN, amt)` with the same try/catch fallback as
+    ///      the approver-slash path.
+    function _slashOwner(uint256 proposalId) private returns (uint256 amt) {
+        address vault = IGovernorMinimal(governor).getProposal(proposalId).vault;
+        OwnerStake storage s = _ownerStakes[vault];
+        amt = s.stakedAmount;
+        if (amt == 0) return 0;
+        s.stakedAmount = 0;
+
+        try IERC20(wood).transfer(BURN_ADDRESS, amt) returns (bool ok) {
+            if (!ok) {
+                _pendingBurn[address(this)] += amt;
+                emit PendingBurnRecorded(amt);
+            }
+        } catch {
+            _pendingBurn[address(this)] += amt;
+            emit PendingBurnRecorded(amt);
+        }
     }
 
     /// @inheritdoc IGuardianRegistry

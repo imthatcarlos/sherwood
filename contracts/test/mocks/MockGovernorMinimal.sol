@@ -11,6 +11,7 @@ contract MockGovernorMinimal {
     struct ProposalView {
         uint256 voteEnd;
         uint256 reviewEnd;
+        address vault;
     }
 
     mapping(address => uint256) public activeProposal;
@@ -24,8 +25,16 @@ contract MockGovernorMinimal {
         return activeProposal[vault];
     }
 
+    /// @dev Sets a proposal with no associated vault. Used by tests that only
+    ///      exercise the non-emergency review path.
     function setProposal(uint256 proposalId, uint256 voteEnd, uint256 reviewEnd) external {
-        _proposals[proposalId] = ProposalView({voteEnd: voteEnd, reviewEnd: reviewEnd});
+        _proposals[proposalId] = ProposalView({voteEnd: voteEnd, reviewEnd: reviewEnd, vault: address(0)});
+    }
+
+    /// @dev Sets a proposal with an associated vault for emergency-review tests
+    ///      that need `_slashOwner` to resolve the vault address.
+    function setProposalWithVault(uint256 proposalId, uint256 voteEnd, uint256 reviewEnd, address vault) external {
+        _proposals[proposalId] = ProposalView({voteEnd: voteEnd, reviewEnd: reviewEnd, vault: vault});
     }
 
     function getProposal(uint256 proposalId) external view returns (ProposalView memory) {

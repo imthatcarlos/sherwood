@@ -1329,3 +1329,241 @@ contract GuardianRegistryBurnTest is Test {
         assertEq(logs.length, 0);
     }
 }
+
+contract GuardianRegistryEmergencyTest is Test {
+    GuardianRegistry registry;
+    ERC20Mock wood;
+    MockGovernorMinimal governor;
+    MockERC4626Vault vault;
+    address owner = address(0xA11CE);
+    address factory = address(0xFAC10);
+    address creator = address(0xC0FFEE);
+    address stranger = address(0xBAD);
+
+    uint256 constant REVIEW_PERIOD = 24 hours;
+    uint256 constant PROPOSAL_ID = 1;
+    uint256 constant BLOCK_QUORUM_BPS = 3000; // 30%
+
+    address internal constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
+    function setUp() public {
+        wood = new ERC20Mock("WOOD", "WOOD", 18);
+        governor = new MockGovernorMinimal();
+
+        GuardianRegistry impl = new GuardianRegistry();
+        bytes memory initData = abi.encodeCall(
+            GuardianRegistry.initialize,
+            (
+                owner,
+                address(governor),
+                factory,
+                address(wood),
+                10_000e18,
+                10_000e18,
+                0,
+                7 days,
+                REVIEW_PERIOD,
+                BLOCK_QUORUM_BPS
+            )
+        );
+        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
+
+        vault = new MockERC4626Vault();
+        vault.setOwner(creator);
+
+        // Bind an owner stake for the vault so emergency slashing has a
+        // target. Creator mints, prepares, factory binds.
+        wood.mint(creator, 100_000e18);
+        vm.prank(creator);
+        wood.approve(address(registry), type(uint256).max);
+        vm.prank(creator);
+        registry.prepareOwnerStake(10_000e18);
+        vm.prank(factory);
+        registry.bindOwnerStake(creator, address(vault));
+
+        // Stake 5 guardians × 10_000e18 = 50_000e18 to match MIN_COHORT_STAKE_AT_OPEN.
+        for (uint256 i = 0; i < 5; i++) {
+            address g = _guardian(i);
+            wood.mint(g, 100_000e18);
+            vm.prank(g);
+            wood.approve(address(registry), type(uint256).max);
+            vm.prank(g);
+            registry.stakeAsGuardian(10_000e18, 1 + i);
+        }
+    }
+
+    function _guardian(uint256 i) internal pure returns (address) {
+        return address(uint160(0xAA00 + i + 1));
+    }
+
+    function _openEmergency() internal returns (uint64 reviewEnd_) {
+        // Wire up the governor's ProposalView so _slashOwner can resolve vault.
+        reviewEnd_ = uint64(block.timestamp + REVIEW_PERIOD);
+        governor.setProposalWithVault(PROPOSAL_ID, block.timestamp, reviewEnd_, address(vault));
+        vm.prank(address(governor));
+        registry.openEmergencyReview(PROPOSAL_ID, keccak256("calls"));
+    }
+
+    function test_openEmergencyReview_onlyGovernor() public {
+        vm.prank(stranger);
+        vm.expectRevert(IGuardianRegistry.NotGovernor.selector);
+        registry.openEmergencyReview(PROPOSAL_ID, keccak256("calls"));
+    }
+
+    function test_openEmergencyReview_snapshotsTotalStakeAtOpen() public {
+        // Use a tight quorum setup that straddles the 30% bps boundary:
+        // Open with totalGuardianStake = 50_000e18 (snapshot). After opening,
+        // stake 5 more guardians → live total = 100_000e18. Cast 2 block
+        // votes for 20_000e18 block weight.
+        //   - Against snapshot (50_000e18): 20_000/50_000 = 40% >= 30% → blocked
+        //   - Against live total (100_000e18): 20_000/100_000 = 20% < 30% → not blocked
+        // A true snapshot returns `blocked = true`; a bug that reads live
+        // total at resolve time would return `false`. This asserts the
+        // snapshot semantics.
+        uint64 expectedEnd = uint64(block.timestamp + REVIEW_PERIOD);
+        bytes32 h = keccak256("calls");
+        governor.setProposalWithVault(PROPOSAL_ID, block.timestamp, expectedEnd, address(vault));
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.EmergencyReviewOpened(PROPOSAL_ID, h, expectedEnd);
+        vm.prank(address(governor));
+        registry.openEmergencyReview(PROPOSAL_ID, h);
+
+        // Stake 5 additional guardians post-open → live total jumps to 100_000e18.
+        for (uint256 i = 5; i < 10; i++) {
+            address g = address(uint160(0xBB00 + i));
+            wood.mint(g, 100_000e18);
+            vm.prank(g);
+            wood.approve(address(registry), type(uint256).max);
+            vm.prank(g);
+            registry.stakeAsGuardian(10_000e18, 1 + i);
+        }
+        assertEq(registry.totalGuardianStake(), 100_000e18);
+
+        // 2 block votes from original cohort → 20_000e18 block weight.
+        vm.prank(_guardian(0));
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+        vm.prank(_guardian(1));
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+
+        vm.warp(expectedEnd);
+        bool blocked = registry.resolveEmergencyReview(PROPOSAL_ID);
+        // Quorum computed against the 50_000e18 snapshot → blocked.
+        assertTrue(blocked);
+    }
+
+    function test_voteBlockEmergencySettle_updatesTally() public {
+        uint64 reviewEnd_ = _openEmergency();
+        (reviewEnd_);
+
+        vm.expectEmit(true, true, false, true);
+        emit IGuardianRegistry.EmergencyBlockVoteCast(PROPOSAL_ID, _guardian(0), 10_000e18);
+        vm.prank(_guardian(0));
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+    }
+
+    function test_voteBlockEmergencySettle_revertsIfDoubleVote() public {
+        _openEmergency();
+        vm.prank(_guardian(0));
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+
+        vm.prank(_guardian(0));
+        vm.expectRevert(IGuardianRegistry.AlreadyVoted.selector);
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+    }
+
+    function test_resolveEmergencyReview_beforeEnd_reverts() public {
+        uint64 reviewEnd_ = _openEmergency();
+        vm.warp(reviewEnd_ - 1);
+        vm.expectRevert(IGuardianRegistry.ReviewNotReadyForResolve.selector);
+        registry.resolveEmergencyReview(PROPOSAL_ID);
+    }
+
+    function test_resolveEmergencyReview_belowQuorum_returnsFalse() public {
+        uint64 reviewEnd_ = _openEmergency();
+        // 1 blocker = 10_000e18 = 20% of 50_000e18 < 30% → false.
+        vm.prank(_guardian(0));
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+
+        vm.warp(reviewEnd_);
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.EmergencyReviewResolved(PROPOSAL_ID, false, 0);
+        bool blocked = registry.resolveEmergencyReview(PROPOSAL_ID);
+        assertFalse(blocked);
+        // Owner stake intact.
+        assertEq(registry.ownerStake(address(vault)), 10_000e18);
+        assertEq(wood.balanceOf(BURN_ADDRESS), 0);
+    }
+
+    function test_resolveEmergencyReview_quorumReached_slashesOwner_burnsWood() public {
+        uint64 reviewEnd_ = _openEmergency();
+        // 2 blockers = 20_000e18 = 40% of 50_000e18 >= 30% → blocked.
+        vm.prank(_guardian(0));
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+        vm.prank(_guardian(1));
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+
+        uint256 ownerStakeBefore = registry.ownerStake(address(vault));
+        assertEq(ownerStakeBefore, 10_000e18);
+
+        vm.warp(reviewEnd_);
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.EmergencyReviewResolved(PROPOSAL_ID, true, 10_000e18);
+        bool blocked = registry.resolveEmergencyReview(PROPOSAL_ID);
+
+        assertTrue(blocked);
+        assertEq(registry.ownerStake(address(vault)), 0);
+        assertEq(wood.balanceOf(BURN_ADDRESS), 10_000e18);
+    }
+
+    function test_resolveEmergencyReview_cohortTooSmall_returnsFalse() public {
+        // Drain guardians down to 30_000e18 (below 50_000 threshold).
+        vm.prank(_guardian(3));
+        registry.requestUnstakeGuardian();
+        vm.prank(_guardian(4));
+        registry.requestUnstakeGuardian();
+        assertEq(registry.totalGuardianStake(), 30_000e18);
+
+        // Note: openEmergencyReview always snapshots totalGuardianStake
+        // without a MIN_COHORT check — the cold-start fallback here is the
+        // `totalStakeAtOpen == 0` branch, not MIN_COHORT. So we drain all
+        // stake to 0 to exercise the cohort-too-small-for-emergency path.
+        vm.prank(_guardian(0));
+        registry.requestUnstakeGuardian();
+        vm.prank(_guardian(1));
+        registry.requestUnstakeGuardian();
+        vm.prank(_guardian(2));
+        registry.requestUnstakeGuardian();
+        assertEq(registry.totalGuardianStake(), 0);
+
+        uint64 reviewEnd_ = _openEmergency();
+        // No active guardians left → no votes possible. Even if there were,
+        // totalStakeAtOpen == 0 short-circuits the quorum calc to false.
+        vm.warp(reviewEnd_);
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.EmergencyReviewResolved(PROPOSAL_ID, false, 0);
+        bool blocked = registry.resolveEmergencyReview(PROPOSAL_ID);
+        assertFalse(blocked);
+        assertEq(registry.ownerStake(address(vault)), 10_000e18);
+        assertEq(wood.balanceOf(BURN_ADDRESS), 0);
+    }
+
+    function test_resolveEmergencyReview_idempotent() public {
+        uint64 reviewEnd_ = _openEmergency();
+        vm.prank(_guardian(0));
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+        vm.prank(_guardian(1));
+        registry.voteBlockEmergencySettle(PROPOSAL_ID);
+
+        vm.warp(reviewEnd_);
+        bool first = registry.resolveEmergencyReview(PROPOSAL_ID);
+        assertTrue(first);
+        uint256 burnedBalance = wood.balanceOf(BURN_ADDRESS);
+
+        vm.recordLogs();
+        bool second = registry.resolveEmergencyReview(PROPOSAL_ID);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 0);
+        assertEq(second, first);
+        assertEq(wood.balanceOf(BURN_ADDRESS), burnedBalance);
+    }
+}
