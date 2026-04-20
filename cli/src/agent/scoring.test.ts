@@ -286,20 +286,20 @@ describe("computeTradeDecision", () => {
     expect(trendingUpDecision.thresholds?.buy).toBe(0.25);
   });
 
-  it("ranging regime fires BUY at the 0.20 threshold", () => {
+  it("ranging regime fires BUY at the 0.15 threshold", () => {
     const signals: Signal[] = [
-      makeSignal("technical", 0.22),
-      makeSignal("sentiment", 0.22),
-      makeSignal("onchain", 0.22),
+      makeSignal("technical", 0.18),
+      makeSignal("sentiment", 0.18),
+      makeSignal("onchain", 0.18),
     ];
     const rangingDecision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(rangingDecision.score).toBeGreaterThan(0.20);
-    expect(rangingDecision.score).toBeLessThan(0.35);
+    expect(rangingDecision.score).toBeGreaterThan(0.15);
+    expect(rangingDecision.score).toBeLessThan(0.30);
     expect(rangingDecision.action).toBe("BUY");
-    expect(rangingDecision.thresholds?.buy).toBe(0.20);
-    expect(rangingDecision.thresholds?.sell).toBe(-0.10);
+    expect(rangingDecision.thresholds?.buy).toBe(0.15);
+    expect(rangingDecision.thresholds?.sell).toBeCloseTo(-0.08, 2);
   });
 
   it("trending-up is asymmetric — harder to SELL than default", () => {

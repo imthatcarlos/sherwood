@@ -137,7 +137,7 @@ export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
   // SELL side remains asymmetric with BUY: the contrarian sentiment model +
   // on-chain defaults + BTC-bullish suppression bias the aggregate score
   // positive. Empirical distribution: min -0.18, p3 ≈ -0.10, p50 ≈ +0.15.
-  "ranging":        { strongBuy: 0.35, buy: 0.20, sell: -0.10, strongSell: -0.20 },
+  "ranging":        { strongBuy: 0.30, buy: 0.15, sell: -0.08, strongSell: -0.15 },
   "high-volatility":{ strongBuy: 0.70, buy: 0.45, sell: -0.45, strongSell: -0.70 },
   "low-volatility": { strongBuy: 0.60, buy: 0.30, sell: -0.30, strongSell: -0.60 },
 };
@@ -579,6 +579,19 @@ export function computeTradeDecision(
     if (regime && (regime === 'trending-up' || regime === 'trending-down')
         && LAGGING_TECHNICAL_SIGNALS.has(signal.name)) {
       signalWeight *= 0.5;
+    }
+
+    // Skip zero-value / near-zero-confidence signals from the denominator.
+    // Signals like fundamental=0 (CG circuit-breaker'd), sentimentContrarian=0
+    // (F&G in neutral zone), dexFlow=0 (no DEX activity) still carry their
+    // category weight in the denominator, diluting the composite toward zero.
+    // A token with 4 strong bullish signals at +0.30 and 6 zero signals scored
+    // +0.05 instead of +0.30 because the zeros added ~60% to totalWeight.
+    // Only exclude truly dead signals (value=0 AND confidence <= 0.15) — a
+    // signal that deliberately returns value=0 at high confidence (e.g. "I
+    // looked and there's nothing") should still vote neutral.
+    if (adjustedValue === 0 && adjustedConfidence <= 0.15) {
+      continue;
     }
 
     weightedSum += adjustedValue * signalWeight;
