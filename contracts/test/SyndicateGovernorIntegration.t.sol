@@ -219,6 +219,8 @@ contract SyndicateGovernorIntegrationTest is Test {
     // ==================== EMERGENCY SETTLE WITH PROFIT ====================
 
     function test_fullLifecycle_emergencySettle() public {
+        // TODO(task-24): re-enable after GovernorEmergency full implementation (guardian-review plan)
+        vm.skip(true);
         BatchExecutorLib.Call[] memory execCalls = new BatchExecutorLib.Call[](1);
         execCalls[0] = BatchExecutorLib.Call({
             target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 50_000e6)), value: 0

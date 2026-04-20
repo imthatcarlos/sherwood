@@ -3,7 +3,9 @@ pragma solidity 0.8.28;
 
 import {ISyndicateGovernor} from "./interfaces/ISyndicateGovernor.sol";
 import {ISyndicateVault} from "./interfaces/ISyndicateVault.sol";
+import {IGuardianRegistry} from "./interfaces/IGuardianRegistry.sol";
 import {GovernorParameters} from "./GovernorParameters.sol";
+import {GovernorEmergency} from "./GovernorEmergency.sol";
 import {BatchExecutorLib} from "./BatchExecutorLib.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -27,7 +29,7 @@ import {IVotes} from "@openzeppelin/contracts/governance/utils/IVotes.sol";
  *   - Parameter changes require timelock delay
  *   - Protocol fee taken from profit before agent/management fees
  */
-contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
+contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgradeable {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     // ── Storage (existing -- DO NOT reorder) ──
@@ -96,8 +98,11 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
     /// @notice Recipient of protocol fees
     address private _protocolFeeRecipient;
 
-    /// @dev Reserved storage for future upgrades
-    uint256[33] private __gap;
+    /// @notice Guardian registry (wired in Task 25). Zero until then; emergency fns revert.
+    address internal _guardianRegistry;
+
+    /// @dev Reserved storage for future upgrades (shrunk by 1 for _guardianRegistry)
+    uint256[32] private __gap;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -169,6 +174,29 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
 
     function _getProtocolFeeRecipient() internal view override returns (address) {
         return _protocolFeeRecipient;
+    }
+
+    // ── GovernorEmergency virtual accessor overrides ──
+
+    function _getProposal(uint256 id) internal view override returns (StrategyProposal storage) {
+        return _proposals[id];
+    }
+
+    function _getSettlementCalls(uint256 id) internal view override returns (BatchExecutorLib.Call[] storage) {
+        return _settlementCalls[id];
+    }
+
+    function _getRegistry() internal view override returns (IGuardianRegistry) {
+        return IGuardianRegistry(_guardianRegistry);
+    }
+
+    function _emergencyReentrancyEnter() internal override {
+        if (_reentrancyStatus == _ENTERED) revert Reentrancy();
+        _reentrancyStatus = _ENTERED;
+    }
+
+    function _emergencyReentrancyLeave() internal override {
+        _reentrancyStatus = _NOT_ENTERED;
     }
 
     // ==================== PROPOSAL LIFECYCLE ====================
@@ -302,21 +330,9 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
         _finishSettlement(proposalId, proposal);
     }
 
-    /// @inheritdoc ISyndicateGovernor
-    /// @notice Vault owner settles. Tries pre-committed calls first, falls back to custom. After duration.
-    function emergencySettle(uint256 proposalId, BatchExecutorLib.Call[] calldata calls) external nonReentrant {
-        StrategyProposal storage proposal = _proposals[proposalId];
-        if (msg.sender != OwnableUpgradeable(proposal.vault).owner()) revert NotVaultOwner();
-        if (_resolveState(proposal) != ProposalState.Executed) revert ProposalNotExecuted();
-        if (block.timestamp < proposal.executedAt + proposal.strategyDuration) revert StrategyDurationNotElapsed();
-
-        // Try pre-committed unwind calls first, fall back to owner-provided calls
-        _tryPrecommittedThenFallback(proposalId, proposal, calls);
-
-        (int256 pnl,) = _finishSettlement(proposalId, proposal);
-
-        emit EmergencySettled(proposalId, proposal.vault, pnl, calls.length);
-    }
+    // NOTE: emergencySettle removed in Task 2 — replaced by the full guardian
+    // review lifecycle in GovernorEmergency (implemented in Task 24):
+    // unstick / emergencySettleWithCalls / cancelEmergencySettle / finalizeEmergencySettle.
 
     /// @inheritdoc ISyndicateGovernor
     function cancelProposal(uint256 proposalId) external {
@@ -651,28 +667,6 @@ contract SyndicateGovernor is GovernorParameters, UUPSUpgradeable {
 
         // Lead split = 10000 - totalCoSplitBps (must be >= 10%)
         if (totalCoSplitBps > 9000) revert LeadSplitTooLow();
-    }
-
-    /// @dev Try pre-committed settlement calls first. If they revert, run fallback calls or bubble original error.
-    function _tryPrecommittedThenFallback(
-        uint256 proposalId,
-        StrategyProposal storage proposal,
-        BatchExecutorLib.Call[] calldata fallbackCalls
-    ) internal {
-        // Try pre-committed calls first
-        try ISyndicateVault(proposal.vault).executeGovernorBatch(_loadCalls(_settlementCalls, proposalId)) {
-        // Pre-committed calls succeeded
-        }
-        catch (bytes memory reason) {
-            // Pre-committed calls failed -- run fallback calls
-            if (fallbackCalls.length == 0) {
-                assembly {
-                    revert(add(reason, 32), mload(reason))
-                }
-            }
-
-            ISyndicateVault(proposal.vault).executeGovernorBatch(fallbackCalls);
-        }
     }
 
     /// @dev Compute the resolved state and persist any transitions to storage.
