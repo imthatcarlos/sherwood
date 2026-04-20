@@ -112,6 +112,8 @@ export class AgentLoop {
     console.log(`  Log:      ${this.config.logPath ?? 'console only'}`);
     console.log(chalk.dim('\n  Press Ctrl+C to stop.\n'));
 
+    const cycleMs = parseCycleInterval(this.config.agent.cycle);
+
     while (this.running) {
       try {
         await this.runCycle();
@@ -119,11 +121,13 @@ export class AgentLoop {
         console.error(chalk.red(`  Cycle failed: ${(err as Error).message}`));
       }
 
-      if (!this.running) break;
+      // Single-cycle mode: --cycle 1 (bare "1") means run exactly one cycle
+      // then exit cleanly so the cron skill can proceed to XMTP send.
+      // parseCycleInterval returns 0 for this case.
+      if (cycleMs === 0 || !this.running) break;
 
-      const ms = parseCycleInterval(this.config.agent.cycle);
       console.log(chalk.dim(`  Next cycle in ${this.config.agent.cycle}. Sleeping...`));
-      await this.sleepInterruptible(ms);
+      await this.sleepInterruptible(cycleMs);
     }
 
     console.log(chalk.bold('\n  Agent loop stopped.\n'));
@@ -396,17 +400,21 @@ export class AgentLoop {
 }
 
 /** Parse cycle interval string to milliseconds.
- *  Accepts: "15m", "4h", or bare number "1" (treated as minutes). */
+ *  Accepts: "15m", "1h", "4h", or bare "1" (single-cycle mode → returns 0).
+ *  Bare "1" is the cron convention (`sherwood agent start --auto --cycle 1`):
+ *  run exactly one cycle, then exit so the calling skill can XMTP/report. */
 function parseCycleInterval(cycle: string): number {
-  // Try with explicit unit first
+  // Try with explicit unit first (e.g. "15m", "4h")
   const match = cycle.match(/^(\d+)(m|h)$/);
   if (match) {
     const value = parseInt(match[1]!, 10);
     if (match[2] === 'h') return value * 60 * 60 * 1000;
     return value * 60 * 1000; // minutes
   }
-  // Bare number → treat as minutes (common in cron: --cycle 1 = 1 minute)
+  // Bare "1" → single-cycle mode (0 = sentinel, loop breaks after first cycle).
+  // Any other bare number → treat as minutes for continuous mode.
   const bare = parseInt(cycle, 10);
-  if (!isNaN(bare) && bare > 0) return bare * 60 * 1000;
+  if (!isNaN(bare) && bare === 1) return 0; // single cycle
+  if (!isNaN(bare) && bare > 1) return bare * 60 * 1000;
   return 4 * 60 * 60 * 1000; // default 4h
 }
