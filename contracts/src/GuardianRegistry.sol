@@ -227,6 +227,12 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         // Stake intentionally not gated by pause: guardians must be able to
         // manage their position (stake/unstake/claim) even during an incident.
         Guardian storage g = _guardians[msg.sender];
+        // Bug A fix: a guardian with a pending unstake request is NOT active
+        // (see `_isActiveGuardian`), so letting them top up would grow
+        // `totalGuardianStake` without creating votable weight — quorum
+        // denominator would outrun the real cohort. Force them to cancel the
+        // unstake first.
+        if (g.unstakeRequestedAt != 0) revert UnstakeAlreadyRequested();
         uint256 newTotal = uint256(g.stakedAmount) + amount;
         if (newTotal < minGuardianStake) revert InsufficientStake();
 
@@ -265,6 +271,12 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     function cancelUnstakeGuardian() external {
         Guardian storage g = _guardians[msg.sender];
         if (g.unstakeRequestedAt == 0) revert UnstakeNotRequested();
+        // Bug B fix: if the guardian was slashed between `requestUnstakeGuardian`
+        // and now, `stakedAmount == 0` but `unstakeRequestedAt` still points at
+        // the original request. "Cancelling" here would increment
+        // `activeGuardianCount` without restoring any stake, producing a ghost
+        // guardian. Nothing to restore → revert.
+        if (g.stakedAmount == 0) revert NoActiveStake();
 
         g.unstakeRequestedAt = 0;
         totalGuardianStake += g.stakedAmount;
@@ -629,6 +641,13 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
             if (gs.unstakeRequestedAt == 0) {
                 totalGuardianStake -= amt;
                 activeGuardianCount -= 1;
+            } else {
+                // Defense in depth for Bug B: a slashed guardian keeps no
+                // stake — there's nothing for cancelUnstake to restore, so
+                // clear the timestamp too. `cancelUnstakeGuardian` now also
+                // checks `stakedAmount != 0`, but clearing here keeps the
+                // struct in a fully-consistent state for future views.
+                gs.unstakeRequestedAt = 0;
             }
         }
 

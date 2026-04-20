@@ -202,6 +202,27 @@ contract GuardianRegistryUnstakeTest is Test {
         registry.cancelUnstakeGuardian();
     }
 
+    /// @notice Regression for Bug A (fuzzer finding): topping up stake on a
+    ///         guardian with a pending unstake would inflate
+    ///         `totalGuardianStake` without making the guardian votable
+    ///         (isActiveGuardian stays false because `unstakeRequestedAt != 0`).
+    ///         The quorum denominator would outrun the real cohort. Must revert.
+    function test_stakeAsGuardian_revertsIfUnstakeRequested() public {
+        vm.prank(alice);
+        registry.requestUnstakeGuardian();
+        assertEq(registry.totalGuardianStake(), 0);
+        assertEq(registry.activeGuardianCount(), 0);
+
+        vm.prank(alice);
+        vm.expectRevert(IGuardianRegistry.UnstakeAlreadyRequested.selector);
+        registry.stakeAsGuardian(10_000e18, 99);
+
+        // Totals untouched.
+        assertEq(registry.totalGuardianStake(), 0);
+        assertEq(registry.activeGuardianCount(), 0);
+        assertFalse(registry.isActiveGuardian(alice));
+    }
+
     function test_claimUnstake_revertsBeforeCoolDown() public {
         vm.prank(alice);
         registry.requestUnstakeGuardian();
@@ -1225,6 +1246,56 @@ contract GuardianRegistryResolveTest is Test {
         assertEq(logs.length, 0);
         assertEq(second, first);
         assertEq(wood.balanceOf(BURN_ADDRESS), burnedBalance);
+    }
+
+    /// @notice Regression for Bug B (fuzzer finding): a guardian who voted
+    ///         Approve, then requested unstake before `resolveReview`, gets
+    ///         slashed when the review resolves as blocked. Before the fix,
+    ///         `cancelUnstakeGuardian()` would still restore
+    ///         `activeGuardianCount` despite `stakedAmount == 0`, creating a
+    ///         ghost-active guardian. After the fix: `_slashApprovers` clears
+    ///         `unstakeRequestedAt` as defense-in-depth, and
+    ///         `cancelUnstakeGuardian` guards `stakedAmount > 0` so a naked
+    ///         cancel post-slash would revert.
+    function test_cancelUnstake_revertsIfSlashed() public {
+        // 1) Open review and cast the approve vote while guardian 0 is still active.
+        registry.openReview(PROPOSAL_ID);
+        address approver = _guardian(0);
+        vm.prank(approver);
+        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
+
+        // 2) Two other guardians cast Block votes → 20_000e18 >= 30% of 50_000e18.
+        vm.prank(_guardian(1));
+        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
+        vm.prank(_guardian(2));
+        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
+
+        // 3) Approver requests unstake between vote and resolve.
+        vm.prank(approver);
+        registry.requestUnstakeGuardian();
+        assertFalse(registry.isActiveGuardian(approver));
+        assertEq(registry.activeGuardianCount(), 4);
+
+        // 4) Resolve → blocked → slashes the approver. Because the unstake
+        //    request already decremented totals, `_slashApprovers` must NOT
+        //    decrement them again — and must clear `unstakeRequestedAt` as
+        //    defense in depth.
+        vm.warp(reviewEnd);
+        bool blocked = registry.resolveReview(PROPOSAL_ID);
+        assertTrue(blocked);
+        assertEq(registry.guardianStake(approver), 0);
+        // Counters unchanged by the slash (already decremented at request time).
+        assertEq(registry.activeGuardianCount(), 4);
+
+        // 5) The ghost-cancel attack: approver tries to cancel the unstake to
+        //    re-enter activeGuardianCount. With the fix in place, this must
+        //    revert. `_slashApprovers` cleared `unstakeRequestedAt`, so the
+        //    first gate hit is `UnstakeNotRequested`.
+        uint256 activeBefore = registry.activeGuardianCount();
+        vm.prank(approver);
+        vm.expectRevert(IGuardianRegistry.UnstakeNotRequested.selector);
+        registry.cancelUnstakeGuardian();
+        assertEq(registry.activeGuardianCount(), activeBefore);
     }
 }
 
