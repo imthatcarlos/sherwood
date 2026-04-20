@@ -15,12 +15,13 @@ import { MeanReversionStrategy } from './mean-reversion.js';
 import { TwitterSentimentStrategy } from './twitter-sentiment.js';
 import { HyperliquidFlowStrategy } from './hyperliquid-flow.js';
 import { MultiTimeframeStrategy } from './multi-timeframe.js';
+import { CrossSectionalMomentumStrategy } from './cross-sectional-momentum.js';
 
 export type { Strategy, StrategyContext, StrategyConfig };
 export { SmartMoneyStrategy, TokenUnlockStrategy, SentimentContrarianStrategy };
 export { BreakoutOnChainStrategy, TvlMomentumStrategy, FundingRateStrategy };
 export { DexFlowStrategy, MeanReversionStrategy, TwitterSentimentStrategy, HyperliquidFlowStrategy };
-export { MultiTimeframeStrategy };
+export { MultiTimeframeStrategy, CrossSectionalMomentumStrategy };
 
 export const DEFAULT_STRATEGIES: Strategy[] = [
   // ── Active signals (fire rate >25% in production) ──
@@ -30,6 +31,7 @@ export const DEFAULT_STRATEGIES: Strategy[] = [
   new DexFlowStrategy(),              // 18% fire rate
   new HyperliquidFlowStrategy(),      // 57% fire rate
   new MultiTimeframeStrategy(),       // 78% fire rate
+  new CrossSectionalMomentumStrategy(), // cross-sectional: ranks tokens vs group
 
   // ── Disabled: zero or near-zero fire rate in production ──
   // SmartMoneyStrategy — replaced by Nansen HL perp-trades in index.ts

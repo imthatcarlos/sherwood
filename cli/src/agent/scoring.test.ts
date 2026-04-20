@@ -286,20 +286,20 @@ describe("computeTradeDecision", () => {
     expect(trendingUpDecision.thresholds?.buy).toBe(0.25);
   });
 
-  it("ranging regime fires BUY at the 0.30 threshold", () => {
+  it("ranging regime fires BUY at the 0.20 threshold", () => {
     const signals: Signal[] = [
-      makeSignal("technical", 0.32),
-      makeSignal("sentiment", 0.32),
-      makeSignal("onchain", 0.32),
+      makeSignal("technical", 0.22),
+      makeSignal("sentiment", 0.22),
+      makeSignal("onchain", 0.22),
     ];
     const rangingDecision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(rangingDecision.score).toBeGreaterThan(0.30);
-    expect(rangingDecision.score).toBeLessThan(0.4);
+    expect(rangingDecision.score).toBeGreaterThan(0.20);
+    expect(rangingDecision.score).toBeLessThan(0.35);
     expect(rangingDecision.action).toBe("BUY");
-    expect(rangingDecision.thresholds?.buy).toBe(0.30);
-    expect(rangingDecision.thresholds?.sell).toBe(-0.15);
+    expect(rangingDecision.thresholds?.buy).toBe(0.20);
+    expect(rangingDecision.thresholds?.sell).toBe(-0.10);
   });
 
   it("trending-up is asymmetric — harder to SELL than default", () => {
@@ -323,38 +323,40 @@ describe("computeTradeDecision", () => {
 
   it("score at buy threshold fires BUY (symmetric boundary)", () => {
     // Use a single signal to avoid FP rounding from weighted-average division.
-    // Ranging BUY threshold = 0.30. Signal at exactly 0.30 → score = 0.30.
-    const signals: Signal[] = [makeSignal("technical", 0.30)];
+    // Ranging BUY threshold = 0.20. Signal at exactly 0.20 → score ≈ 0.20.
+    // toBeCloseTo(0.20, 10) handles IEEE 754 representation noise.
+    const signals: Signal[] = [makeSignal("technical", 0.20)];
     const decision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(decision.score).toBe(0.30);
+    expect(decision.score).toBeCloseTo(0.20, 10);
     expect(decision.action).toBe("BUY");
   });
 
   it("score at sell threshold fires SELL", () => {
-    // Ranging SELL threshold = -0.15 (calibrated to the negative tail of the
-    // production score distribution, which is right-biased).
-    const signals: Signal[] = [makeSignal("technical", -0.15)];
+    // Ranging SELL threshold = -0.10 (lowered from -0.15 in Apr 2026
+    // recalibration after dead-weight strategy removal).
+    // toBeCloseTo(−0.10, 10) handles IEEE 754 representation noise.
+    const signals: Signal[] = [makeSignal("technical", -0.10)];
     const decision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(decision.score).toBe(-0.15);
+    expect(decision.score).toBeCloseTo(-0.10, 10);
     expect(decision.action).toBe("SELL");
   });
 
   it("score == strongSell threshold fires STRONG_SELL", () => {
     // 3 categories to avoid convergence bonus.
-    // Ranging strongSell = -0.30 (from REGIME_THRESHOLDS).
+    // Ranging strongSell = -0.20 (from REGIME_THRESHOLDS, lowered Apr 2026).
     const signals: Signal[] = [
-      makeSignal("technical", -0.30),
-      makeSignal("sentiment", -0.30),
-      makeSignal("onchain", -0.30),
+      makeSignal("technical", -0.20),
+      makeSignal("sentiment", -0.20),
+      makeSignal("onchain", -0.20),
     ];
     const decision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(decision.score).toBeCloseTo(-0.30, 5);
+    expect(decision.score).toBeCloseTo(-0.20, 5);
     expect(decision.action).toBe("STRONG_SELL");
   });
 

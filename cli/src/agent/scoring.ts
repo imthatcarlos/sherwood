@@ -126,15 +126,18 @@ export const DEFAULT_THRESHOLDS: ActionThresholds = {
 export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
   "trending-up": { strongBuy: 0.55, buy: 0.25, sell: -0.40, strongSell: -0.70 },
   "trending-down": { strongBuy: 0.70, buy: 0.40, sell: -0.25, strongSell: -0.55 },
-  // Paper-trading showed 0.25 let marginal entries through (BLUR 0.25, SUI 0.255).
-  // 0.30 filters noise while keeping genuine signals (AAVE 0.33, ETH 0.30, ETHENA 0.39).
+  // Apr 2026 recalibration: with dead-weight strategies removed (event,
+  // tokenUnlock, tvlMomentum, meanReversion — all 0% fire rate), only 6
+  // strategies remain active. The prior 0.30 BUY threshold was never reached
+  // (max |score| ≈ 0.04 over 48h) because ~40% of composite weight went to
+  // always-zero signals that diluted the denominator. Lowered proportionally:
+  //   BUY  0.30 → 0.20,  strongBuy 0.55 → 0.35
+  //   SELL -0.15 → -0.10, strongSell -0.30 → -0.20
   //
-  // SELL side is NOT symmetric with BUY: the contrarian sentiment model + on-chain
-  // defaults + BTC-bullish suppression bias the aggregate score positive. Empirical
-  // distribution over 2017 production signals: min -0.18, p3 ≈ -0.10, p50 ≈ +0.15.
-  // With sell = -0.30, ZERO shorts fired in 8 days. -0.15 / -0.30 mirrors the BUY
-  // spacing (0.30 / 0.55) against the negative tail we actually observe.
-  "ranging":        { strongBuy: 0.55, buy: 0.30, sell: -0.15, strongSell: -0.30 },
+  // SELL side remains asymmetric with BUY: the contrarian sentiment model +
+  // on-chain defaults + BTC-bullish suppression bias the aggregate score
+  // positive. Empirical distribution: min -0.18, p3 ≈ -0.10, p50 ≈ +0.15.
+  "ranging":        { strongBuy: 0.35, buy: 0.20, sell: -0.10, strongSell: -0.20 },
   "high-volatility":{ strongBuy: 0.70, buy: 0.45, sell: -0.45, strongSell: -0.70 },
   "low-volatility": { strongBuy: 0.60, buy: 0.30, sell: -0.30, strongSell: -0.60 },
 };
@@ -490,6 +493,7 @@ const SIGNAL_CATEGORY_MAP: Record<string, keyof ScoringWeights> = {
   twitterSentiment: "sentiment",
   tokenUnlock: "event",
   hyperliquidFlow: "onchain",
+  crossSectionalMomentum: "technical",
 };
 
 /** Categories that rely on x402 paid data (Nansen, Messari). */
