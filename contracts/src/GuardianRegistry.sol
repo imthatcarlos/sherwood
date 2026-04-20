@@ -1,0 +1,336 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {IGuardianRegistry} from "./interfaces/IGuardianRegistry.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+/// @title GuardianRegistry
+/// @notice UUPS-upgradeable registry for guardian stake, review votes, slashing,
+///         epoch rewards, and slash-appeal reserve. Skeleton only — subsequent
+///         tasks fill in each function body. See
+///         `docs/superpowers/plans/2026-04-20-guardian-review-lifecycle.md`.
+contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradeable {
+    using SafeERC20 for IERC20;
+
+    // ── Constants ──
+    uint256 public constant EPOCH_DURATION = 7 days;
+    uint256 public constant MIN_COHORT_STAKE_AT_OPEN = 50_000 * 1e18;
+    uint256 public constant MAX_APPROVERS_PER_PROPOSAL = 100;
+    uint256 public constant SWEEP_DELAY = 12 weeks;
+    uint256 public constant LATE_VOTE_LOCKOUT_BPS = 1000;
+    uint256 public constant MAX_REFUND_PER_EPOCH_BPS = 2000;
+    uint256 public constant DEADMAN_UNPAUSE_DELAY = 7 days;
+    address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
+    // ── Storage — see spec §3.1 for layout ──
+    struct Guardian {
+        uint128 stakedAmount;
+        uint64 stakedAt;
+        uint64 unstakeRequestedAt;
+        uint256 agentId;
+    }
+
+    mapping(address => Guardian) internal _guardians;
+    uint256 public totalGuardianStake;
+    uint256 public activeGuardianCount;
+
+    struct OwnerStake {
+        uint128 stakedAmount;
+        uint64 unstakeRequestedAt;
+        address owner;
+    }
+
+    mapping(address vault => OwnerStake) internal _ownerStakes;
+
+    struct PreparedOwnerStake {
+        uint128 amount;
+        uint64 preparedAt;
+        bool bound;
+    }
+
+    mapping(address owner => PreparedOwnerStake) internal _prepared;
+
+    struct Review {
+        bool opened;
+        bool resolved;
+        bool blocked;
+        bool cohortTooSmall;
+        uint128 totalStakeAtOpen;
+        uint128 approveStakeWeight;
+        uint128 blockStakeWeight;
+    }
+
+    mapping(uint256 => Review) internal _reviews;
+    mapping(uint256 => mapping(address => GuardianVoteType)) internal _votes;
+    mapping(uint256 => mapping(address => uint128)) internal _voteStake;
+    mapping(uint256 => address[]) internal _approvers;
+    mapping(uint256 => address[]) internal _blockers;
+    mapping(uint256 => mapping(address => uint256)) internal _approverIndex;
+    mapping(uint256 => mapping(address => uint256)) internal _blockerIndex;
+
+    struct EmergencyReview {
+        bytes32 callsHash;
+        uint64 reviewEnd;
+        uint128 totalStakeAtOpen;
+        uint128 blockStakeWeight;
+        bool resolved;
+        bool blocked;
+    }
+
+    mapping(uint256 => EmergencyReview) internal _emergencyReviews;
+    mapping(uint256 => mapping(address => bool)) internal _emergencyBlockVotes;
+
+    // Epoch rewards
+    uint256 public epochGenesis;
+    mapping(uint256 => uint256) public epochBudget;
+    mapping(uint256 => uint256) public epochTotalBlockWeight;
+    mapping(uint256 => mapping(address => uint256)) public epochGuardianBlockWeight;
+    mapping(uint256 => mapping(address => bool)) public epochRewardClaimed;
+
+    // Pending burn
+    mapping(address => uint256) internal _pendingBurn;
+
+    // Pause state
+    bool public paused;
+    uint64 public pausedAt;
+
+    // Slash appeal
+    uint256 public slashAppealReserve;
+    mapping(uint256 => uint256) public refundedInEpoch;
+
+    // Parameters
+    uint256 public minGuardianStake;
+    uint256 public minOwnerStake;
+    uint256 public ownerStakeTvlBps;
+    uint256 public coolDownPeriod;
+    uint256 public reviewPeriod;
+    uint256 public blockQuorumBps;
+
+    // Pending parameter changes (timelocked — Task 24)
+    struct PendingChange {
+        uint256 newValue;
+        uint64 effectiveAt;
+        bool exists;
+    }
+
+    mapping(bytes32 => PendingChange) internal _pendingChanges;
+    uint256 public parameterChangeDelay;
+
+    // Privileged addresses
+    address public governor;
+    address public factory;
+    address public minter;
+    IERC20 public wood;
+
+    // ── Initializer ──
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
+        address owner_,
+        address governor_,
+        address factory_,
+        address wood_,
+        uint256 minGuardianStake_,
+        uint256 minOwnerStake_,
+        uint256 ownerStakeTvlBps_,
+        uint256 coolDownPeriod_,
+        uint256 reviewPeriod_,
+        uint256 blockQuorumBps_
+    ) external initializer {
+        if (owner_ == address(0) || governor_ == address(0) || factory_ == address(0) || wood_ == address(0)) {
+            revert ZeroAddress();
+        }
+
+        __Ownable_init(owner_);
+
+        governor = governor_;
+        factory = factory_;
+        wood = IERC20(wood_);
+        minGuardianStake = minGuardianStake_;
+        minOwnerStake = minOwnerStake_;
+        ownerStakeTvlBps = ownerStakeTvlBps_;
+        coolDownPeriod = coolDownPeriod_;
+        reviewPeriod = reviewPeriod_;
+        blockQuorumBps = blockQuorumBps_;
+        parameterChangeDelay = 24 hours; // default; timelocked setter in Task 24
+        epochGenesis = block.timestamp;
+    }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    // ── Guardian fns — implemented in later tasks ──
+    function stakeAsGuardian(uint256, uint256) external {
+        revert();
+    }
+
+    function requestUnstakeGuardian() external {
+        revert();
+    }
+
+    function cancelUnstakeGuardian() external {
+        revert();
+    }
+
+    function claimUnstakeGuardian() external {
+        revert();
+    }
+
+    function voteOnProposal(uint256, GuardianVoteType) external {
+        revert();
+    }
+
+    // ── Owner fns ──
+    function prepareOwnerStake(uint256) external {
+        revert();
+    }
+
+    function cancelPreparedStake() external {
+        revert();
+    }
+
+    function requestUnstakeOwner(address) external {
+        revert();
+    }
+
+    function claimUnstakeOwner(address) external {
+        revert();
+    }
+
+    // ── Factory-only ──
+    function bindOwnerStake(address, address) external {
+        revert();
+    }
+
+    function transferOwnerStakeSlot(address, address) external {
+        revert();
+    }
+
+    // ── Governor-only ──
+    function openEmergencyReview(uint256, bytes32) external {
+        revert();
+    }
+
+    // ── Permissionless ──
+    function openReview(uint256) external {
+        revert();
+    }
+
+    function resolveReview(uint256) external returns (bool) {
+        revert();
+    }
+
+    function resolveEmergencyReview(uint256) external returns (bool) {
+        revert();
+    }
+
+    function voteBlockEmergencySettle(uint256) external {
+        revert();
+    }
+
+    function flushBurn() external {
+        revert();
+    }
+
+    function sweepUnclaimed(uint256) external {
+        revert();
+    }
+
+    // ── Epoch rewards ──
+    function fundEpoch(uint256, uint256) external {
+        revert();
+    }
+
+    function claimEpochReward(uint256) external {
+        revert();
+    }
+
+    // ── Slash appeal ──
+    function fundSlashAppealReserve(uint256) external {
+        revert();
+    }
+
+    function refundSlash(address, uint256) external {
+        revert();
+    }
+
+    // ── Pause ──
+    function pause() external {
+        revert();
+    }
+
+    function unpause() external {
+        revert();
+    }
+
+    // ── Parameter setters (timelocked — Task 24) ──
+    function setMinGuardianStake(uint256) external {
+        revert();
+    }
+
+    function setMinOwnerStake(uint256) external {
+        revert();
+    }
+
+    function setOwnerStakeTvlBps(uint256) external {
+        revert();
+    }
+
+    function setCoolDownPeriod(uint256) external {
+        revert();
+    }
+
+    function setReviewPeriod(uint256) external {
+        revert();
+    }
+
+    function setBlockQuorumBps(uint256) external {
+        revert();
+    }
+
+    function setMinter(address) external {
+        revert();
+    }
+
+    // ── Views (minimal now; full impl in later tasks) ──
+    function guardianStake(address g) external view returns (uint256) {
+        return _guardians[g].stakedAmount;
+    }
+
+    function ownerStake(address v) external view returns (uint256) {
+        return _ownerStakes[v].stakedAmount;
+    }
+
+    function isActiveGuardian(address g) external view returns (bool) {
+        return _guardians[g].stakedAmount > 0 && _guardians[g].unstakeRequestedAt == 0;
+    }
+
+    function hasOwnerStake(address v) external view returns (bool) {
+        return _ownerStakes[v].stakedAmount > 0;
+    }
+
+    function preparedStakeOf(address o) external view returns (uint256) {
+        return _prepared[o].amount;
+    }
+
+    function canCreateVault(address o) external view returns (bool) {
+        return _prepared[o].amount >= minOwnerStake && !_prepared[o].bound;
+    }
+
+    function requiredOwnerBond(address) external view returns (uint256) {
+        return minOwnerStake; // Task 10 adds TVL scaling
+    }
+
+    function currentEpoch() external view returns (uint256) {
+        return (block.timestamp - epochGenesis) / EPOCH_DURATION;
+    }
+
+    function pendingEpochReward(address, uint256) external view returns (uint256) {
+        return 0; // Task 20
+    }
+}
