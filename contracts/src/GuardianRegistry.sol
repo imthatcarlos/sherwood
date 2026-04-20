@@ -811,12 +811,33 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     }
 
     // ── Slash appeal ──
-    function fundSlashAppealReserve(uint256) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Pulls WOOD from caller into `slashAppealReserve`. Owner-only —
+    ///      this is an admin-capitalized safety net, not a permissionless
+    ///      pool. Admin-only ops stay callable while paused.
+    function fundSlashAppealReserve(uint256 amount) external nonReentrant onlyOwner {
+        wood.safeTransferFrom(msg.sender, address(this), amount);
+        slashAppealReserve += amount;
+        emit SlashAppealReserveFunded(msg.sender, amount);
     }
 
-    function refundSlash(address, uint256) external {
-        revert();
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Per-epoch refund cap is `MAX_REFUND_PER_EPOCH_BPS` (20%) of the
+    ///      CURRENT reserve size. Cumulative refunds per epoch are tracked
+    ///      in `refundedInEpoch[epochId]`; cap resets with each new epoch.
+    ///      Owner-only; admin-only ops stay callable while paused.
+    function refundSlash(address recipient, uint256 amount) external nonReentrant onlyOwner {
+        if (recipient == address(0)) revert ZeroAddress();
+
+        uint256 ep = currentEpoch();
+        uint256 cap = (slashAppealReserve * MAX_REFUND_PER_EPOCH_BPS) / 10_000;
+        if (refundedInEpoch[ep] + amount > cap) revert RefundCapExceeded();
+
+        refundedInEpoch[ep] += amount;
+        slashAppealReserve -= amount;
+
+        wood.safeTransfer(recipient, amount);
+        emit SlashAppealRefunded(recipient, amount, ep);
     }
 
     // ── Pause ──

@@ -2013,3 +2013,113 @@ contract GuardianRegistrySweepTest is Test {
         assertEq(registry.epochBudget(epoch0), 0);
     }
 }
+
+contract GuardianRegistryAppealTest is Test {
+    GuardianRegistry registry;
+    ERC20Mock wood;
+    address owner = address(0xA11CE);
+    address governor = address(0x9000);
+    address factory = address(0xFAC10);
+    address recipient = address(0xBEEF);
+    address stranger = address(0xBAD);
+
+    function setUp() public {
+        wood = new ERC20Mock("WOOD", "WOOD", 18);
+        GuardianRegistry impl = new GuardianRegistry();
+        bytes memory initData = abi.encodeCall(
+            GuardianRegistry.initialize,
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+        );
+        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
+
+        wood.mint(owner, 1_000_000e18);
+        vm.prank(owner);
+        wood.approve(address(registry), type(uint256).max);
+    }
+
+    function test_fundSlashAppealReserve_onlyOwner() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.fundSlashAppealReserve(1_000e18);
+    }
+
+    function test_fundSlashAppealReserve_pullsWoodAndIncrements() public {
+        uint256 regBalBefore = wood.balanceOf(address(registry));
+
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.SlashAppealReserveFunded(owner, 10_000e18);
+        vm.prank(owner);
+        registry.fundSlashAppealReserve(10_000e18);
+
+        assertEq(registry.slashAppealReserve(), 10_000e18);
+        assertEq(wood.balanceOf(address(registry)), regBalBefore + 10_000e18);
+    }
+
+    function test_refundSlash_onlyOwner() public {
+        vm.prank(owner);
+        registry.fundSlashAppealReserve(10_000e18);
+
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.refundSlash(recipient, 100e18);
+    }
+
+    function test_refundSlash_revertsZeroRecipient() public {
+        vm.prank(owner);
+        registry.fundSlashAppealReserve(10_000e18);
+
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.ZeroAddress.selector);
+        registry.refundSlash(address(0), 100e18);
+    }
+
+    function test_refundSlash_enforcesEpochCap() public {
+        vm.prank(owner);
+        registry.fundSlashAppealReserve(10_000e18);
+        // Cap = 20% of 10_000e18 = 2_000e18.
+
+        // First refund 1_500e18 — ok.
+        vm.prank(owner);
+        registry.refundSlash(recipient, 1_500e18);
+        assertEq(registry.refundedInEpoch(registry.currentEpoch()), 1_500e18);
+
+        // Second refund 600e18 same epoch → total 2_100e18 > 2_000e18 cap → revert.
+        vm.prank(owner);
+        vm.expectRevert(IGuardianRegistry.RefundCapExceeded.selector);
+        registry.refundSlash(recipient, 600e18);
+    }
+
+    function test_refundSlash_capResetsNextEpoch() public {
+        vm.prank(owner);
+        registry.fundSlashAppealReserve(10_000e18);
+
+        vm.prank(owner);
+        registry.refundSlash(recipient, 1_500e18);
+        // Remaining reserve: 8_500e18.
+
+        // Warp to next epoch — cap resets (refundedInEpoch[nextEp] == 0).
+        vm.warp(registry.epochGenesis() + registry.EPOCH_DURATION());
+        uint256 nextEp = registry.currentEpoch();
+        assertEq(registry.refundedInEpoch(nextEp), 0);
+
+        // New cap = 20% of 8_500e18 = 1_700e18. Refund 600e18 fits.
+        vm.prank(owner);
+        registry.refundSlash(recipient, 600e18);
+        assertEq(registry.refundedInEpoch(nextEp), 600e18);
+    }
+
+    function test_refundSlash_movesWood() public {
+        vm.prank(owner);
+        registry.fundSlashAppealReserve(10_000e18);
+
+        uint256 recBalBefore = wood.balanceOf(recipient);
+
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.SlashAppealRefunded(recipient, 500e18, registry.currentEpoch());
+        vm.prank(owner);
+        registry.refundSlash(recipient, 500e18);
+
+        assertEq(wood.balanceOf(recipient), recBalBefore + 500e18);
+        assertEq(registry.slashAppealReserve(), 9_500e18);
+    }
+}
