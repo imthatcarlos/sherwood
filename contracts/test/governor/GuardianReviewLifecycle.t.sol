@@ -42,7 +42,17 @@ contract GuardianReviewLifecycleTest is Test {
     address public g3 = makeAddr("guardian3");
     address public g4 = makeAddr("guardian4");
     address public g5 = makeAddr("guardian5");
+    // Additional guardians used by block-quorum scenarios that need larger
+    // cohorts (10 guardians × 10k = 100k stake at open).
+    address public g6 = makeAddr("guardian6");
+    address public g7 = makeAddr("guardian7");
+    address public g8 = makeAddr("guardian8");
+    address public g9 = makeAddr("guardian9");
+    address public g10 = makeAddr("guardian10");
     address public factoryEoa; // test contract impersonates factory
+
+    // Registry burn sink (matches GuardianRegistry.BURN_ADDRESS).
+    address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
     uint256 public agentNftId;
 
@@ -376,5 +386,166 @@ contract GuardianReviewLifecycleTest is Test {
         vm.prank(owner);
         vm.expectRevert(ISyndicateGovernor.ProposalNotCancellable.selector);
         governor.emergencyCancel(pid);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Task 27.A — block quorum × WOOD burn × approver slashing
+    // ──────────────────────────────────────────────────────────────
+
+    /// @notice Cross-contract proof: on block quorum, executeProposal reverts,
+    ///         approvers are slashed, the burn address receives slashed WOOD,
+    ///         and blockers accrue epoch block-weight for reward claims.
+    ///         Mirrors spec §8 INV-2 and priority invariant #226 §8.
+    function test_blockQuorum_rejectsProposal_slashesApprovers_burnsWood() public {
+        // Scale up to 10 guardians × 10_000 WOOD so the block cohort drives
+        // 50% of stake — cleanly above the 30% quorum with margin.
+        _stakeGuardian(g6, MIN_GUARDIAN_STAKE, 6);
+        _stakeGuardian(g7, MIN_GUARDIAN_STAKE, 7);
+        _stakeGuardian(g8, MIN_GUARDIAN_STAKE, 8);
+        _stakeGuardian(g9, MIN_GUARDIAN_STAKE, 9);
+        _stakeGuardian(g10, MIN_GUARDIAN_STAKE, 10);
+
+        uint256 pid = _propose();
+        _voteFor(pid);
+
+        vm.warp(vm.getBlockTimestamp() + VOTING_PERIOD + 1);
+        registry.openReview(pid);
+
+        // 3 approvers × 10k + 5 blockers × 10k = 30k approve / 50k block out of
+        // 100k + 50k = 150k... but g1..g5 staked 20k each above. Let me account
+        // for that: g1..g5 = 20k (from setUp), g6..g10 = 10k (added here).
+        // Total = 100k + 50k = 150k. Approve: g1..g3 (60k). Block: g6..g10 (50k).
+        // Block = 50k/150k = 33.3% ≥ 30% → BLOCKED.
+        uint256 burnBefore = wood.balanceOf(BURN_ADDRESS);
+
+        vm.prank(g1);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Approve);
+        vm.prank(g2);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Approve);
+        vm.prank(g3);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Approve);
+        vm.prank(g6);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+        vm.prank(g7);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+        vm.prank(g8);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+        vm.prank(g9);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+        vm.prank(g10);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+
+        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
+
+        // Drive the registry resolution first so state transitions commit
+        // (slashing + epoch attribution). The executeProposal call below then
+        // reads the cached Rejected state via `_resolveStateView`.
+        bool blocked = registry.resolveReview(pid);
+        assertTrue(blocked, "review resolved as blocked");
+
+        // executeProposal reads `_resolveStateView` → Rejected → reverts.
+        vm.expectRevert(ISyndicateGovernor.ProposalNotApproved.selector);
+        governor.executeProposal(pid);
+
+        // Governor view now reflects Rejected via the cached registry resolution.
+        assertEq(
+            uint256(governor.getProposalState(pid)),
+            uint256(ISyndicateGovernor.ProposalState.Rejected),
+            "proposal rejected after block quorum"
+        );
+
+        // All 3 approvers slashed to zero.
+        assertEq(registry.guardianStake(g1), 0, "g1 (approver) slashed");
+        assertEq(registry.guardianStake(g2), 0, "g2 (approver) slashed");
+        assertEq(registry.guardianStake(g3), 0, "g3 (approver) slashed");
+
+        // Blockers untouched.
+        assertEq(registry.guardianStake(g6), MIN_GUARDIAN_STAKE, "g6 (blocker) untouched");
+        assertEq(registry.guardianStake(g10), MIN_GUARDIAN_STAKE, "g10 (blocker) untouched");
+
+        // Burn sink received approver WOOD.
+        uint256 burnAfter = wood.balanceOf(BURN_ADDRESS);
+        assertGt(burnAfter, burnBefore, "burn sink received slashed WOOD");
+        assertEq(burnAfter - burnBefore, 3 * GUARDIAN_STAKE, "burn amount == 3 approver stakes");
+
+        // Blockers' epoch block-weight is credited for epoch reward claims.
+        uint256 ep = registry.currentEpoch();
+        assertGt(registry.epochGuardianBlockWeight(ep, g6), 0, "g6 credited for epoch rewards");
+        assertGt(registry.epochGuardianBlockWeight(ep, g10), 0, "g10 credited for epoch rewards");
+    }
+
+    /// @notice Vote-change path: first-vote stake snapshot is preserved when a
+    ///         guardian flips Approve → Block before the lockout window.
+    function test_voteChange_fromApproveToBlock_survivesReviewEnd() public {
+        uint256 pid = _propose();
+        _voteFor(pid);
+
+        vm.warp(vm.getBlockTimestamp() + VOTING_PERIOD + 1);
+        registry.openReview(pid);
+
+        // g1 initially approves.
+        vm.prank(g1);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Approve);
+
+        // Still well before the 10% lockout window — flip to Block.
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        vm.prank(g1);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+
+        // Four more guardians also block so the quorum is hit (5 × 20k = 100k,
+        // well above 30% of 100k total).
+        vm.prank(g2);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+        vm.prank(g3);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+        vm.prank(g4);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+        vm.prank(g5);
+        registry.voteOnProposal(pid, IGuardianRegistry.GuardianVoteType.Block);
+
+        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD);
+        bool blocked = registry.resolveReview(pid);
+        assertTrue(blocked, "review resolved as blocked");
+
+        // g1's stake was preserved at first-vote value and counted on the
+        // Block side at resolve time (no approvers to slash → all guardians
+        // keep their stake).
+        assertEq(registry.guardianStake(g1), GUARDIAN_STAKE, "g1 not slashed - ended as blocker");
+
+        // Blockers (including g1) should appear in the epoch weight tally.
+        uint256 ep = registry.currentEpoch();
+        assertGt(registry.epochGuardianBlockWeight(ep, g1), 0, "g1 block weight credited");
+    }
+
+    /// @notice No keeper ever calls `openReview`. After `reviewEnd`, anyone calls
+    ///         `executeProposal`: `_resolveState` calls `resolveReview` which
+    ///         short-circuits to `false` (since !opened) → Approved → executes.
+    function test_reviewWithoutOpenReview_returnsFalse_cleanPath() public {
+        uint256 pid = _propose();
+        _voteFor(pid);
+
+        // Skip openReview entirely; jump past reviewEnd.
+        vm.warp(vm.getBlockTimestamp() + VOTING_PERIOD + REVIEW_PERIOD + 2);
+
+        // Permissionless execute — anyone can trigger.
+        vm.prank(random);
+        governor.executeProposal(pid);
+
+        assertEq(
+            uint256(governor.getProposal(pid).state),
+            uint256(ISyndicateGovernor.ProposalState.Executed),
+            "proposal executes despite openReview being skipped"
+        );
+
+        // Registry review is now cached as resolved=true, blocked=false, opened=false.
+        (bool opened, bool resolved, bool blocked, bool cohortTooSmall) = registry.getReviewState(pid);
+        assertFalse(opened, "review never opened");
+        assertTrue(resolved, "review cached resolved");
+        assertFalse(blocked, "review not blocked");
+        assertFalse(cohortTooSmall, "cohortTooSmall flag stays unset when !opened");
+
+        // No guardian slashing occurred.
+        assertEq(registry.guardianStake(g1), GUARDIAN_STAKE, "g1 stake untouched");
+        assertEq(registry.guardianStake(g5), GUARDIAN_STAKE, "g5 stake untouched");
     }
 }

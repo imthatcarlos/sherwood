@@ -411,4 +411,85 @@ contract GovernorEmergencyTest is Test {
         vm.expectRevert(ISyndicateGovernor.EmergencySettleBlocked.selector);
         governor.finalizeEmergencySettle(pid, _customCalls());
     }
+
+    // ──────────────────────────────────────────────────────────────
+    // Task 27.B — full-flow emergency settle: blocked slashes owner,
+    //              not-blocked finalizes cleanly
+    // ──────────────────────────────────────────────────────────────
+
+    /// @notice Cross-contract: owner stakes a bad emergency-settle, guardians
+    ///         hit block quorum, finalize reverts, owner stake is slashed to
+    ///         zero, and the vault can no longer create proposals (hasOwnerStake == false).
+    ///         Uses the real governor (not a garbage-decoded address) so the
+    ///         `_slashOwner` path inside `resolveEmergencyReview` finds the
+    ///         real vault and burns the owner's bond.
+    function test_emergencySettle_blocked_revertsFinalize_ownerSlashed() public {
+        uint256 pid = _createExecutedProposal(7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+
+        BatchExecutorLib.Call[] memory bad = _customCalls();
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, bad);
+
+        // guardianA + guardianB both block — total 60k / 60k = 100% ≥ 30%.
+        vm.prank(guardianA);
+        registry.voteBlockEmergencySettle(pid);
+        vm.prank(guardianB);
+        registry.voteBlockEmergencySettle(pid);
+
+        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
+
+        uint256 ownerStakeBefore = registry.ownerStake(address(vault));
+        assertEq(ownerStakeBefore, MIN_OWNER_STAKE, "owner bonded pre-finalize");
+
+        // Finalize reverts with EmergencySettleBlocked. Inside, the governor
+        // calls `resolveEmergencyReview` which commits the resolution,
+        // slashes the owner's stake, then reverts. Because the revert
+        // propagates, the slash is rolled back — so we drive the registry
+        // directly to commit the slash (permissionless path).
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.EmergencySettleBlocked.selector);
+        governor.finalizeEmergencySettle(pid, bad);
+
+        // Permissionless resolve commits the slash outside the reverted tx.
+        bool blocked = registry.resolveEmergencyReview(pid);
+        assertTrue(blocked, "emergency review resolved as blocked");
+
+        // Owner bond is zero → hasOwnerStake false → vault cannot propose.
+        assertEq(registry.ownerStake(address(vault)), 0, "owner stake slashed to zero");
+        assertFalse(registry.hasOwnerStake(address(vault)), "hasOwnerStake false post-slash");
+
+        // Re-finalize after resolve still reverts (review was already committed
+        // as blocked; the cached bool stays).
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.EmergencySettleBlocked.selector);
+        governor.finalizeEmergencySettle(pid, bad);
+    }
+
+    /// @notice No guardians block → `resolveEmergencyReview` returns false →
+    ///         finalize executes the pre-committed bad calls → proposal Settled.
+    function test_emergencySettle_notBlocked_finalizes() public {
+        uint256 pid = _createExecutedProposal(7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+
+        BatchExecutorLib.Call[] memory customCalls = _customCalls();
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, customCalls);
+
+        // Nobody blocks. Warp past emergency reviewEnd.
+        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
+
+        vm.prank(owner);
+        governor.finalizeEmergencySettle(pid, customCalls);
+
+        assertEq(
+            uint256(governor.getProposal(pid).state),
+            uint256(ISyndicateGovernor.ProposalState.Settled),
+            "finalize succeeds when no block quorum"
+        );
+
+        // Owner stake untouched — no slashing when review not blocked.
+        assertEq(registry.ownerStake(address(vault)), MIN_OWNER_STAKE, "owner stake preserved");
+        assertFalse(vault.redemptionsLocked(), "vault unlocked post-settle");
+    }
 }
