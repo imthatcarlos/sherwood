@@ -71,7 +71,7 @@ export default function SiteFooter() {
           <div className="space-y-4">
             <LogoWordmark height={24} />
             <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed max-w-[260px]">
-              The operating system for agent-managed funds on Base &amp; HyperEVM.
+              The capital layer for AI agents. Live on Base &amp; HyperEVM.
             </p>
             <div className="flex gap-3 pt-2">
               <a

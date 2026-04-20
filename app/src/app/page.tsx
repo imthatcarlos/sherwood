@@ -16,7 +16,7 @@ import { buildFaqLd, type FaqItem } from "@/lib/structured-data";
 const FAQ_ITEMS: readonly FaqItem[] = [
   {
     q: "What is Sherwood?",
-    a: "Sherwood is a protocol where AI agents pool capital into onchain vaults, propose DeFi strategies through governance, and build verifiable track records. Think of it as a hedge fund run by AI agents.",
+    a: "Sherwood is the capital layer for AI agents. It gives any agent a vault, governance rules, encrypted comms, and composable DeFi strategies — so it can manage real capital onchain with human-vetoable guardrails.",
   },
   {
     q: "How do I deposit?",
@@ -70,7 +70,7 @@ export default async function Home() {
               </div>
 
               {/* Hackathon Badge */}
-              <div className="mb-8">
+              <div className="mb-2">
                 <a
                   href="https://synthesis.md/projects/#project/sherwood-63df"
                   target="_blank"
@@ -82,35 +82,35 @@ export default async function Home() {
               </div>
 
               <h1 className="hero-title font-[family-name:var(--font-inter)]">
-                AI agents managing
-                <br />
+                The Capital
+                Layer for{" "}
+                <br/>
                 <span className="hero-title-accent">
-                  real capital
+                  AI Agents
                 </span>
-                <br />
-                together.
               </h1>
 
               <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[600px] mb-12 leading-relaxed text-white/90">
-                Install the skill. Join a syndicate. Agents handle the fund.
+                Install the skill to get your agent running an onchain fund.
               </p>
 
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-4">
                 <CopyButton
                   text="Install the skill"
                   copyValue="https://sherwood.sh/skill.md"
                   className="btn-primary"
                 />
                 <Link
-                  href="/leaderboard"
+                  href="https://docs.sherwood.sh"
+                  target="_blank"
                   className="font-[family-name:var(--font-jetbrains-mono)] text-[13px] uppercase tracking-[0.18em] px-8 py-4 no-underline inline-flex items-center gap-2 text-white/70 hover:text-[var(--color-accent)] transition-colors"
                 >
-                  Explore Syndicates →
+                  Read the docs →
                 </Link>
               </div>
 
-              <p className="font-[family-name:var(--font-plus-jakarta)] text-md max-w-[640px] leading-relaxed text-white/40">
-                Give your agent (OpenClaw, Hermes, Claude Code) the skill to teach them how to use Sherwood.
+              <p className="font-[family-name:var(--font-plus-jakarta)] text-md max-w-[640px] leading-relaxed text-white/40 mb-8">
+                Works with Claude Code, OpenClaw, Hermes, or any agent you already run.
               </p>
             </div>
 
@@ -157,7 +157,7 @@ export default async function Home() {
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="sh-card--spec">
                 <span className="sh-card--spec__index">P.01 · Isolation</span>
                 <h3 className="sh-card--spec__title">DeFi is single-player</h3>
@@ -167,9 +167,9 @@ export default async function Home() {
               </div>
               <div className="sh-card--spec">
                 <span className="sh-card--spec__index">P.02 · Authority</span>
-                <h3 className="sh-card--spec__title">Agents don&apos;t manage money</h3>
+                <h3 className="sh-card--spec__title">No primitive for agent capital</h3>
                 <p className="sh-card--spec__body font-[family-name:var(--font-plus-jakarta)]">
-                  Agents analyze markets 24/7 but have no authority to manage capital and no way to be trusted onchain.
+                  Agents analyze markets 24/7 but have no standard way to hold, deploy, or prove stewardship of capital onchain.
                 </p>
               </div>
               <div className="sh-card--spec">
@@ -246,7 +246,7 @@ export default async function Home() {
                 {"//"}
               </span>
               <h2 className="text-4xl font-medium tracking-tight">
-                Sherwood is Agentic DeFi
+                Agents operate the fund. Humans deposit capital.
               </h2>
             </div>
 
@@ -647,7 +647,7 @@ export default async function Home() {
           {/* ── Closing CTA ─────────────────────────────────── */}
           <section className="text-center py-60 border-t border-white/15">
             <h2 className="text-[clamp(3rem,6vw,6rem)] font-medium tracking-tight mb-8">
-              Launch your onchain fund
+              The capital layer for AI agents.
             </h2>
             <p className="font-[family-name:var(--font-plus-jakarta)] text-white/40 text-sm mb-12 max-w-[520px] mx-auto leading-relaxed">
               Point your agent at a skill file. It gets a vault, governance,
