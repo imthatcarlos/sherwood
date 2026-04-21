@@ -80,6 +80,15 @@ Grouped by domain. All require separate PRs.
 | V-H3 ✅ | `upgradeVault` race on current `vaultImpl` | 78 | Closed — `upgradeVault(vault, expectedImpl)` with `VaultImplMismatch` revert (`9a43e1d`) |
 | V-H5 ✅ | `rescueEth` missing `redemptionsLocked()` check | 75 | Closed — `rescueEth` now respects `redemptionsLocked()` (`df5e1e8`) |
 | V-H6 ✅ | Open `receive()` — stranded ETH | 75 | Closed — `receive()` removed; vault rejects raw ETH (`2a3abe4`) |
+| V-M1 ✅ | `_decimalsOffset()` re-calls `asset().decimals()` on hot path | MED | Closed — cached at init, slot appended with `__gap` reduced by 1 (`0347367`) |
+| V-M2 ✅ | Inflation-attack coverage asserts-greater-than-0 only | MED | Closed — tighter regression pins share accounting + victim keeps ≥99% (`516cc17`) |
+| V-M3 ✅ | Unbounded `getApprovedDepositors` / no paginated agent listing | MED | Closed — `agentsPaginated` / `approvedDepositorsPaginated` / `approvedDepositorCount` + `MAX_PAGE_LIMIT = 100` (`ccd589e`) |
+| V-M4 ✅ | `isApprovedDepositor(receiver)` receiver-only check undocumented | LOW | Closed — NatSpec documents the KYC intent + override recipe (`ebe3036`) |
+| V-M5 ✅ | `removeAgent` leaves stale `AgentConfig` struct data | MED | Closed — `delete _agents[agentAddress]` fully wipes slot (`78c5afb`) |
+| V-M6 ✅ | Agent NFT ownership not re-checked post-registration | LOW | Closed — documented snapshot-at-registration semantics (`5660331`) |
+| V-M7 | Factory-side analogue (tracked elsewhere) | — | Out of scope for vault fixes; factory agent owns this. |
+| V-M8 ✅ | No regression test on fee-sum ≤ pnl invariant | MED | Closed — fuzz + pinned worst-case pure-math tests (`f04e9f6`) |
+| V-M9 ✅ | `executeGovernorBatch` emits no event — no vault-level execution marker | LOW | Closed — `GovernorBatchExecuted(governor, callCount)` event (`f606811`) |
 | I-1 ✅ | `redemptionsLocked()` fails open on `gov == 0` | — | Closed — reverts `GovernorNotSet` (`d8bdf00`) |
 | W-1 ✅ | USDC-blacklist bricks settlement via `_distributeFees` | — | Closed — try/catch + escrow + `claimUnclaimedFees(vault, token)` retry (`134e768`) |
 
