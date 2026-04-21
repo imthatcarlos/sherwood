@@ -87,7 +87,15 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     /// @notice ERC-8004 agent identity registry (ERC-721)
     IERC721 public agentRegistry;
 
-    /// @notice Shared governor contract
+    /// @notice Shared governor contract.
+    /// @dev Set once at `initialize` and never rewired. There is no setter —
+    ///      `setGovernor` was removed to close V-H2, a factory-owner instant
+    ///      global retroactive switch that would have orphaned in-flight
+    ///      proposals across every registered vault (vaults read the governor
+    ///      live via `_getGovernor()`, so a rewire would leave the old
+    ///      governor unable to call `onlyGovernor` fns and the new governor
+    ///      with no knowledge of the proposal). Governor upgrades must go
+    ///      through a UUPS upgrade of the governor itself.
     address public governor;
 
     /// @notice Management fee for vault owners (bps of strategy profits)
@@ -132,7 +140,6 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     event MetadataUpdated(uint256 indexed id, string metadataURI);
     event SyndicateDeactivated(uint256 indexed id);
     event CreationFeeUpdated(address token, uint256 amount, address recipient);
-    event GovernorUpdated(address oldGovernor, address newGovernor);
     event VaultImplUpdated(address oldImpl, address newImpl);
     event ManagementFeeBpsUpdated(uint256 oldBps, uint256 newBps);
     event VaultUpgraded(address indexed vault, address indexed newImpl);
@@ -277,14 +284,6 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         creationFee = amount;
         creationFeeRecipient = recipient;
         emit CreationFeeUpdated(token, amount, recipient);
-    }
-
-    /// @notice Update the governor contract for new vaults
-    function setGovernor(address newGovernor) external onlyOwner {
-        if (newGovernor == address(0)) revert InvalidGovernor();
-        address old = governor;
-        governor = newGovernor;
-        emit GovernorUpdated(old, newGovernor);
     }
 
     /// @notice Update the vault implementation for new vaults (existing vaults unaffected)

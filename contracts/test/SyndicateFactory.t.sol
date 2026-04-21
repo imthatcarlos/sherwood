@@ -471,4 +471,32 @@ contract SyndicateFactoryTest is Test {
             })
         );
     }
+
+    // ==================== V-H2: GOVERNOR IS SET-ONCE ====================
+
+    /// @notice V-H2 regression: `setGovernor` was removed. The selector must
+    ///         not exist on the factory — any low-level call reverts with
+    ///         empty return data. This guarantees the factory owner can
+    ///         never instantly rewire every registered vault's governor.
+    function test_setGovernor_removed() public {
+        // setGovernor(address) selector: keccak256("setGovernor(address)")[:4]
+        bytes4 sel = bytes4(keccak256("setGovernor(address)"));
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        (bool okAttacker, bytes memory retAttacker) =
+            address(factory).call(abi.encodeWithSelector(sel, makeAddr("newGovernor")));
+        assertFalse(okAttacker, "setGovernor must not exist (attacker)");
+        assertEq(retAttacker.length, 0, "expected empty revert data (fn does not exist)");
+
+        // Even the owner cannot call it.
+        vm.prank(owner);
+        (bool okOwner, bytes memory retOwner) =
+            address(factory).call(abi.encodeWithSelector(sel, makeAddr("newGovernor")));
+        assertFalse(okOwner, "setGovernor must not exist (owner)");
+        assertEq(retOwner.length, 0, "expected empty revert data (fn does not exist)");
+
+        // Governor slot is set-once at initialize and unchanged.
+        assertEq(factory.governor(), governorAddr);
+    }
 }
