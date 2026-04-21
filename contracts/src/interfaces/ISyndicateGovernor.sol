@@ -70,6 +70,10 @@ interface ISyndicateGovernor {
         uint256 executeBy;
         uint256 executedAt;
         ProposalState state;
+        /// @dev G-H6: vetoThresholdBps snapshot taken at Draft -> Pending.
+        ///      Prevents mid-vote timelock finalizes from retroactively
+        ///      moving the rejection threshold.
+        uint256 vetoThresholdBps;
     }
 
     struct CoProposer {

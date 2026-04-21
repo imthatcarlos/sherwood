@@ -178,6 +178,62 @@ contract GovernorHardeningTest is Test {
         assertGt(governor.getVoteWeight(proposalId, lp1), 0);
     }
 
+    // ==================== FIX 4 — G-H6 ====================
+
+    /// @notice A finalize of setVetoThresholdBps mid-vote must not retroactively
+    ///         change the threshold for in-flight proposals. The proposal must
+    ///         use the bps value snapshotted at Draft -> Pending.
+    ///
+    /// @dev Scenario:
+    ///     - Vault TVL: 100k (lp1=60k, lp2=40k)
+    ///     - Snapshotted bps: 4000 (40% AGAINST to reject)
+    ///     - Raised mid-vote to:    8000 (80% AGAINST to reject)
+    ///     - AGAINST votes cast: lp1's 60k = 60% of supply
+    ///     - Under snapshot → 60% >= 40% → Rejected. (correct, OLD bps used)
+    ///     - Under live     → 60%  < 80% → Approved. (would be wrong)
+    function test_vetoThresholdBps_snapshotAtPropose() public {
+        _depositLps();
+
+        // Propose under the current VETO_THRESHOLD_BPS = 4000.
+        vm.prank(leadAgent);
+        uint256 proposalId = governor.propose(
+            address(vault),
+            "ipfs://snap",
+            2000,
+            7 days,
+            _execCalls(),
+            _settleCalls(),
+            new ISyndicateGovernor.CoProposer[](0)
+        );
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Cast AGAINST votes while voting window is still open.
+        vm.prank(lp1);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.Against);
+
+        // Owner queues a raise to 8000.
+        vm.prank(owner);
+        governor.setVetoThresholdBps(8000);
+
+        // Warp past BOTH voting window AND param-change delay so the
+        // finalize goes through and state resolution fires on the next call.
+        vm.warp(vm.getBlockTimestamp() + PARAM_CHANGE_DELAY + 1);
+
+        // Finalize — live bps is now 8000.
+        vm.prank(owner);
+        governor.finalizeParameterChange(keccak256("vetoThresholdBps"));
+        assertEq(governor.getGovernorParams().vetoThresholdBps, 8000);
+
+        // Under the snapshotted bps (4000): 60k / 100k = 60% >= 40% → Rejected.
+        // Under live (8000): 60% < 80% → Approved.
+        ISyndicateGovernor.ProposalState state = governor.getProposalState(proposalId);
+        assertEq(uint256(state), uint256(ISyndicateGovernor.ProposalState.Rejected));
+
+        // Sanity: the proposal struct actually holds the snapshot.
+        ISyndicateGovernor.StrategyProposal memory p = governor.getProposal(proposalId);
+        assertEq(p.vetoThresholdBps, VETO_THRESHOLD_BPS);
+    }
+
     // ==================== FIX 3 — G-H4 ====================
 
     /// @notice When totalSupply is 0 at snapshot time, the veto threshold would

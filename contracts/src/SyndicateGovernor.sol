@@ -311,6 +311,9 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             p.reviewEnd = p.voteEnd + reviewPeriod_;
             p.executeBy = p.reviewEnd + _params.executionWindow;
             p.state = ProposalState.Pending;
+            // G-H6: snapshot vetoThresholdBps so a mid-vote timelock finalize
+            // can't retroactively move the threshold for this proposal.
+            p.vetoThresholdBps = _params.vetoThresholdBps;
             // Draft doesn't count (not binding on the vault); Pending does.
             unchecked {
                 ++openProposalCount[vault];
@@ -505,6 +508,8 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             proposal.voteEnd = block.timestamp + _params.votingPeriod;
             proposal.reviewEnd = proposal.voteEnd + reviewPeriod_;
             proposal.executeBy = proposal.reviewEnd + _params.executionWindow;
+            // G-H6: see propose().
+            proposal.vetoThresholdBps = _params.vetoThresholdBps;
             // Draft -> Pending: this is the first non-terminal state that binds
             // the vault, so start counting it now.
             unchecked {
@@ -834,9 +839,12 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             // Voting ended -- optimistic: approved unless AGAINST votes reach veto threshold
             // G-H4: skip the veto check when pastTotalSupply == 0, otherwise
             // the threshold collapses to 0 and every proposal auto-rejects.
+            // G-H6: read the snapshot taken at Draft -> Pending, not the live
+            // `_params.vetoThresholdBps`, so mid-vote timelock finalizes
+            // don't move the bar for in-flight proposals.
             uint256 pastTotalSupply = IVotes(proposal.vault).getPastTotalSupply(proposal.snapshotTimestamp);
             if (pastTotalSupply > 0) {
-                uint256 vetoThreshold = (pastTotalSupply * _params.vetoThresholdBps) / 10000;
+                uint256 vetoThreshold = (pastTotalSupply * proposal.vetoThresholdBps) / 10000;
                 if (proposal.votesAgainst >= vetoThreshold) {
                     return ProposalState.Rejected;
                 }
