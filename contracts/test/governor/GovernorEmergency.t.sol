@@ -141,7 +141,6 @@ contract GovernorEmergencyTest is Test {
                 address(wood),
                 MIN_GUARDIAN_STAKE,
                 MIN_OWNER_STAKE,
-                0, // ownerStakeTvlBps — 0 so bond == minOwnerStake regardless of TVL
                 7 days,
                 REVIEW_PERIOD,
                 BLOCK_QUORUM_BPS

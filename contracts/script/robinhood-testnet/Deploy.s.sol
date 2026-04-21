@@ -84,7 +84,7 @@ contract DeployRobinhoodTestnet is ScriptBase {
         address woodToken = vm.envOr("WOOD_TOKEN", address(0x1));
         bytes memory regInitData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (deployer, governorProxy, predictedFactoryProxy, woodToken, 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (deployer, governorProxy, predictedFactoryProxy, woodToken, 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         address registryProxy = address(new ERC1967Proxy(address(registryImpl), regInitData));
         require(registryProxy == predictedRegistryProxy, "registry addr mismatch");

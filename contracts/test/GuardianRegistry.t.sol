@@ -22,7 +22,7 @@ contract GuardianRegistryInitTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
     }
@@ -43,7 +43,7 @@ contract GuardianRegistryInitTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, address(0), factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (owner, address(0), factory, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         vm.expectRevert(IGuardianRegistry.ZeroAddress.selector);
         new ERC1967Proxy(address(impl), initData);
@@ -63,7 +63,7 @@ contract GuardianRegistryStakeTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -137,7 +137,7 @@ contract GuardianRegistryUnstakeTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, COOL_DOWN, 24 hours, 3000)
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, COOL_DOWN, 24 hours, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -290,7 +290,7 @@ contract GuardianRegistryOwnerPrepareTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -364,7 +364,7 @@ contract GuardianRegistryOwnerBindTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -411,16 +411,14 @@ contract GuardianRegistryOwnerBindTest is Test {
     }
 
     function test_bindOwnerStake_revertsIfBondInsufficient() public {
-        // Creator prepares only the floor.
+        // Creator prepares at the current floor.
         vm.prank(creator);
         registry.prepareOwnerStake(10_000e18);
 
-        // Activate TVL scaling and give the vault enough TVL that requiredOwnerBond
-        // exceeds the prepared amount. With WOOD-denominated vault (18 decimals) and
-        // bps = 100 (1%), TVL of 2_000_000e18 implies a bond of 20_000e18 — 2x the
-        // floor, so the bind must revert.
-        stdstore.target(address(registry)).sig("ownerStakeTvlBps()").checked_write(uint256(100));
-        vault.setTotalAssets(2_000_000e18);
+        // Raise `minOwnerStake` above the prepared amount via direct storage
+        // write (bypassing the timelock for test brevity). `requiredOwnerBond`
+        // now returns 20_000e18, above the 10_000e18 prepared stake.
+        stdstore.target(address(registry)).sig("minOwnerStake()").checked_write(uint256(20_000e18));
 
         vm.prank(factory);
         vm.expectRevert(IGuardianRegistry.OwnerBondInsufficient.selector);
@@ -510,7 +508,7 @@ contract GuardianRegistryOwnerUnstakeTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 0, COOL_DOWN, 24 hours, 3000)
+            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, COOL_DOWN, 24 hours, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -613,50 +611,20 @@ contract GuardianRegistryBondTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
         vault = new MockERC4626Vault();
     }
 
-    function test_requiredOwnerBond_zeroBps_returnsFloor() public {
-        // V1 default: ownerStakeTvlBps == 0 → floor regardless of totalAssets.
+    function test_requiredOwnerBond_returnsFloor() public {
+        // Flat floor regardless of totalAssets.
         vault.setTotalAssets(1_000_000e18);
         assertEq(registry.requiredOwnerBond(address(vault)), 10_000e18);
 
         vault.setTotalAssets(0);
         assertEq(registry.requiredOwnerBond(address(vault)), 10_000e18);
-    }
-
-    function test_requiredOwnerBond_nonzeroBps_scales() public {
-        // Flip bps to 50 (0.5%) via direct storage write (timelocked setter not
-        // implemented until Task 24). For a WOOD-denominated vault (18 decimals,
-        // matching the floor units) with TVL = 10_000_000e18, scaled bond =
-        // 10_000_000e18 * 50 / 10_000 = 50_000e18 — above the 10_000e18 floor.
-        stdstore.target(address(registry)).sig("ownerStakeTvlBps()").checked_write(uint256(50));
-        vault.setTotalAssets(10_000_000e18);
-
-        assertEq(registry.requiredOwnerBond(address(vault)), 50_000e18);
-    }
-
-    function test_requiredOwnerBond_nonzeroBps_floorDominatesAtLowTvl() public {
-        // At low TVL the scaled term is below the floor → floor wins.
-        // bps = 50, TVL = 1_000_000e18 → scaled = 5_000e18 < floor 10_000e18.
-        stdstore.target(address(registry)).sig("ownerStakeTvlBps()").checked_write(uint256(50));
-        vault.setTotalAssets(1_000_000e18);
-
-        assertEq(registry.requiredOwnerBond(address(vault)), 10_000e18);
-    }
-
-    function test_requiredOwnerBond_nonzeroBps_boundary() public {
-        // Exact floor: scaled == floor → tie goes to floor (scaled > floor is strict).
-        stdstore.target(address(registry)).sig("ownerStakeTvlBps()").checked_write(uint256(100));
-        vault.setTotalAssets(1_000_000e18); // 1% of 1M = 10_000e18 == floor
-        assertEq(registry.requiredOwnerBond(address(vault)), 10_000e18);
-
-        vault.setTotalAssets(1_000_001e18); // nudge above
-        assertEq(registry.requiredOwnerBond(address(vault)), 10_000.01e18);
     }
 }
 
@@ -682,7 +650,7 @@ contract GuardianRegistryOpenReviewTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, REVIEW_PERIOD, 3000)
+            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 7 days, REVIEW_PERIOD, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -782,7 +750,7 @@ contract GuardianRegistryVoteTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, REVIEW_PERIOD, 3000)
+            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 7 days, REVIEW_PERIOD, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -934,7 +902,7 @@ contract GuardianRegistryVoteChangeTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, REVIEW_PERIOD, 3000)
+            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 7 days, REVIEW_PERIOD, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -1082,7 +1050,6 @@ contract GuardianRegistryResolveTest is Test {
                 address(wood),
                 10_000e18,
                 10_000e18,
-                0,
                 7 days,
                 REVIEW_PERIOD,
                 BLOCK_QUORUM_BPS
@@ -1367,7 +1334,6 @@ contract GuardianRegistryBurnTest is Test {
                 address(wood),
                 10_000e18,
                 10_000e18,
-                0,
                 7 days,
                 REVIEW_PERIOD,
                 BLOCK_QUORUM_BPS
@@ -1475,7 +1441,6 @@ contract GuardianRegistryEmergencyTest is Test {
                 address(wood),
                 10_000e18,
                 10_000e18,
-                0,
                 7 days,
                 REVIEW_PERIOD,
                 BLOCK_QUORUM_BPS
@@ -1700,7 +1665,7 @@ contract GuardianRegistryFundEpochTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -1809,7 +1774,6 @@ contract GuardianRegistryClaimEpochTest is Test {
                 address(wood),
                 10_000e18,
                 10_000e18,
-                0,
                 7 days,
                 REVIEW_PERIOD,
                 BLOCK_QUORUM_BPS
@@ -2012,7 +1976,6 @@ contract GuardianRegistrySweepTest is Test {
                 address(wood),
                 10_000e18,
                 10_000e18,
-                0,
                 7 days,
                 REVIEW_PERIOD,
                 BLOCK_QUORUM_BPS
@@ -2143,7 +2106,7 @@ contract GuardianRegistryAppealTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -2258,7 +2221,7 @@ contract GuardianRegistryPauseTest is Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 0, 7 days, REVIEW_PERIOD, 3000)
+            (owner, address(governor), factory, address(wood), 10_000e18, 10_000e18, 7 days, REVIEW_PERIOD, 3000)
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -2388,7 +2351,6 @@ contract GuardianRegistryParamTest is Test {
     // Initial values (match the initialize call below).
     uint256 constant INIT_MIN_GUARDIAN_STAKE = 10_000e18;
     uint256 constant INIT_MIN_OWNER_STAKE = 10_000e18;
-    uint256 constant INIT_OWNER_TVL_BPS = 0;
     uint256 constant INIT_COOLDOWN = 7 days;
     uint256 constant INIT_REVIEW_PERIOD = 24 hours;
     uint256 constant INIT_BLOCK_QUORUM = 3000;
@@ -2405,7 +2367,6 @@ contract GuardianRegistryParamTest is Test {
                 address(wood),
                 INIT_MIN_GUARDIAN_STAKE,
                 INIT_MIN_OWNER_STAKE,
-                INIT_OWNER_TVL_BPS,
                 INIT_COOLDOWN,
                 INIT_REVIEW_PERIOD,
                 INIT_BLOCK_QUORUM
@@ -2450,18 +2411,6 @@ contract GuardianRegistryParamTest is Test {
         // Exactly 1_000e18 should succeed.
         vm.prank(owner);
         registry.setMinOwnerStake(1_000e18);
-    }
-
-    function test_setOwnerStakeTvlBps_boundsEnforced() public {
-        vm.prank(owner);
-        vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
-        registry.setOwnerStakeTvlBps(501);
-
-        vm.startPrank(owner);
-        registry.setOwnerStakeTvlBps(0); // OK
-        registry.cancelParameterChange(registry.PARAM_OWNER_STAKE_TVL_BPS());
-        registry.setOwnerStakeTvlBps(500); // boundary OK
-        vm.stopPrank();
     }
 
     function test_setCoolDownPeriod_boundsEnforced() public {
@@ -2572,8 +2521,6 @@ contract GuardianRegistryParamTest is Test {
         registry.setMinGuardianStake(20_000e18);
         vm.expectRevert();
         registry.setMinOwnerStake(20_000e18);
-        vm.expectRevert();
-        registry.setOwnerStakeTvlBps(100);
         vm.expectRevert();
         registry.setCoolDownPeriod(2 days);
         vm.expectRevert();

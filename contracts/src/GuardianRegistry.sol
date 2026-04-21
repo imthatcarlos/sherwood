@@ -7,7 +7,6 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /// @dev Minimal governor surface consumed by the registry. Intentionally a
 ///      narrow stub so that GuardianRegistry does not depend on the full
@@ -58,7 +57,6 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     // ── Parameter timelock ──
     bytes32 public constant PARAM_MIN_GUARDIAN_STAKE = keccak256("minGuardianStake");
     bytes32 public constant PARAM_MIN_OWNER_STAKE = keccak256("minOwnerStake");
-    bytes32 public constant PARAM_OWNER_STAKE_TVL_BPS = keccak256("ownerStakeTvlBps");
     bytes32 public constant PARAM_COOLDOWN = keccak256("coolDownPeriod");
     bytes32 public constant PARAM_REVIEW_PERIOD = keccak256("reviewPeriod");
     bytes32 public constant PARAM_BLOCK_QUORUM_BPS = keccak256("blockQuorumBps");
@@ -148,7 +146,6 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     // Parameters
     uint256 public minGuardianStake;
     uint256 public minOwnerStake;
-    uint256 public ownerStakeTvlBps;
     uint256 public coolDownPeriod;
     uint256 public reviewPeriod;
     uint256 public blockQuorumBps;
@@ -172,7 +169,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @dev Reserved storage for future upgrades. Shrink by 1 when adding a
     ///      new storage slot. Matches the pattern on SyndicateGovernor /
     ///      SyndicateFactory / SyndicateVault.
-    uint256[50] private __gap;
+    uint256[51] private __gap;
 
     // ── Initializer ──
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -187,7 +184,6 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         address wood_,
         uint256 minGuardianStake_,
         uint256 minOwnerStake_,
-        uint256 ownerStakeTvlBps_,
         uint256 coolDownPeriod_,
         uint256 reviewPeriod_,
         uint256 blockQuorumBps_
@@ -203,7 +199,6 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         wood = IERC20(wood_);
         minGuardianStake = minGuardianStake_;
         minOwnerStake = minOwnerStake_;
-        ownerStakeTvlBps = ownerStakeTvlBps_;
         coolDownPeriod = coolDownPeriod_;
         reviewPeriod = reviewPeriod_;
         blockQuorumBps = blockQuorumBps_;
@@ -980,12 +975,6 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IGuardianRegistry
-    function setOwnerStakeTvlBps(uint256 newValue) external onlyOwner {
-        if (newValue > 500) revert InvalidParameter();
-        _queueChange(PARAM_OWNER_STAKE_TVL_BPS, newValue);
-    }
-
-    /// @inheritdoc IGuardianRegistry
     function setCoolDownPeriod(uint256 newValue) external onlyOwner {
         if (newValue < 1 days || newValue > 30 days) revert InvalidParameter();
         _queueChange(PARAM_COOLDOWN, newValue);
@@ -1053,9 +1042,6 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         } else if (paramKey == PARAM_MIN_OWNER_STAKE) {
             old = minOwnerStake;
             minOwnerStake = newValue;
-        } else if (paramKey == PARAM_OWNER_STAKE_TVL_BPS) {
-            old = ownerStakeTvlBps;
-            ownerStakeTvlBps = newValue;
         } else if (paramKey == PARAM_COOLDOWN) {
             old = coolDownPeriod;
             coolDownPeriod = newValue;
@@ -1106,23 +1092,13 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         return _prepared[o].amount >= minOwnerStake && !_prepared[o].bound;
     }
 
-    /// @inheritdoc IGuardianRegistry
-    /// @dev `max(minOwnerStake, totalAssets(vault) * ownerStakeTvlBps / 10_000)`.
-    ///      With `ownerStakeTvlBps == 0` (V1 default) this degenerates to the floor
-    ///      unconditionally. Task 10 adds dedicated tests for the scaled case.
-    ///
-    ///      Unit caveat: the formula mixes `minOwnerStake` (WOOD, 18 decimals) with
-    ///      `totalAssets()` (vault asset decimals — 6 for USDC). For vaults whose
-    ///      underlying is 18-decimal the result is consistent; for 6-decimal assets
-    ///      the scaled term is numerically 10^12 times too small and the floor will
-    ///      dominate. The spec §3.1 writes the formula this way and the V1 default
-    ///      (`bps = 0`) sidesteps the issue. Flagged for review before `bps` is ever
-    ///      flipped on via the timelocked setter. See plan 2026-04-20 Task 10.
-    function requiredOwnerBond(address vault) public view returns (uint256) {
-        uint256 floor = minOwnerStake;
-        if (ownerStakeTvlBps == 0) return floor;
-        uint256 scaled = (IERC4626(vault).totalAssets() * ownerStakeTvlBps) / 10_000;
-        return scaled > floor ? scaled : floor;
+    /// @notice The minimum WOOD bond a vault owner must post.
+    /// @dev Returns the global floor `minOwnerStake`. TVL-scaling was explored
+    ///      and rejected: it mixes decimals (WOOD 18 vs. asset decimals) and
+    ///      doesn't improve deterrence since `finalizeEmergencySettle` reverts
+    ///      when a block quorum is reached (drain + slash are mutually exclusive).
+    function requiredOwnerBond(address) public view returns (uint256) {
+        return minOwnerStake;
     }
 
     function currentEpoch() public view returns (uint256) {

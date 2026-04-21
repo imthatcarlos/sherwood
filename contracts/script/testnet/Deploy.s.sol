@@ -97,7 +97,6 @@ contract DeployTestnet is ScriptBase {
                 woodToken,
                 10_000e18, // minGuardianStake
                 10_000e18, // minOwnerStake
-                0, // ownerStakeTvlBps (disabled V1)
                 7 days, // coolDownPeriod
                 24 hours, // reviewPeriod
                 3000 // blockQuorumBps (30%)

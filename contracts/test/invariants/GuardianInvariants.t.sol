@@ -53,7 +53,6 @@ contract GuardianInvariantsTest is StdInvariant, Test {
                 address(wood),
                 MIN_GUARDIAN_STAKE,
                 MIN_OWNER_STAKE,
-                0,
                 COOL_DOWN,
                 REVIEW_PERIOD,
                 BLOCK_QUORUM_BPS
@@ -164,9 +163,7 @@ contract GuardianInvariantsTest is StdInvariant, Test {
             for (uint256 i = 0; i < actors.length; i++) {
                 if (registry.epochRewardClaimed(ep, actors[i])) {
                     assertEq(
-                        registry.pendingEpochReward(actors[i], ep),
-                        0,
-                        "INV-5: pendingEpochReward non-zero after claim"
+                        registry.pendingEpochReward(actors[i], ep), 0, "INV-5: pendingEpochReward non-zero after claim"
                     );
                 }
             }

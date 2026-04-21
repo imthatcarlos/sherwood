@@ -130,7 +130,6 @@ interface IGuardianRegistry {
     // ── Parameter setters (timelocked) ──
     function setMinGuardianStake(uint256) external;
     function setMinOwnerStake(uint256) external;
-    function setOwnerStakeTvlBps(uint256) external;
     function setCoolDownPeriod(uint256) external;
     function setReviewPeriod(uint256) external;
     function setBlockQuorumBps(uint256) external;

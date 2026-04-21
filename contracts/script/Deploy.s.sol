@@ -50,7 +50,6 @@ contract DeploySherwood is ScriptBase {
     // ── Registry default parameters (spec §3.1; overridable via env) ──
     uint256 constant DEFAULT_MIN_GUARDIAN_STAKE = 10_000e18;
     uint256 constant DEFAULT_MIN_OWNER_STAKE = 10_000e18;
-    uint256 constant DEFAULT_OWNER_STAKE_TVL_BPS = 0; // TVL-scaling disabled in V1
     uint256 constant DEFAULT_COOLDOWN = 7 days;
     uint256 constant DEFAULT_REVIEW_PERIOD = 24 hours;
     uint256 constant DEFAULT_BLOCK_QUORUM_BPS = 3000; // 30%
@@ -246,7 +245,6 @@ contract DeploySherwood is ScriptBase {
                 cfg.woodToken,
                 DEFAULT_MIN_GUARDIAN_STAKE,
                 DEFAULT_MIN_OWNER_STAKE,
-                DEFAULT_OWNER_STAKE_TVL_BPS,
                 DEFAULT_COOLDOWN,
                 DEFAULT_REVIEW_PERIOD,
                 DEFAULT_BLOCK_QUORUM_BPS

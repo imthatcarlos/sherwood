@@ -99,7 +99,6 @@ contract OwnerStakeAtCreationTest is Test {
                 address(wood),
                 MIN_GUARDIAN_STAKE,
                 MIN_OWNER_STAKE,
-                0,
                 7 days,
                 REVIEW_PERIOD,
                 BLOCK_QUORUM_BPS
@@ -243,7 +242,6 @@ contract OwnerStakeAtCreationTest is Test {
                 address(wood),
                 MIN_GUARDIAN_STAKE,
                 MIN_OWNER_STAKE,
-                0,
                 7 days,
                 REVIEW_PERIOD,
                 BLOCK_QUORUM_BPS

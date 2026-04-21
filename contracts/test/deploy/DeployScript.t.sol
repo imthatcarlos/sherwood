@@ -78,7 +78,7 @@ contract DeployScriptTest is Test {
         address registryImpl = c3.deploy(SALT_REGISTRY_IMPL, abi.encodePacked(type(GuardianRegistry).creationCode));
         bytes memory regInit = abi.encodeCall(
             GuardianRegistry.initialize,
-            (deployer, govProxy, predictedFactoryProxy, address(wood), 10_000e18, 10_000e18, 0, 7 days, 24 hours, 3000)
+            (deployer, govProxy, predictedFactoryProxy, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
         );
         address registryProxy = c3.deploy(
             SALT_REGISTRY_PROXY, abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(registryImpl, regInit))

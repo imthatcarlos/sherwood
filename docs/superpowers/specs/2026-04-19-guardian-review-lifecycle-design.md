@@ -134,8 +134,7 @@ mapping(uint256 => mapping(address => bool)) private _emergencyBlockVotes;
 
 // Parameters (timelocked; pattern mirrors GovernorParameters)
 uint256 public minGuardianStake;  // default: 10_000 WOOD
-uint256 public minOwnerStake;     // default: 10_000 WOOD  (floor — see §5 and requiredOwnerBond below)
-uint256 public ownerStakeTvlBps;  // default: 0 (disabled). bounds [0, 500] = 5% cap. Bond = max(floor, totalAssets*bps/10_000) at bind/rotate/emergency-settle
+uint256 public minOwnerStake;     // default: 10_000 WOOD  (flat floor — see §5 and requiredOwnerBond below)
 uint256 public coolDownPeriod;    // default: 7 days
 uint256 public reviewPeriod;      // default: 24 hours (single global value; no per-proposal override)
 uint256 public blockQuorumBps;    // default: 3000 (30% of total guardian stake)
@@ -191,7 +190,7 @@ Governor hooks:
 **Note on lifecycle integration:** the Pending → GuardianReview transition happens via `_resolveStateView` once `block.timestamp > voteEnd`. The registry-side `Review` struct is created by `openReview()` (permissionless keeper call) rather than lazily on first vote — this closes the denominator-manipulation attack and serves as the cold-start detection point.
 
 Factory hooks (onlyFactory):
-- `bindOwnerStake(address owner, address vault)` — consumes `_prepared[owner]`, binds it as `_ownerStakes[vault]`. Reverts if no prepared stake, or if prepared amount `< requiredOwnerBond(vault)`. For the factory-creation path `totalAssets()` is 0, so the TVL term is 0 and only the floor applies.
+- `bindOwnerStake(address owner, address vault)` — consumes `_prepared[owner]`, binds it as `_ownerStakes[vault]`. Reverts if no prepared stake, or if prepared amount `< requiredOwnerBond(vault)` (i.e. below `minOwnerStake`).
 - `transferOwnerStakeSlot(address vault, address newOwner)` — called from `SyndicateFactory.rotateOwner` after the previous owner's stake has been slashed or unstaked. Reassigns the vault's owner-stake slot to `newOwner`, who must have called `prepareOwnerStake` first with ≥ `requiredOwnerBond(vault)`. Reverts if the previous owner still has an active stake on this vault (guards against hostile takeover while a legitimate owner is staked).
 
 Emergency-settle vote:
@@ -214,14 +213,14 @@ Reward distribution (Block-side, epoch-based):
 - Note: no reward for correct Approve in V1. Correct-Approve rewards (the full "good guardians rewarded weekly" loop from issue #227) are deferred to V1.5 with EAS. V1 only rewards the *active-defence* action (Block) because that is the one that materially prevented an LP loss.
 
 Parameter setters (timelocked — reuses `GovernorParameters` timelock pattern):
-- `setMinGuardianStake`, `setMinOwnerStake`, `setOwnerStakeTvlBps`, `setCoolDownPeriod`, `setReviewPeriod`, `setBlockQuorumBps`.
+- `setMinGuardianStake`, `setMinOwnerStake`, `setCoolDownPeriod`, `setReviewPeriod`, `setBlockQuorumBps`.
 - `setMinter(address)` — owner-only, timelocked. Authorizes the Minter to call `fundEpoch` directly once emissions integration lands (V1.5).
 
 Views:
 - `guardianStake(address)`, `ownerStake(address vault)`, `totalGuardianStake()`, `isActiveGuardian(address)`, `hasOwnerStake(address vault)`, `getReview(uint256)`, `getEmergencyReview(uint256)`, `preparedStakeOf(address owner)`, `canCreateVault(address owner)`.
 - `currentEpoch() returns (uint256)` — derives from `(block.timestamp - epochGenesis) / EPOCH_DURATION`.
 - `pendingEpochReward(address guardian, uint256 epochId) returns (uint256)` — computes the guardian's claimable amount for that epoch. Returns 0 if the epoch hasn't ended, if already claimed, or if the guardian had no Block weight.
-- `requiredOwnerBond(address vault) returns (uint256)` — returns `max(minOwnerStake, IERC4626(vault).totalAssets() * ownerStakeTvlBps / 10_000)`. Used by `bindOwnerStake` and `transferOwnerStakeSlot` to gate whether a prepared stake is sufficient. With `ownerStakeTvlBps = 0` (V1 default) this returns `minOwnerStake` unconditionally — the scaling pipe is wired but inert. A multisig parameter flip activates it without a code change, with the timelock giving owners advance notice to top up before any existing vault becomes undercollateralized on the next rotate.
+- `requiredOwnerBond(address vault) returns (uint256)` — returns `minOwnerStake`. Used by `bindOwnerStake` and `transferOwnerStakeSlot` to gate whether a prepared stake is sufficient. TVL-scaling was explored and rejected: it mixes decimals (WOOD 18 vs. vault asset decimals — 6 for USDC) and doesn't improve deterrence since drain and slash are mutually exclusive outcomes (`finalizeEmergencySettle` reverts when the block quorum is reached).
 
 **Circuit breaker (pause / unpause):**
 - `pause()` — **onlyOwner**. Sets `paused = true`, `pausedAt = block.timestamp`. Freezes: `voteOnProposal`, `openReview`, `resolveReview`, `resolveEmergencyReview`, `voteBlockEmergencySettle`, `claimEpochReward`, `flushBurn`, `_slashApprovers`, `_slashOwner` call sites. Does NOT freeze `stakeAsGuardian`, `requestUnstake*`, `claimUnstake*`, `prepareOwnerStake` — guardians and owners must always be able to exit positions they control.
@@ -323,8 +322,7 @@ New enum value, new struct field, new errors, new events, new function signature
 | Parameter | Default | Bounds | Rationale |
 |---|---|---|---|
 | `minGuardianStake` | 10_000 WOOD | ≥ 1 WOOD | Mainnet floor set by multisig timelock; absolute `≥ 1 WOOD` bound is a testnet-only floor so dust-stake tests work. Timelock a real mainnet minimum before launch. |
-| `minOwnerStake` | 10_000 WOOD | ≥ 1_000 WOOD | Lowered from 50k per business review — onboarding friction for small creators. Floor only; effective bond per vault = `requiredOwnerBond(vault)` (see below). |
-| `ownerStakeTvlBps` | 0 (disabled) | [0, 500] (5% cap) | TVL-scaling multiplier. Effective owner bond = `max(minOwnerStake, totalAssets * ownerStakeTvlBps / 10_000)`. V1 ships at 0 (flat floor). Multisig timelocked flip activates scaling without a code change. Bond is checked at bind / rotate time only — no periodic top-up in V1. |
+| `minOwnerStake` | 10_000 WOOD | ≥ 1_000 WOOD | Lowered from 50k per business review — onboarding friction for small creators. Flat floor; `requiredOwnerBond(vault) == minOwnerStake`. |
 | `coolDownPeriod` | 7 days | 1–30 days | Matches issue #227; aligns with Sherwood's existing multi-day governance rhythms. |
 | `reviewPeriod` | 24 hours | 6h–7 days | Single global review window. No per-proposal override in V1 — if a strategy needs a shorter window, that's a V1.5 question tied to proposer stake-at-risk, not a V1 knob. |
 | `blockQuorumBps` | 3000 (30%) | 1000–10000 | Below 50% so a motivated guardian minority can stop clearly malicious proposals; high enough that random dissent doesn't grief. |
@@ -419,7 +417,7 @@ Must-pass scenarios:
 15. **Pause + deadman** — owner pauses, tries to vote → reverts; wait 7 days + 1 second, any address calls `unpause()` → succeeds.
 16. **Refund cap** — multisig calls `refundSlash` for >20% of reserve in one epoch → reverts; second call same epoch staying under cumulative cap → succeeds.
 17. **Sweep delay** — `sweepUnclaimed(epochId)` before `SWEEP_DELAY` elapses → reverts; after → permissionless success.
-18. **`emergencySettleWithCalls` with insufficient bond** — owner staked 10k, vault TVL grew to $10M with `ownerStakeTvlBps = 50`; `emergencySettleWithCalls` reverts with `OwnerBondInsufficient` until owner tops up.
+18. **`emergencySettleWithCalls` with insufficient bond** — owner bond was slashed below `minOwnerStake`; `emergencySettleWithCalls` reverts with `OwnerBondInsufficient` until owner tops up.
 19. **`cancelEmergencySettle`** — owner submits bad calldata, self-recalls before `reviewEnd`, no slash; re-submits correct calldata.
 20. **Registry mismatch** — factory `rotateOwner` with a governor whose `guardianRegistry != factory.guardianRegistry` reverts with `RegistryMismatch`.
 
