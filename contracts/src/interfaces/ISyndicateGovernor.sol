@@ -126,6 +126,10 @@ interface ISyndicateGovernor {
     ///         attempted. Prevents duplicate lifecycles that would race the
     ///         same vault state.
     error VaultHasOpenProposal();
+    /// @notice G-M11: Revert if `metadataURI.length` exceeds
+    ///         MAX_METADATA_URI_LENGTH. Bounds a calldata-unbounded string
+    ///         that would otherwise let a proposer grief gas / event storage.
+    error MetadataURITooLong();
 
     // ── Guardian-review emergency settle errors (Task 24) ──
     error OwnerBondInsufficient();

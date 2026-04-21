@@ -78,6 +78,11 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
 
+    /// @notice G-M11: upper bound on `metadataURI.length` accepted by
+    ///         `propose`. 512 bytes comfortably fits ipfs / arweave / https
+    ///         pointers while capping event-storage and calldata-copy griefing.
+    uint256 public constant MAX_METADATA_URI_LENGTH = 512;
+
     // ── New storage (appended -- UUPS safe) ──
 
     /// @notice Proposal ID -> execute (opening) calls
@@ -277,6 +282,8 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         if (strategyDuration < _params.minStrategyDuration) revert StrategyDurationTooShort();
         if (executeCalls.length == 0) revert EmptyExecuteCalls();
         if (settlementCalls.length == 0) revert EmptySettlementCalls();
+        // G-M11: cap metadata URI length.
+        if (bytes(metadataURI).length > MAX_METADATA_URI_LENGTH) revert MetadataURITooLong();
 
         // Validate co-proposers if present
         if (coProposers.length > 0) {

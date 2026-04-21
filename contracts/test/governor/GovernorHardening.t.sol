@@ -374,6 +374,32 @@ contract GovernorHardeningTest is Test {
         governor.emergencyCancel(proposalId);
     }
 
+    // ==================== G-M11 — metadata URI length cap ====================
+
+    /// @notice G-M11: `propose` must revert when `metadataURI.length`
+    ///         exceeds MAX_METADATA_URI_LENGTH. Bounds a calldata-unbounded
+    ///         string that would otherwise let a proposer grief gas / event
+    ///         storage.
+    function test_propose_revertsIfMetadataURITooLong() public {
+        uint256 cap = governor.MAX_METADATA_URI_LENGTH();
+        bytes memory tooLong = new bytes(cap + 1);
+        for (uint256 i = 0; i < tooLong.length; i++) {
+            tooLong[i] = "a";
+        }
+
+        vm.prank(leadAgent);
+        vm.expectRevert(ISyndicateGovernor.MetadataURITooLong.selector);
+        governor.propose(
+            address(vault),
+            string(tooLong),
+            2000,
+            7 days,
+            _execCalls(),
+            _settleCalls(),
+            new ISyndicateGovernor.CoProposer[](0)
+        );
+    }
+
     // ==================== G-M5 — stale parameter change ====================
 
     /// @notice G-M5: `finalizeParameterChange` must revert `ChangeStale` once
