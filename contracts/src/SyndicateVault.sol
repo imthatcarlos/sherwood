@@ -348,6 +348,9 @@ contract SyndicateVault is
                 revert(add(returnData, 32), mload(returnData))
             }
         }
+        // V-M9: first-class vault-level execution marker. Emitted after the
+        // delegatecall succeeds so indexers only see confirmed executions.
+        emit GovernorBatchExecuted(msg.sender, calls.length);
     }
 
     /// @inheritdoc ISyndicateVault

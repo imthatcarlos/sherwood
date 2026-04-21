@@ -883,6 +883,24 @@ contract SyndicateVaultTest is Test {
         vault.executeGovernorBatch(calls);
     }
 
+    // ==================== EXECUTE EVENT (V-M9) ====================
+
+    /// @dev V-M9: `executeGovernorBatch` emits
+    ///      `GovernorBatchExecuted(governor, callCount)` after the delegatecall
+    ///      succeeds. Indexers / monitors depend on this vault-level marker.
+    ///      Empty-calls path is the cleanest positive case (no target mocks
+    ///      needed) — `BatchExecutorLib.executeBatch` is a no-op loop over a
+    ///      zero-length array.
+    function test_executeGovernorBatch_emitsEvent() public {
+        BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](0);
+
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit ISyndicateVault.GovernorBatchExecuted(MOCK_GOVERNOR, 0);
+
+        vm.prank(MOCK_GOVERNOR);
+        vault.executeGovernorBatch(calls);
+    }
+
     // ==================== PAUSE GATES GOVERNOR BATCH (I-11) ====================
 
     /// @dev I-11: pause must halt strategy execution (`executeGovernorBatch`)

@@ -92,4 +92,12 @@ interface ISyndicateVault {
     event DepositorApproved(address indexed depositor);
     event DepositorRemoved(address indexed depositor);
     event OpenDepositsUpdated(bool open);
+    /// @notice Emitted whenever the governor drives a strategy batch into the
+    ///         vault via `executeGovernorBatch`. `callCount` is the number of
+    ///         sub-calls fanned out by `BatchExecutorLib.executeBatch`.
+    /// @dev V-M9: subgraphs and monitors previously had to observe strategy
+    ///      execution indirectly via downstream protocol events (Moonwell /
+    ///      Aerodrome / Uniswap). Emitting here gives a first-class
+    ///      vault-level execution marker.
+    event GovernorBatchExecuted(address indexed governor, uint256 callCount);
 }
