@@ -158,13 +158,8 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
         if (!change.exists) revert NoChangePending();
         if (block.timestamp < change.effectiveAt) revert ChangeNotReady();
 
-        uint256 newValue = change.newValue;
-
-        // Re-validate at finalize time (other params may have changed since queue)
-        _validateForFinalize(paramKey, newValue);
-
-        // Apply the change
-        _applyChange(paramKey, newValue);
+        // Re-validate + apply in a single ladder (merged to save bytecode).
+        _applyChange(paramKey, change.newValue);
 
         delete pending[paramKey];
     }
@@ -201,40 +196,63 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
         emit ParameterChangeQueued(paramKey, newValue, effectiveAt);
     }
 
+    /// @dev Re-validates and applies the change in a single ladder. Merged with
+    ///      the former `_validateForFinalize` to remove a redundant dispatch
+    ///      pass and reclaim runtime bytecode. All cross-param bounds (min vs
+    ///      max strategy duration, protocolFeeBps-requires-recipient) are
+    ///      re-checked here against live state.
     function _applyChange(bytes32 paramKey, uint256 newValue) internal {
         GovernorParams storage params = _getParams();
         uint256 old;
 
         if (paramKey == PARAM_VOTING_PERIOD) {
+            _validateVotingPeriod(newValue);
             old = params.votingPeriod;
             params.votingPeriod = newValue;
         } else if (paramKey == PARAM_EXECUTION_WINDOW) {
+            _validateExecutionWindow(newValue);
             old = params.executionWindow;
             params.executionWindow = newValue;
         } else if (paramKey == PARAM_VETO_THRESHOLD_BPS) {
+            _validateVetoThresholdBps(newValue);
             old = params.vetoThresholdBps;
             params.vetoThresholdBps = newValue;
         } else if (paramKey == PARAM_MAX_PERF_FEE) {
+            _validateMaxPerformanceFeeBps(newValue);
             old = params.maxPerformanceFeeBps;
             params.maxPerformanceFeeBps = newValue;
         } else if (paramKey == PARAM_MIN_STRATEGY_DURATION) {
+            if (newValue < ABSOLUTE_MIN_STRATEGY_DURATION || newValue > params.maxStrategyDuration) {
+                revert InvalidStrategyDurationBounds();
+            }
             old = params.minStrategyDuration;
             params.minStrategyDuration = newValue;
         } else if (paramKey == PARAM_MAX_STRATEGY_DURATION) {
+            if (newValue > ABSOLUTE_MAX_STRATEGY_DURATION || newValue < params.minStrategyDuration) {
+                revert InvalidStrategyDurationBounds();
+            }
             old = params.maxStrategyDuration;
             params.maxStrategyDuration = newValue;
         } else if (paramKey == PARAM_COOLDOWN) {
+            _validateCooldownPeriod(newValue);
             old = params.cooldownPeriod;
             params.cooldownPeriod = newValue;
         } else if (paramKey == PARAM_COLLAB_WINDOW) {
+            if (newValue < MIN_COLLABORATION_WINDOW || newValue > MAX_COLLABORATION_WINDOW) {
+                revert InvalidCollaborationWindow();
+            }
             old = params.collaborationWindow;
             params.collaborationWindow = newValue;
         } else if (paramKey == PARAM_MAX_CO_PROPOSERS) {
+            if (newValue == 0 || newValue > ABSOLUTE_MAX_CO_PROPOSERS) revert InvalidMaxCoProposers();
             old = params.maxCoProposers;
             params.maxCoProposers = newValue;
         } else if (paramKey == PARAM_PROTOCOL_FEE_BPS) {
+            if (newValue > MAX_PROTOCOL_FEE_BPS) revert InvalidProtocolFeeBps();
+            if (newValue > 0 && _getProtocolFeeRecipient() == address(0)) revert InvalidProtocolFeeRecipient();
             old = _applyProtocolFeeBpsChange(newValue);
         } else if (paramKey == PARAM_PROTOCOL_FEE_RECIPIENT) {
+            if (address(uint160(newValue)) == address(0)) revert InvalidProtocolFeeRecipient();
             old = uint256(uint160(_getProtocolFeeRecipient()));
             _setProtocolFeeRecipient(address(uint160(newValue)));
         } else {
@@ -242,44 +260,6 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
         }
 
         emit ParameterChangeFinalized(paramKey, old, newValue);
-    }
-
-    /// @dev Re-validate at finalize time for params with cross-dependencies
-    function _validateForFinalize(bytes32 paramKey, uint256 newValue) internal view {
-        if (paramKey == PARAM_VOTING_PERIOD) {
-            _validateVotingPeriod(newValue);
-        } else if (paramKey == PARAM_EXECUTION_WINDOW) {
-            _validateExecutionWindow(newValue);
-        } else if (paramKey == PARAM_VETO_THRESHOLD_BPS) {
-            _validateVetoThresholdBps(newValue);
-        } else if (paramKey == PARAM_MAX_PERF_FEE) {
-            _validateMaxPerformanceFeeBps(newValue);
-        } else if (paramKey == PARAM_COOLDOWN) {
-            _validateCooldownPeriod(newValue);
-        } else if (paramKey == PARAM_MIN_STRATEGY_DURATION) {
-            GovernorParams storage params = _getParams();
-            if (newValue < ABSOLUTE_MIN_STRATEGY_DURATION || newValue > params.maxStrategyDuration) {
-                revert InvalidStrategyDurationBounds();
-            }
-        } else if (paramKey == PARAM_MAX_STRATEGY_DURATION) {
-            GovernorParams storage params = _getParams();
-            if (newValue > ABSOLUTE_MAX_STRATEGY_DURATION || newValue < params.minStrategyDuration) {
-                revert InvalidStrategyDurationBounds();
-            }
-        } else if (paramKey == PARAM_COLLAB_WINDOW) {
-            if (newValue < MIN_COLLABORATION_WINDOW || newValue > MAX_COLLABORATION_WINDOW) {
-                revert InvalidCollaborationWindow();
-            }
-        } else if (paramKey == PARAM_MAX_CO_PROPOSERS) {
-            if (newValue == 0 || newValue > ABSOLUTE_MAX_CO_PROPOSERS) {
-                revert InvalidMaxCoProposers();
-            }
-        } else if (paramKey == PARAM_PROTOCOL_FEE_BPS) {
-            if (newValue > MAX_PROTOCOL_FEE_BPS) revert InvalidProtocolFeeBps();
-            if (newValue > 0 && _getProtocolFeeRecipient() == address(0)) revert InvalidProtocolFeeRecipient();
-        } else if (paramKey == PARAM_PROTOCOL_FEE_RECIPIENT) {
-            if (address(uint160(newValue)) == address(0)) revert InvalidProtocolFeeRecipient();
-        }
     }
 
     /// @dev Apply protocol fee change — implemented by SyndicateGovernor

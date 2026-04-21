@@ -184,14 +184,9 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     }
 
     modifier nonReentrant() {
-        _reentrancyEnter();
+        _emergencyReentrancyEnter();
         _;
         _reentrancyStatus = _NOT_ENTERED;
-    }
-
-    function _reentrancyEnter() private {
-        if (_reentrancyStatus == _ENTERED) revert Reentrancy();
-        _reentrancyStatus = _ENTERED;
     }
 
     // ── GovernorParameters virtual accessor overrides ──
