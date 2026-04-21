@@ -72,14 +72,16 @@ Grouped by domain. All require separate PRs.
 | Ref | Finding | Severity | Fix |
 |---|---|---|---|
 | V-C1 | Donation-inflated PnL | 92 | Strategy-reported realized return, OR snapshot pre/post settlement batch only |
-| V-C2 | `_executorImpl` delegatecall without codehash check; no `nonReentrant` | 90 | Assert `_executorImpl.codehash == EXPECTED`; add `nonReentrant` on `executeBatch` |
-| V-C3 | Owner `executeBatch` bypasses `redemptionsLocked()` | 90 | ✅ closed — `executeBatch` removed from vault (this PR) |
+| V-C2 | `_executorImpl` delegatecall without codehash check; no `nonReentrant` | 90 | Assert `_executorImpl.codehash == EXPECTED`; add `nonReentrant` on `executeGovernorBatch` (owner `executeBatch` was deleted in V-C3 fix) |
+| V-C3 ✅ | Owner `executeBatch` bypasses `redemptionsLocked()` | 90 | Closed — `executeBatch` removed entirely (`f616ec4`) |
 | V-C4 | Unbounded `getActiveSyndicates` loop | 90 | `EnumerableSet _activeSyndicateIds`; clamp `limit ≤ 100` |
-| V-H1 | Factory proxy `initialize` front-runnable | 85 | Confirm deploy script uses `ERC1967Proxy(impl, encodedInitCall)` atomic |
-| V-H2 | `setGovernor` orphans live proposals | 82 | Revert `setGovernor` if any registered vault has active proposal |
-| V-H3 | `upgradeVault` race on current `vaultImpl` | 78 | Add `upgradeVault(vault, expectedImpl)` parameter |
-| V-H5 | `rescueEth` missing `redemptionsLocked()` check | 75 | Add lock guard |
+| V-H1 ✅ | Factory proxy `initialize` front-runnable | 85 | Confirmed atomic `ERC1967Proxy(impl, encodedInitCall)`; regression test added (`9121ae6`) |
+| V-H2 ✅ | `setGovernor` orphans live proposals | 82 | Closed — `setGovernor` deleted; `governor` is set-once at factory init (`ee581a6`) |
+| V-H3 ✅ | `upgradeVault` race on current `vaultImpl` | 78 | Closed — `upgradeVault(vault, expectedImpl)` with `VaultImplMismatch` revert (`9a43e1d`) |
+| V-H5 ✅ | `rescueEth` missing `redemptionsLocked()` check | 75 | Closed — `rescueEth` now respects `redemptionsLocked()` (`df5e1e8`) |
 | V-H6 | Open `receive()` — stranded ETH | 75 | Reject or convert |
+| I-1 ✅ | `redemptionsLocked()` fails open on `gov == 0` | — | Closed — reverts `GovernorNotSet` (`d8bdf00`) |
+| W-1 ✅ | USDC-blacklist bricks settlement via `_distributeFees` | — | Closed — try/catch + escrow + `claimUnclaimedFees(vault, token)` retry (`134e768`) |
 
 ### 3.2 Governor / GovernorParameters (Domain 2)
 
