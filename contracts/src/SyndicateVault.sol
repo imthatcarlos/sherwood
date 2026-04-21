@@ -55,6 +55,13 @@ contract SyndicateVault is
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
+    // ==================== CONSTANTS ====================
+
+    /// @notice Maximum rows returned by any paginated view in a single call.
+    ///         V-M3: prevents unbounded iteration from out-of-gassing a page
+    ///         fetch even when the underlying set is large.
+    uint256 public constant MAX_PAGE_LIMIT = 100;
+
     // ==================== STORAGE ====================
 
     /// @notice Agent address => agent config
@@ -160,6 +167,20 @@ contract SyndicateVault is
     }
 
     /// @inheritdoc ISyndicateVault
+    /// @dev V-M3: paginated slice of the approved-depositor set. The full-list
+    ///      getter above is retained for backwards compatibility but becomes
+    ///      unusable as the set grows. `limit` is hard-clamped to
+    ///      `MAX_PAGE_LIMIT` so a single call always fits in a block.
+    function approvedDepositorsPaginated(uint256 offset, uint256 limit) external view returns (address[] memory) {
+        return _pageAddresses(_approvedDepositors, offset, limit);
+    }
+
+    /// @inheritdoc ISyndicateVault
+    function approvedDepositorCount() external view returns (uint256) {
+        return _approvedDepositors.length();
+    }
+
+    /// @inheritdoc ISyndicateVault
     function setOpenDeposits(bool open) external onlyOwner {
         _openDeposits = open;
         emit OpenDepositsUpdated(open);
@@ -180,6 +201,16 @@ contract SyndicateVault is
     /// @inheritdoc ISyndicateVault
     function getAgentCount() external view returns (uint256) {
         return _agentSet.length();
+    }
+
+    /// @inheritdoc ISyndicateVault
+    /// @dev V-M3: paginated slice of the registered-agent set. `limit` is
+    ///      hard-clamped to `MAX_PAGE_LIMIT` so the call always fits in a
+    ///      block regardless of how many agents are registered. Callers
+    ///      iterate: start at `offset = 0`, advance by `limit` each call
+    ///      until the returned array is shorter than `limit`.
+    function agentsPaginated(uint256 offset, uint256 limit) external view returns (address[] memory) {
+        return _pageAddresses(_agentSet, offset, limit);
     }
 
     /// @inheritdoc ISyndicateVault
@@ -311,6 +342,27 @@ contract SyndicateVault is
     /// @inheritdoc ISyndicateVault
     function managementFeeBps() external view returns (uint256) {
         return _managementFeeBps;
+    }
+
+    // ==================== PAGINATION ====================
+
+    /// @dev V-M3: shared pager for `EnumerableSet.AddressSet`. Returns a
+    ///      slice `[offset, offset + min(limit, MAX_PAGE_LIMIT))` clipped to
+    ///      the set's length. Returns an empty array when `offset >= length`.
+    function _pageAddresses(EnumerableSet.AddressSet storage set, uint256 offset, uint256 limit)
+        private
+        view
+        returns (address[] memory out)
+    {
+        uint256 total = set.length();
+        if (offset >= total) return new address[](0);
+        if (limit > MAX_PAGE_LIMIT) limit = MAX_PAGE_LIMIT;
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        out = new address[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            out[i - offset] = set.at(i);
+        }
     }
 
     // ==================== OVERRIDES ====================

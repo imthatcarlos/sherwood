@@ -623,6 +623,76 @@ contract SyndicateVaultTest is Test {
         assertEq(vault.balanceOf(lp1), sharesBefore - shares);
     }
 
+    // ==================== PAGINATED GETTERS (V-M3) ====================
+
+    /// @dev V-M3: `agentsPaginated` returns `[offset, offset + limit)` clipped
+    ///      to the set length, and hard-clamps `limit` to `MAX_PAGE_LIMIT = 100`.
+    ///      We register 150 agents and assert a `limit = 150` call returns 100
+    ///      rows (the clamped max), not 150. A second call with offset=100
+    ///      returns the remaining 50.
+    function test_agentsPaginated_respectsCap() public {
+        // 150 total registrations = existing 1 from setUp + 149 new agents
+        uint256 existing = vault.getAgentCount();
+        uint256 target = 150;
+        uint256 toAdd = target - existing;
+
+        for (uint256 i = 0; i < toAdd; i++) {
+            address a = address(uint160(uint256(keccak256(abi.encode("agent_v_m3", i)))));
+            uint256 nftId = agentRegistry.mint(a);
+            vm.prank(owner);
+            vault.registerAgent(nftId, a);
+        }
+        assertEq(vault.getAgentCount(), target, "setup: agent count");
+
+        // First page: offset=0, limit=150 — must return exactly MAX_PAGE_LIMIT=100
+        address[] memory page1 = vault.agentsPaginated(0, 150);
+        assertEq(page1.length, 100, "page1 length clamped to MAX_PAGE_LIMIT");
+        assertEq(vault.MAX_PAGE_LIMIT(), 100, "MAX_PAGE_LIMIT public");
+
+        // Second page: offset=100, limit=100 — returns the remaining 50
+        address[] memory page2 = vault.agentsPaginated(100, 100);
+        assertEq(page2.length, 50, "page2 length = remainder");
+
+        // Empty page past the end
+        address[] memory page3 = vault.agentsPaginated(150, 100);
+        assertEq(page3.length, 0, "page3 past end returns empty");
+    }
+
+    /// @dev V-M3: paginated depositor getter basic shape check + cap enforcement.
+    function test_approvedDepositorsPaginated_basic() public {
+        // Batch-approve 5 depositors so we can exercise both a short slice
+        // and a clipped limit.
+        address[] memory ds = new address[](5);
+        for (uint256 i = 0; i < ds.length; i++) {
+            ds[i] = address(uint160(uint256(keccak256(abi.encode("dep_v_m3", i)))));
+        }
+        vm.prank(owner);
+        vault.approveDepositors(ds);
+
+        assertEq(vault.approvedDepositorCount(), 5);
+
+        address[] memory full = vault.approvedDepositorsPaginated(0, 100);
+        assertEq(full.length, 5, "full page = 5");
+        for (uint256 i = 0; i < 5; i++) {
+            assertTrue(vault.isApprovedDepositor(full[i]), "page entry approved");
+        }
+
+        // Slice [2, 4)
+        address[] memory slice = vault.approvedDepositorsPaginated(2, 2);
+        assertEq(slice.length, 2, "slice length");
+        assertEq(slice[0], full[2], "slice[0]");
+        assertEq(slice[1], full[3], "slice[1]");
+
+        // Offset past end returns empty.
+        address[] memory empty = vault.approvedDepositorsPaginated(5, 10);
+        assertEq(empty.length, 0, "past-end empty");
+
+        // Cap: limit=999 is clamped to MAX_PAGE_LIMIT, but since the set has
+        // only 5 entries we get 5 back.
+        address[] memory capped = vault.approvedDepositorsPaginated(0, 999);
+        assertEq(capped.length, 5, "cap clip against set length");
+    }
+
     // ==================== PAUSE / UNPAUSE CYCLE ====================
 
     function test_pause_blocksDeposits_unpause_allows() public {

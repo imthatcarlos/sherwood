@@ -53,12 +53,15 @@ interface ISyndicateVault {
     function approveDepositors(address[] calldata depositors) external;
     function isApprovedDepositor(address depositor) external view returns (bool);
     function getApprovedDepositors() external view returns (address[] memory);
+    function approvedDepositorsPaginated(uint256 offset, uint256 limit) external view returns (address[] memory);
+    function approvedDepositorCount() external view returns (uint256);
     function setOpenDeposits(bool open) external;
     function openDeposits() external view returns (bool);
 
     // ── Views ──
     function getAgentConfig(address agentAddress) external view returns (AgentConfig memory);
     function getAgentCount() external view returns (uint256);
+    function agentsPaginated(uint256 offset, uint256 limit) external view returns (address[] memory);
     function isAgent(address agentAddress) external view returns (bool);
     function getExecutorImpl() external view returns (address);
 
