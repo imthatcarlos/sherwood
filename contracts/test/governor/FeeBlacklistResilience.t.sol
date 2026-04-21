@@ -176,8 +176,8 @@ contract FeeBlacklistResilienceTest is Test {
 
         // Expect the fee-failure event for the blacklisted protocol recipient.
         // We don't hard-match the reason bytes — just assert the topics.
-        vm.expectEmit(true, true, false, false);
-        emit ISyndicateGovernor.FeeTransferFailed(protocolRecipient, address(usdc), 200e6, "");
+        vm.expectEmit(true, true, false, true);
+        emit ISyndicateGovernor.FeeTransferFailed(protocolRecipient, address(usdc), 200e6);
 
         vm.prank(agent);
         governor.settleProposal(proposalId);
@@ -187,7 +187,9 @@ contract FeeBlacklistResilienceTest is Test {
         assertEq(usdc.balanceOf(agent), agentBalBefore + 1_470e6, "agent fee paid");
         assertEq(usdc.balanceOf(owner), ownerBalBefore + 41_650000, "mgmt fee paid");
         assertEq(usdc.balanceOf(protocolRecipient), 0, "protocol recipient unpaid");
-        assertEq(governor.unclaimedFees(protocolRecipient, address(usdc)), 200e6, "escrowed amount");
+        assertEq(
+            governor.unclaimedFees(address(vault), protocolRecipient, address(usdc)), 200e6, "escrowed amount"
+        );
 
         // Strategy is Settled.
         assertEq(
@@ -207,7 +209,7 @@ contract FeeBlacklistResilienceTest is Test {
 
         vm.prank(agent);
         governor.settleProposal(proposalId);
-        assertEq(governor.unclaimedFees(protocolRecipient, address(usdc)), 200e6);
+        assertEq(governor.unclaimedFees(address(vault), protocolRecipient, address(usdc)), 200e6);
 
         // Lift the blacklist + pull.
         usdc.setBlacklisted(protocolRecipient, false);
@@ -219,7 +221,7 @@ contract FeeBlacklistResilienceTest is Test {
         governor.claimUnclaimedFees(address(vault), address(usdc));
 
         assertEq(usdc.balanceOf(protocolRecipient), 200e6, "fee delivered");
-        assertEq(governor.unclaimedFees(protocolRecipient, address(usdc)), 0, "escrow cleared");
+        assertEq(governor.unclaimedFees(address(vault), protocolRecipient, address(usdc)), 0, "escrow cleared");
     }
 
     /// @notice Co-proposer share gets escrowed when the co-proposer is
@@ -242,7 +244,7 @@ contract FeeBlacklistResilienceTest is Test {
         // Lead 70% = 1470 - 441 = 1029 -> paid.
         assertEq(usdc.balanceOf(agent), agentBalBefore + 1_029e6, "lead paid");
         assertEq(usdc.balanceOf(coAgent), 0, "coAgent unpaid");
-        assertEq(governor.unclaimedFees(coAgent, address(usdc)), 441e6, "coAgent escrowed");
+        assertEq(governor.unclaimedFees(address(vault), coAgent, address(usdc)), 441e6, "coAgent escrowed");
 
         assertEq(
             uint256(governor.getProposal(proposalId).state),
@@ -257,5 +259,58 @@ contract FeeBlacklistResilienceTest is Test {
         vm.prank(protocolRecipient);
         governor.claimUnclaimedFees(address(vault), address(usdc));
         assertEq(usdc.balanceOf(protocolRecipient), balBefore);
+    }
+
+    /// @notice Regression: escrow is keyed by origin vault. A recipient with
+    ///         escrow on vault A cannot redirect the pull to an unrelated
+    ///         vault B that happens to hold the same token. Prior to the
+    ///         `_unclaimedFees[vault][recipient][token]` keying, the caller-
+    ///         supplied `vault` argument let anyone with ANY unclaimed credit
+    ///         drain ANY vault.
+    function test_claimUnclaimedFees_cannotDrainUnrelatedVault() public {
+        // 1. Accrue escrow on vault A via blacklist.
+        uint256 proposalId = _executeThroughSettle(1500, 7 days, _emptyCoProposers());
+        usdc.mint(address(vault), 10_000e6);
+        usdc.setBlacklisted(protocolRecipient, true);
+        vm.prank(agent);
+        governor.settleProposal(proposalId);
+        assertEq(governor.unclaimedFees(address(vault), protocolRecipient, address(usdc)), 200e6);
+
+        // 2. Deploy and register an unrelated vault B that holds plenty of USDC.
+        SyndicateVault vaultImplB = new SyndicateVault();
+        bytes memory vaultInitB = abi.encodeCall(
+            SyndicateVault.initialize,
+            (ISyndicateVault.InitParams({
+                    asset: address(usdc),
+                    name: "Sherwood Vault B",
+                    symbol: "swUSDCB",
+                    owner: owner,
+                    executorImpl: address(executorLib),
+                    openDeposits: true,
+                    agentRegistry: address(agentRegistry),
+                    managementFeeBps: 50
+                }))
+        );
+        SyndicateVault vaultB = SyndicateVault(payable(address(new ERC1967Proxy(address(vaultImplB), vaultInitB))));
+        vm.prank(owner);
+        governor.addVault(address(vaultB));
+        usdc.mint(address(vaultB), 50_000e6);
+        uint256 vaultBBalBefore = usdc.balanceOf(address(vaultB));
+        uint256 recipientBalBefore = usdc.balanceOf(protocolRecipient);
+
+        // 3. Attempt cross-vault claim. Escrow slot for (vaultB, recipient, usdc)
+        //    is zero, so the call returns a no-op — NOT a 200e6 drain of vault B.
+        usdc.setBlacklisted(protocolRecipient, false);
+        vm.prank(protocolRecipient);
+        governor.claimUnclaimedFees(address(vaultB), address(usdc));
+
+        assertEq(usdc.balanceOf(address(vaultB)), vaultBBalBefore, "vault B balance untouched");
+        assertEq(usdc.balanceOf(protocolRecipient), recipientBalBefore, "recipient received nothing");
+        // Escrow on vault A still intact — the attempted misroute did not clear it.
+        assertEq(
+            governor.unclaimedFees(address(vault), protocolRecipient, address(usdc)),
+            200e6,
+            "origin-vault escrow preserved"
+        );
     }
 }

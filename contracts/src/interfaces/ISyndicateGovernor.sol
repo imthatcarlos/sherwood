@@ -219,11 +219,14 @@ interface ISyndicateGovernor {
     // ── Fee-distribution resilience events (W-1) ──
     /// @notice Emitted when a per-recipient fee transfer in `_distributeFees` /
     ///         `_distributeAgentFee` reverts (e.g., USDC blacklist). The amount
-    ///         is escrowed against `recipient` and retrievable via
-    ///         `claimUnclaimedFees`.
-    event FeeTransferFailed(address indexed recipient, address indexed token, uint256 amount, bytes reason);
+    ///         is escrowed against `(vault, recipient, token)` in storage (see
+    ///         `unclaimedFees`). `reason` dropped from the event to conserve
+    ///         governor bytecode — the revert data is visible in the tx trace
+    ///         if a debugger needs the underlying cause.
+    event FeeTransferFailed(address indexed recipient, address indexed token, uint256 amount);
     /// @notice Emitted when a recipient pulls previously escrowed fees via
-    ///         `claimUnclaimedFees`.
+    ///         `claimUnclaimedFees`. The originating vault is the caller's
+    ///         argument to `claimUnclaimedFees` (traceable via `tx.input`).
     event FeeClaimed(address indexed recipient, address indexed token, uint256 amount);
 
     // ── Guardian-review emergency settle events (Task 24) ──
@@ -361,13 +364,14 @@ interface ISyndicateGovernor {
 
     /// @notice Pull previously escrowed fees after the blacklist / revert
     ///         condition that caused the original settlement transfer has been
-    ///         lifted. Retries the transfer against the vault that still holds
-    ///         the underlying asset.
+    ///         lifted. Escrow is keyed by origin vault — a recipient can only
+    ///         claim against the specific vault whose fee transfer failed.
     /// @param vault The vault that originally held the fee asset.
     /// @param token The ERC-20 address the fee was denominated in.
     function claimUnclaimedFees(address vault, address token) external;
 
-    /// @notice Amount of fees escrowed against `recipient` in `token` awaiting
-    ///         a retryable claim.
-    function unclaimedFees(address recipient, address token) external view returns (uint256);
+    /// @notice Amount of fees escrowed against `(vault, recipient)` in `token`
+    ///         awaiting a retryable claim. Zero for `(vault, recipient, token)`
+    ///         tuples that never had a failed transfer.
+    function unclaimedFees(address vault, address recipient, address token) external view returns (uint256);
 }

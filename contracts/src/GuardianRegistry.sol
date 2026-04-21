@@ -124,6 +124,12 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     // keyed by (proposalId, nonce, guardian) so cancelling + re-opening starts a
     // fresh round; prior-round votes are invisible to the new nonce.
     mapping(uint256 => mapping(uint8 => mapping(address => bool))) internal _emergencyBlockVotes;
+    // Snapshot of the guardian's stake at the moment they cast their block vote.
+    // Mirrors `_voteStake` in the standard-review path for structural parity —
+    // same live-at-first-vote semantics (both paths read `_guardians[g].stakedAmount`
+    // at the call-time of the first vote). Persisted here so future extensions
+    // that support emergency-vote-change can reuse the frozen weight.
+    mapping(uint256 => mapping(uint8 => mapping(address => uint128))) internal _emergencyVoteStake;
 
     // Epoch rewards
     uint256 public epochGenesis;
@@ -322,6 +328,14 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      `MAX_APPROVERS_PER_PROPOSAL`; Blockers are uncapped. Vote-change
     ///      semantics are added in a later task — any existing vote currently
     ///      reverts.
+    ///
+    ///      Known limitation: vote weight is read live at first-vote time,
+    ///      while `totalStakeAtOpen` was frozen at `openReview`. A guardian
+    ///      who stakes additional WOOD between open and first vote contributes
+    ///      their NEW weight to the numerator while the denominator stays
+    ///      fixed — slight bias toward the voting side. A proper fix requires
+    ///      per-guardian stake snapshots at open (O(N) gas) or a stake
+    ///      cooldown; deferred pending audit.
     function voteOnProposal(uint256 proposalId, GuardianVoteType support) external whenNotPaused {
         if (support == GuardianVoteType.None) revert();
 
@@ -784,6 +798,13 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @dev Active-guardian-only. Block-only side (no Approve pool for
     ///      emergency reviews). One vote per guardian — double-votes revert.
     ///      Weight is the caller's current `guardianStake` at call time.
+    /// @dev Live-stake-at-first-vote semantics, matching `voteOnProposal`. A
+    ///      guardian who tops up between `openEmergencyReview` and their first
+    ///      vote contributes their new weight to `blockStakeWeight` while the
+    ///      `totalStakeAtOpen` denominator is frozen — known limitation shared
+    ///      with the standard-review path. Vote weight is snapshotted into
+    ///      `_emergencyVoteStake` at first vote (mirrors `_voteStake`) so the
+    ///      weight is recoverable and any future vote-change path can reuse it.
     function voteBlockEmergencySettle(uint256 proposalId) external whenNotPaused {
         EmergencyReview storage er = _emergencyReviews[proposalId];
         if (er.reviewEnd == 0 || block.timestamp >= er.reviewEnd) revert ReviewNotOpen();
@@ -793,6 +814,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
 
         uint128 weight = _guardians[msg.sender].stakedAmount;
         _emergencyBlockVotes[proposalId][nonce][msg.sender] = true;
+        _emergencyVoteStake[proposalId][nonce][msg.sender] = weight;
         er.blockStakeWeight += weight;
 
         emit EmergencyBlockVoteCast(proposalId, msg.sender, weight);

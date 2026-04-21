@@ -129,7 +129,12 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     ///      rest of `_distributeFees` keeps flowing and settlement never bricks.
     ///      Recipients pull via `claimUnclaimedFees`. The underlying amount
     ///      remains in the vault; this mapping is pure bookkeeping. (W-1)
-    mapping(address recipient => mapping(address token => uint256)) private _unclaimedFees;
+    ///      Keyed by `keccak256(vault, recipient, token)` so a claim can only
+    ///      pull from the vault that actually owes the escrow — prevents the
+    ///      cross-vault drain where a recipient with escrow on vault A redirects
+    ///      the pull to vault B. Single-level mapping + packed key is chosen
+    ///      over triple-nested mapping to keep governor runtime ≤ 24,550.
+    mapping(bytes32 key => uint256) private _unclaimedFees;
 
     /// @dev Count of co-proposer approvals per proposal. Incremented in
     ///      `approveCollaboration`. Drives both the all-approved transition
@@ -700,10 +705,12 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     }
 
     function _applyProtocolFeeBpsChange(uint256 newValue) internal override returns (uint256 old) {
-        // I-3: defence-in-depth — the same check runs in `_validateForFinalize`
-        // a moment earlier, but re-asserting here closes any future path that
-        // bypasses the dispatcher (e.g. a new setter wired directly to this
-        // virtual). bps > 0 must always imply a non-zero recipient.
+        // I-3: defence-in-depth — the same check runs in `_applyChange` (the
+        // dispatcher in GovernorParameters that `_validateForFinalize` was
+        // merged into) a moment earlier, but re-asserting here closes any
+        // future path that bypasses the dispatcher (e.g. a new setter wired
+        // directly to this virtual). bps > 0 must always imply a non-zero
+        // recipient.
         if (newValue > 0 && _protocolFeeRecipient == address(0)) revert InvalidProtocolFeeRecipient();
         old = _protocolFeeBps;
         _protocolFeeBps = newValue;
@@ -978,7 +985,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
 
         // Protocol fee taken first from gross profit.
         // I-3: `bps > 0 ⇒ recipient != 0` is enforced at every write site
-        // (initialize + _applyProtocolFeeBpsChange + _validateForFinalize);
+        // (initialize + _applyProtocolFeeBpsChange + GovernorParameters._applyChange);
         // previously this branch silently skipped the fee if a future path
         // violated the invariant. We now assert instead so the bug is loud.
         if (_protocolFeeBps > 0) {
@@ -1054,24 +1061,33 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         try ISyndicateVault(vault).transferPerformanceFee(asset, recipient, amount) {
         // ok
         }
-        catch (bytes memory reason) {
-            _unclaimedFees[recipient][asset] += amount;
-            emit FeeTransferFailed(recipient, asset, amount, reason);
+        catch {
+            _unclaimedFees[_unclaimedKey(vault, recipient, asset)] += amount;
+            emit FeeTransferFailed(recipient, asset, amount);
         }
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function claimUnclaimedFees(address vault, address token) external nonReentrant {
-        uint256 amt = _unclaimedFees[msg.sender][token];
+    /// @dev No `nonReentrant` required: CEI is respected (escrow slot cleared
+    ///      before the external `transferPerformanceFee` call). A reentrant
+    ///      call with the same `(vault, msg.sender, token)` key sees a zeroed
+    ///      slot and short-circuits. Different keys are independent escrows.
+    function claimUnclaimedFees(address vault, address token) external {
+        bytes32 k = _unclaimedKey(vault, msg.sender, token);
+        uint256 amt = _unclaimedFees[k];
         if (amt == 0) return;
-        _unclaimedFees[msg.sender][token] = 0;
+        _unclaimedFees[k] = 0;
         ISyndicateVault(vault).transferPerformanceFee(token, msg.sender, amt);
         emit FeeClaimed(msg.sender, token, amt);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function unclaimedFees(address recipient, address token) external view returns (uint256) {
-        return _unclaimedFees[recipient][token];
+    function unclaimedFees(address vault, address recipient, address token) external view returns (uint256) {
+        return _unclaimedFees[_unclaimedKey(vault, recipient, token)];
+    }
+
+    function _unclaimedKey(address vault, address recipient, address token) private pure returns (bytes32) {
+        return keccak256(abi.encode(vault, recipient, token));
     }
 
     // ==================== UUPS ====================
