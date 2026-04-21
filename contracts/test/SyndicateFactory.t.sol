@@ -545,4 +545,54 @@ contract SyndicateFactoryTest is Test {
         // Governor slot is set-once at initialize and unchanged.
         assertEq(factory.governor(), governorAddr);
     }
+
+    // ==================== V-C4: EnumerableSet pagination ====================
+
+    /// @notice V-C4 regression: getActiveSyndicates is backed by an
+    ///         EnumerableSet so reads are O(limit) instead of O(syndicateCount),
+    ///         the per-call limit is hard-capped at MAX_PAGE_LIMIT, and
+    ///         deactivated syndicates do not appear in the active set.
+    function test_getActiveSyndicates_paginated() public {
+        // Create 150 syndicates with unique subdomains
+        vm.startPrank(creator1);
+        for (uint256 i = 0; i < 150; i++) {
+            factory.createSyndicate(creator1AgentId, _configWithSubdomain(string.concat("fund-", vm.toString(i))));
+        }
+
+        // Deactivate a handful (ids 10, 50, 100 — 1-indexed).
+        factory.deactivate(10);
+        factory.deactivate(50);
+        factory.deactivate(100);
+        vm.stopPrank();
+
+        // 147 active total.
+        (, uint256 total) = factory.getActiveSyndicates(0, 1);
+        assertEq(total, 147, "total should reflect deactivations");
+
+        // Hard cap: request 200, get at most MAX_PAGE_LIMIT (100).
+        (SyndicateFactory.Syndicate[] memory firstPage, uint256 total2) = factory.getActiveSyndicates(0, 200);
+        assertEq(firstPage.length, 100, "limit clamped to MAX_PAGE_LIMIT");
+        assertEq(total2, 147);
+
+        // No deactivated syndicate appears in the page.
+        for (uint256 i = 0; i < firstPage.length; i++) {
+            assertTrue(firstPage[i].active, "only active syndicates should be returned");
+            assertTrue(
+                firstPage[i].id != 10 && firstPage[i].id != 50 && firstPage[i].id != 100,
+                "deactivated id leaked into results"
+            );
+        }
+
+        // Second page (offset 100). 47 remaining.
+        (SyndicateFactory.Syndicate[] memory secondPage,) = factory.getActiveSyndicates(100, 100);
+        assertEq(secondPage.length, 47, "remaining rows after offset");
+
+        // Offset beyond total returns empty.
+        (SyndicateFactory.Syndicate[] memory empty,) = factory.getActiveSyndicates(200, 10);
+        assertEq(empty.length, 0);
+
+        // getAllActiveSyndicates also clamps to MAX_PAGE_LIMIT.
+        SyndicateFactory.Syndicate[] memory all = factory.getAllActiveSyndicates();
+        assertEq(all.length, 100, "getAllActiveSyndicates clamped to MAX_PAGE_LIMIT");
+    }
 }

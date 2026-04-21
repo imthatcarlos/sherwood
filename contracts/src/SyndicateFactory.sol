@@ -5,6 +5,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -30,6 +31,7 @@ import {IL2Registrar} from "./interfaces/IL2Registrar.sol";
  */
 contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.UintSet;
 
     // ── Errors ──
     error InvalidExecutorImpl();
@@ -130,8 +132,20 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     ///      MUST share the same registry — `rotateOwner` asserts this invariant.
     address public guardianRegistry;
 
-    /// @dev Reserved for future storage — reduced by 1 for `guardianRegistry`
-    uint256[49] private __gap;
+    /// @dev Active-syndicate IDs for O(1) paginated enumeration (V-C4).
+    ///      Added on `createSyndicate`, removed on `deactivate`. The legacy
+    ///      `syndicates[id].active` flag remains the source of truth for
+    ///      individual rows; this set is kept in lock-step.
+    EnumerableSet.UintSet private _activeSyndicateIds;
+
+    /// @notice Hard cap on the per-call page size for `getActiveSyndicates`.
+    ///         Paginated reads above this cap silently clamp to `MAX_PAGE_LIMIT`.
+    uint256 public constant MAX_PAGE_LIMIT = 100;
+
+    /// @dev Reserved for future storage — reduced by 1 for `guardianRegistry`,
+    ///      reduced by 1 for `_activeSyndicateIds` (EnumerableSet.UintSet uses
+    ///      a single storage slot for the Set struct).
+    uint256[48] private __gap;
 
     // ── Events ──
 
@@ -253,6 +267,7 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
 
         vaultToSyndicate[vault] = syndicateId;
         subdomainToSyndicate[config.subdomain] = syndicateId;
+        _activeSyndicateIds.add(syndicateId);
 
         emit SyndicateCreated(syndicateId, vault, msg.sender, config.metadataURI, config.subdomain);
     }
@@ -272,6 +287,7 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         Syndicate storage s = syndicates[syndicateId];
         if (s.creator != msg.sender) revert NotCreator();
         s.active = false;
+        _activeSyndicateIds.remove(syndicateId);
         emit SyndicateDeactivated(syndicateId);
     }
 
@@ -368,48 +384,45 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
             && (address(ensRegistrar) == address(0) || ensRegistrar.available(subdomain));
     }
 
-    /// @notice Get active syndicates with pagination (for dashboard)
-    /// @param offset Starting index (0-based)
-    /// @param limit Maximum number of results to return
-    /// @return result Array of active syndicates
-    /// @return total Total count of active syndicates
+    /// @notice Get active syndicates with pagination (for dashboard).
+    /// @dev    Backed by `_activeSyndicateIds` (EnumerableSet) so reads are
+    ///         O(limit) instead of O(syndicateCount). `limit` is hard-capped at
+    ///         `MAX_PAGE_LIMIT` to guarantee the call stays well below block
+    ///         gas even as the set grows. Closes V-C4.
+    /// @param offset Starting index (0-based) into the active-set
+    /// @param limit  Maximum number of results to return; clamped to `MAX_PAGE_LIMIT`
+    /// @return result Array of active syndicates (in insertion order with swap-pop gaps filled)
+    /// @return total  Total count of active syndicates
     function getActiveSyndicates(uint256 offset, uint256 limit)
         external
         view
         returns (Syndicate[] memory result, uint256 total)
     {
-        // First pass: count active syndicates
-        uint256 count = 0;
-        for (uint256 i = 1; i <= syndicateCount; i++) {
-            if (syndicates[i].active) count++;
-        }
-        total = count;
+        total = _activeSyndicateIds.length();
 
-        if (offset >= count || limit == 0) {
+        if (offset >= total || limit == 0) {
             return (new Syndicate[](0), total);
         }
+        if (limit > MAX_PAGE_LIMIT) {
+            limit = MAX_PAGE_LIMIT;
+        }
 
-        // Calculate actual return size
-        uint256 remaining = count - offset;
-        uint256 size = remaining < limit ? remaining : limit;
-        result = new Syndicate[](size);
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
 
-        // Second pass: fill results starting from offset
-        uint256 activeIdx = 0;
-        uint256 resultIdx = 0;
-        for (uint256 i = 1; i <= syndicateCount && resultIdx < size; i++) {
-            if (syndicates[i].active) {
-                if (activeIdx >= offset) {
-                    result[resultIdx++] = syndicates[i];
-                }
-                activeIdx++;
-            }
+        result = new Syndicate[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            uint256 id = _activeSyndicateIds.at(i);
+            result[i - offset] = syndicates[id];
         }
     }
 
-    /// @notice Get ALL active syndicates (may exceed gas at scale — prefer paginated version)
+    /// @notice Get ALL active syndicates. Clamped at `MAX_PAGE_LIMIT` per call;
+    ///         callers that need every row must paginate via `getActiveSyndicates`.
     function getAllActiveSyndicates() external view returns (Syndicate[] memory) {
-        (Syndicate[] memory result,) = this.getActiveSyndicates(0, syndicateCount);
+        (Syndicate[] memory result,) = this.getActiveSyndicates(0, MAX_PAGE_LIMIT);
         return result;
     }
 
