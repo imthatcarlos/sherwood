@@ -556,6 +556,16 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     function addVault(address vault) external {
         if (msg.sender != owner() && msg.sender != factory) revert NotAuthorized();
         if (vault == address(0)) revert InvalidVault();
+        // G-M9: cheap EOA / typo guard via extcodesize. Full ABI probe would
+        // cost too much bytecode; this catches the most common operator
+        // mistake (pasting an EOA or address(0)-variant) while keeping the
+        // check inline. Authorized callers (owner / factory) are still
+        // trusted for semantic correctness.
+        uint256 size;
+        assembly {
+            size := extcodesize(vault)
+        }
+        if (size == 0) revert NotASyndicateVault();
         if (!_registeredVaults.add(vault)) revert VaultAlreadyRegistered();
         emit VaultAdded(vault);
     }

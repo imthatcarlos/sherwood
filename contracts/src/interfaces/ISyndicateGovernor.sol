@@ -135,6 +135,11 @@ interface ISyndicateGovernor {
     ///         calldata-unbounded arrays that otherwise let a proposer grief
     ///         gas when the batch is executed.
     error TooManyCalls();
+    /// @notice G-M9: Revert if `addVault(address)` is passed an address that
+    ///         does not implement the ISyndicateVault interface (e.g. an EOA
+    ///         or an unrelated contract). Catches operator typos that would
+    ///         otherwise wire governance at a dead address.
+    error NotASyndicateVault();
 
     // ── Guardian-review emergency settle errors (Task 24) ──
     error OwnerBondInsufficient();

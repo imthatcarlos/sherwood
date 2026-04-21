@@ -374,6 +374,18 @@ contract GovernorHardeningTest is Test {
         governor.emergencyCancel(proposalId);
     }
 
+    // ==================== G-M9 — addVault interface check ====================
+
+    /// @notice G-M9: `addVault` must reject EOAs and other non-contract
+    ///         addresses via an extcodesize probe. Catches operator typos
+    ///         that would otherwise wire governance at a dead address.
+    function test_addVault_revertsOnNonVault() public {
+        address eoa = makeAddr("eoa");
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.NotASyndicateVault.selector);
+        governor.addVault(eoa);
+    }
+
     // ==================== G-M2/G-M6 — calls array cap ====================
 
     /// @dev Builds an oversized Call array of the requested length pointing at

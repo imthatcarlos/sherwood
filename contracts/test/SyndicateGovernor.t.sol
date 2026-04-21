@@ -695,7 +695,10 @@ contract SyndicateGovernorTest is Test {
     // ==================== VAULT MANAGEMENT ====================
 
     function test_addVault() public {
-        address newVault = makeAddr("newVault");
+        // G-M9: governor rejects EOAs via extcodesize probe, so use a
+        // deployed contract address — the executorLib has bytecode and is
+        // not already registered.
+        address newVault = address(executorLib);
         vm.prank(owner);
         governor.addVault(newVault);
         assertTrue(governor.isRegisteredVault(newVault));
@@ -714,7 +717,9 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_addVault_fromFactory() public {
-        address newVault = makeAddr("factoryVault");
+        // G-M9: new vault must be a deployed contract. Use executorLib as a
+        // benign contract address.
+        address newVault = address(executorLib);
         address factoryAddr = makeAddr("factory");
         vm.prank(owner);
         governor.setFactory(factoryAddr);
