@@ -96,6 +96,7 @@ Grouped by domain. All require separate PRs.
 | G-H2 ✅ | `cancelProposal` during Draft front-runs last co-proposer approve | 82 | Closed — `CancelNotAllowedNearQuorum` revert when `approvedCount + 1 >= total` (`fe2fd72`). Regression tests: `test/governor/GovernorHardening.t.sol`. | no |
 | G-H3 ✅ | `getVoteWeight` returns 0 for Draft proposals (snapshotTimestamp unset) | 80 | Closed — reverts `ProposalInDraft` instead of silent zero (`09dabed`). Regression tests: `test/governor/GovernorHardening.t.sol`. | no |
 | G-H4 ✅ | Veto threshold divides by 0 on empty `pastTotalSupply` | 78 | Closed — veto check skipped when `pastTotalSupply == 0`; proposal falls through to GuardianReview/Approved (`f4a9f26`). Regression tests: `test/governor/GovernorHardening.t.sol`. | no |
+| G-H5 ✅ | `executeBy` boundary behavior unpinned — callers unsure whether `executeProposal` succeeds at exactly `executeBy`. | 65 | Closed — test-only. `executeBy` is inclusive: executing at `executeBy` succeeds, `executeBy + 1` resolves to `Expired` and reverts `ProposalNotApproved`. Regression tests: `test/governor/ExecuteByBoundary.t.sol`. | no |
 | G-H6 ✅ | `vetoThresholdBps` read at state-resolution, not creation | 77 | Closed — snapshotted into `StrategyProposal.vetoThresholdBps` at Draft -> Pending (propose + approveCollaboration) (`ce07179`). Regression tests: `test/governor/GovernorHardening.t.sol`. | no |
 
 ### 3.3 Strategies (Domain 3)
