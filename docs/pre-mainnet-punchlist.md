@@ -74,7 +74,7 @@ Grouped by domain. All require separate PRs.
 | V-C1 | Donation-inflated PnL | 92 | Strategy-reported realized return, OR snapshot pre/post settlement batch only |
 | V-C2 | `_executorImpl` delegatecall without codehash check; no `nonReentrant` | 90 | Assert `_executorImpl.codehash == EXPECTED`; add `nonReentrant` on `executeGovernorBatch` (owner `executeBatch` was deleted in V-C3 fix) |
 | V-C3 ✅ | Owner `executeBatch` bypasses `redemptionsLocked()` | 90 | Closed — `executeBatch` removed entirely (`f616ec4`) |
-| V-C4 | Unbounded `getActiveSyndicates` loop | 90 | `EnumerableSet _activeSyndicateIds`; clamp `limit ≤ 100` |
+| V-C4 ✅ | Unbounded `getActiveSyndicates` loop | 90 | Closed — backed by `EnumerableSet _activeSyndicateIds`; `limit` hard-clamped to `MAX_PAGE_LIMIT = 100` (`ea4ae6d`) |
 | V-H1 ✅ | Factory proxy `initialize` front-runnable | 85 | Confirmed atomic `ERC1967Proxy(impl, encodedInitCall)`; regression test added (`9121ae6`) |
 | V-H2 ✅ | `setGovernor` orphans live proposals | 82 | Closed — `setGovernor` deleted; `governor` is set-once at factory init (`ee581a6`) |
 | V-H3 ✅ | `upgradeVault` race on current `vaultImpl` | 78 | Closed — `upgradeVault(vault, expectedImpl)` with `VaultImplMismatch` revert (`9a43e1d`) |
