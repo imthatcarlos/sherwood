@@ -145,6 +145,39 @@ contract GovernorHardeningTest is Test {
         proposalId = governor.propose(address(vault), "ipfs://gh2", 2000, 7 days, _execCalls(), _settleCalls(), cps);
     }
 
+    /// @dev Create a 2-party collab: lead + 1 co-prop to land in Draft quickly.
+    function _create2PartyCollab() internal returns (uint256 proposalId) {
+        ISyndicateGovernor.CoProposer[] memory cps = new ISyndicateGovernor.CoProposer[](1);
+        cps[0] = ISyndicateGovernor.CoProposer({agent: co1, splitBps: 3000});
+        vm.prank(leadAgent);
+        proposalId = governor.propose(address(vault), "ipfs://draft", 2000, 7 days, _execCalls(), _settleCalls(), cps);
+    }
+
+    // ==================== FIX 2 — G-H3 ====================
+
+    /// @notice Calling getVoteWeight on a Draft proposal must revert rather
+    ///         than silently return 0.
+    function test_getVoteWeight_revertsIfDraft() public {
+        _depositLps();
+        uint256 proposalId = _create2PartyCollab();
+
+        vm.expectRevert(ISyndicateGovernor.ProposalInDraft.selector);
+        governor.getVoteWeight(proposalId, lp1);
+    }
+
+    /// @notice Sanity: once the Draft transitions to Pending (all co-props
+    ///         approve), getVoteWeight returns the snapshotted vote weight.
+    function test_getVoteWeight_postDraft_returnsSnapshot() public {
+        _depositLps();
+        uint256 proposalId = _create2PartyCollab();
+
+        vm.prank(co1);
+        governor.approveCollaboration(proposalId);
+
+        // Pending now — snapshotTimestamp is stamped.
+        assertGt(governor.getVoteWeight(proposalId, lp1), 0);
+    }
+
     // ==================== FIX 1 — G-H2 ====================
 
     /// @notice With 4 of 4 co-props approved (all-but-none — actually every

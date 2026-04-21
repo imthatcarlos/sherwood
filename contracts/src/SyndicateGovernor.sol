@@ -589,7 +589,10 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     /// @inheritdoc ISyndicateGovernor
     function getVoteWeight(uint256 proposalId, address voter) external view returns (uint256) {
         StrategyProposal storage proposal = _proposals[proposalId];
-        if (proposal.id == 0) return 0;
+        if (proposal.id == 0) revert ProposalNotFound();
+        // G-H3: Draft proposals have snapshotTimestamp == 0, so reading
+        // getPastVotes would silently return 0. Revert instead.
+        if (proposal.snapshotTimestamp == 0) revert ProposalInDraft();
         return IVotes(proposal.vault).getPastVotes(voter, proposal.snapshotTimestamp);
     }
 

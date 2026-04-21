@@ -145,6 +145,10 @@ interface ISyndicateGovernor {
     ///         co-proposer has approved (G-H2). Prevents front-running the
     ///         final approve tx.
     error CancelNotAllowedNearQuorum();
+    /// @notice Revert when `getVoteWeight` is called on a Draft proposal whose
+    ///         snapshotTimestamp hasn't been stamped yet (G-H3). The prior
+    ///         silent zero return confused callers who assumed no power.
+    error ProposalInDraft();
     /// @notice Revert if an active co-proposer's rounded share is 0 (G-C7).
     /// @dev Prevents silent routing of zero-rounded shares to the lead.
     error CoProposerShareUnderflow();
