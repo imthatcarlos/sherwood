@@ -867,6 +867,19 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         return block.timestamp > proposal.executeBy ? ProposalState.Expired : ProposalState.Approved;
     }
 
+    /// @dev Finalize a settled proposal: compute P&L, distribute fees, clear
+    ///      counters. Invoked by both happy-path `settleProposal` and the
+    ///      emergency settle lifecycle (`unstick` / `finalizeEmergencySettle`).
+    ///
+    ///      G-H1: PnL is measured purely against `IERC20(asset).balanceOf(vault)`.
+    ///      Any non-asset balance the strategy still holds at settlement time
+    ///      (mTokens / LP NFTs / reward tokens / perp margin) counts as a
+    ///      LOSS of the corresponding asset balance the strategy started
+    ///      with. Strategies MUST fully unwind all non-asset positions and
+    ///      return the underlying to the vault before `_finishSettlement` is
+    ///      called. If a strategy cannot unwind, callers should wait past
+    ///      `strategyDuration` and drive the emergency-settle path with
+    ///      governance-approved custom calls via `emergencySettleWithCalls`.
     function _finishSettlement(uint256 proposalId, StrategyProposal storage proposal)
         internal
         returns (int256 pnl, uint256 agentFee)
@@ -874,6 +887,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         address vault = proposal.vault;
         address asset = IERC4626(vault).asset();
 
+        // G-H1: asset-only measurement (see NatSpec above).
         // casting to int256 is safe because vault balances won't exceed int256.max
         // forge-lint: disable-next-line(unsafe-typecast)
         pnl = int256(IERC20(asset).balanceOf(vault)) - int256(_capitalSnapshots[proposalId]);
