@@ -374,6 +374,25 @@ contract SyndicateVaultTest is Test {
         vault.rescueEth(payable(lp1), 1 ether);
     }
 
+    /// @dev V-H5: `rescueEth` must honour `redemptionsLocked()` just like
+    ///      `rescueERC20` / `rescueERC721`. Owner cannot siphon ETH while
+    ///      a strategy is live (e.g. mWETH redeem mid-settle parks ETH
+    ///      transiently in the vault before a wrap).
+    function test_rescueEth_revertsDuringActiveStrategy() public {
+        vm.deal(address(vault), 1 ether);
+
+        // Simulate an active proposal for this vault.
+        vm.mockCall(
+            MOCK_GOVERNOR,
+            abi.encodeWithSignature("getActiveProposal(address)", address(vault)),
+            abi.encode(uint256(42))
+        );
+
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateVault.RedemptionsLocked.selector);
+        vault.rescueEth(payable(makeAddr("recipient")), 1 ether);
+    }
+
     // ==================== RESCUE ERC20 ====================
 
     /// @dev Sanity check that `rescueERC20` covers stranded non-asset tokens

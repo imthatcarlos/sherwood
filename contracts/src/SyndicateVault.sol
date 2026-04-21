@@ -340,8 +340,12 @@ contract SyndicateVault is
 
     // ==================== RESCUE ====================
 
-    /// @notice Rescue ETH accidentally sent to the vault
+    /// @notice Rescue ETH accidentally sent to the vault.
+    ///         Blocked during active proposals so the owner cannot siphon
+    ///         ETH mid-strategy (e.g. an mWETH redemption that transiently
+    ///         parks native ETH here before wrapping).
     function rescueEth(address payable to, uint256 amount) external onlyOwner {
+        if (redemptionsLocked()) revert RedemptionsLocked();
         if (to == address(0)) revert ZeroAddress();
         Address.sendValue(to, amount);
     }
