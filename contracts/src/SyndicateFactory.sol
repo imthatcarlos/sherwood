@@ -56,6 +56,8 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     error VaultStillStaked();
     error RegistryMismatch();
     error ZeroAddress();
+    // ── V-M7: reject zero/empty SyndicateConfig fields ──
+    error InvalidSyndicateConfig();
 
     struct SyndicateConfig {
         string metadataURI; // ipfs://Qm... (name, description, strategies)
@@ -207,6 +209,18 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         external
         returns (uint256 syndicateId, address vault)
     {
+        // V-M7: reject zero/empty config fields before any side effects. Without
+        // these checks, `cfg.asset == 0` would only trip in `SyndicateVault.initialize`
+        // (after ENS subdomain registration + registry stake bind), leaving stranded
+        // state. Empty name / symbol / metadataURI would deploy a vault with blank
+        // ERC-4626 metadata + no IPFS pointer. `subdomain.length < 3` is already
+        // checked below (`SubdomainTooShort`) so we only assert non-empty here.
+        if (address(config.asset) == address(0)) revert InvalidSyndicateConfig();
+        if (bytes(config.name).length == 0) revert InvalidSyndicateConfig();
+        if (bytes(config.symbol).length == 0) revert InvalidSyndicateConfig();
+        if (bytes(config.subdomain).length == 0) revert InvalidSyndicateConfig();
+        if (bytes(config.metadataURI).length == 0) revert InvalidSyndicateConfig();
+
         // Gate on prepared owner stake BEFORE any side effects (Task 26).
         IGuardianRegistry reg = IGuardianRegistry(guardianRegistry);
         if (!reg.canCreateVault(msg.sender)) revert PreparedStakeNotFound();

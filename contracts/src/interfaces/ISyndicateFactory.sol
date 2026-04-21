@@ -11,6 +11,9 @@ interface ISyndicateFactory {
     // ── Errors (V-H3) ──
     error VaultImplMismatch();
 
+    // ── Errors (V-M7) ──
+    error InvalidSyndicateConfig();
+
     // ── Views ──
     function governor() external view returns (address);
     function vaultImpl() external view returns (address);

@@ -546,6 +546,65 @@ contract SyndicateFactoryTest is Test {
         assertEq(factory.governor(), governorAddr);
     }
 
+    // ==================== V-M7: SyndicateConfig validation ====================
+
+    /// @notice V-M7 regression: `createSyndicate` must reject a config whose
+    ///         `asset` is zero before any side effects (stake bind, ENS
+    ///         register, vault deploy). Consolidated under
+    ///         `InvalidSyndicateConfig`.
+    function test_createSyndicate_revertsIfAssetZero() public {
+        SyndicateFactory.SyndicateConfig memory cfg = _defaultConfig();
+        cfg.asset = ERC20Mock(address(0));
+
+        vm.prank(creator1);
+        vm.expectRevert(SyndicateFactory.InvalidSyndicateConfig.selector);
+        factory.createSyndicate(creator1AgentId, cfg);
+    }
+
+    /// @notice V-M7: empty vault token name is rejected.
+    function test_createSyndicate_revertsIfNameEmpty() public {
+        SyndicateFactory.SyndicateConfig memory cfg = _defaultConfig();
+        cfg.name = "";
+
+        vm.prank(creator1);
+        vm.expectRevert(SyndicateFactory.InvalidSyndicateConfig.selector);
+        factory.createSyndicate(creator1AgentId, cfg);
+    }
+
+    /// @notice V-M7: empty vault token symbol is rejected.
+    function test_createSyndicate_revertsIfSymbolEmpty() public {
+        SyndicateFactory.SyndicateConfig memory cfg = _defaultConfig();
+        cfg.symbol = "";
+
+        vm.prank(creator1);
+        vm.expectRevert(SyndicateFactory.InvalidSyndicateConfig.selector);
+        factory.createSyndicate(creator1AgentId, cfg);
+    }
+
+    /// @notice V-M7: empty subdomain is rejected with `InvalidSyndicateConfig`
+    ///         (the existing `SubdomainTooShort` guard is checked later; the
+    ///         zero-length case is caught first by the consolidated V-M7
+    ///         check, which is what we want to assert here).
+    function test_createSyndicate_revertsIfSubdomainEmpty() public {
+        SyndicateFactory.SyndicateConfig memory cfg = _defaultConfig();
+        cfg.subdomain = "";
+
+        vm.prank(creator1);
+        vm.expectRevert(SyndicateFactory.InvalidSyndicateConfig.selector);
+        factory.createSyndicate(creator1AgentId, cfg);
+    }
+
+    /// @notice V-M7: empty metadataURI is rejected — a deployed vault with
+    ///         no IPFS pointer is not a real syndicate.
+    function test_createSyndicate_revertsIfMetadataUriEmpty() public {
+        SyndicateFactory.SyndicateConfig memory cfg = _defaultConfig();
+        cfg.metadataURI = "";
+
+        vm.prank(creator1);
+        vm.expectRevert(SyndicateFactory.InvalidSyndicateConfig.selector);
+        factory.createSyndicate(creator1AgentId, cfg);
+    }
+
     // ==================== V-C4: EnumerableSet pagination ====================
 
     /// @notice V-C4 regression: getActiveSyndicates is backed by an
