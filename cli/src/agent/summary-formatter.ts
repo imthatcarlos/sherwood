@@ -50,11 +50,22 @@ function arrow(action: string): string {
 
 // ── Main formatter ──
 
+export interface GridSummaryStats {
+  totalPnlUsd: number;
+  todayPnlUsd: number;
+  todayFills: number;
+  totalRoundTrips: number;
+  allocation: number;
+  paused: boolean;
+}
+
 export interface SummaryInput {
   cycle: CycleResult;
   portfolio: PortfolioState;
   /** Most recent closed trades (last 3, for exit callouts). */
   recentTrades: TradeRecord[];
+  /** Cumulative grid stats from grid-portfolio.json (optional — omitted if grid disabled). */
+  gridStats?: GridSummaryStats;
 }
 
 export function formatSummary(input: SummaryInput): string {
@@ -119,12 +130,16 @@ export function formatSummary(input: SummaryInput): string {
   lines.push(`\uD83D\uDCB0 $${cycle.portfolioValue.toFixed(2)} (${totalPct})`);
   lines.push(`   Today: ${fmtUsd(cycle.dailyRealizedPnl)} realized | ${fmtUsd(cycle.unrealizedPnl)} open`);
 
-  // Grid stats (if grid is active)
+  // Grid stats — always show cumulative if grid is active
   const gf = cycle.gridFills ?? 0;
-  const gr = cycle.gridRoundTrips ?? 0;
-  const gp = cycle.gridPnlUsd ?? 0;
-  if (gf > 0 || gr > 0) {
-    lines.push(`   Grid: ${gr} round-trips ${fmtUsd(gp)} | ${gf} fills this cycle`);
+  const gs = input.gridStats;
+  if (gs && !gs.paused) {
+    const todayStr = gs.todayFills > 0
+      ? `${gs.todayFills} fills ${fmtUsd(gs.todayPnlUsd)} today`
+      : "no fills today";
+    lines.push(`   Grid: ${fmtUsd(gs.totalPnlUsd)} total (${gs.totalRoundTrips} trips) | ${todayStr} | $${gs.allocation.toFixed(0)} alloc`);
+  } else if (gs?.paused) {
+    lines.push(`   Grid: PAUSED`);
   }
 
   // Signals — top 4 by |score|, always include any BUY/SELL
@@ -190,6 +205,23 @@ export async function printSummary(): Promise<void> {
     // No trades file
   }
 
-  const msg = formatSummary({ cycle, portfolio, recentTrades: trades.slice(-5) });
+  // Read grid stats (optional — absent if grid never initialized)
+  let gridStats: GridSummaryStats | undefined;
+  try {
+    const gridRaw = JSON.parse(await readFile(join(base, "grid-portfolio.json"), "utf-8"));
+    const grids = gridRaw.grids as Array<{ allocation: number; stats: { totalPnlUsd: number; todayPnlUsd: number; todayFills: number; totalRoundTrips: number } }>;
+    gridStats = {
+      totalPnlUsd: grids.reduce((s, g) => s + g.stats.totalPnlUsd, 0),
+      todayPnlUsd: grids.reduce((s, g) => s + g.stats.todayPnlUsd, 0),
+      todayFills: grids.reduce((s, g) => s + g.stats.todayFills, 0),
+      totalRoundTrips: grids.reduce((s, g) => s + g.stats.totalRoundTrips, 0),
+      allocation: grids.reduce((s, g) => s + g.allocation, 0),
+      paused: gridRaw.paused ?? false,
+    };
+  } catch {
+    // Grid not initialized — omit from summary
+  }
+
+  const msg = formatSummary({ cycle, portfolio, recentTrades: trades.slice(-5), gridStats });
   process.stdout.write(msg + "\n");
 }
