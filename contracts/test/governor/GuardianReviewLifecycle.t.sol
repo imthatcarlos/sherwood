@@ -100,11 +100,17 @@ contract GuardianReviewLifecycleTest is Test {
         vm.prank(owner);
         vault.registerAgent(agentNftId, agent);
 
-        // Governor
+        // Governor + registry — circular init dep resolved by predicting the
+        // registry proxy via `vm.computeCreateAddress`: govImpl (+0),
+        // govProxy (+1), regImpl (+2), regProxy (+3).
+        uint256 baseNonce = vm.getNonce(address(this));
+        address predictedRegistryProxy = vm.computeCreateAddress(address(this), baseNonce + 3);
+
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: owner,
                     votingPeriod: VOTING_PERIOD,
                     executionWindow: EXECUTION_WINDOW,
@@ -118,14 +124,17 @@ contract GuardianReviewLifecycleTest is Test {
                     parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
                     protocolFeeRecipient: address(0)
-                }))
+                }),
+                predictedRegistryProxy
+            )
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 
         vm.prank(owner);
         governor.addVault(address(vault));
 
-        // Registry (factoryEoa = test contract so we can bind owner stake)
+        // Registry (factoryEoa = test contract so we can bind owner stake).
+        // Must land at predictedRegistryProxy — `require` below catches nonce drift.
         GuardianRegistry regImpl = new GuardianRegistry();
         bytes memory regInit = abi.encodeCall(
             GuardianRegistry.initialize,
@@ -143,10 +152,7 @@ contract GuardianReviewLifecycleTest is Test {
             )
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(regImpl), regInit)));
-
-        // Wire registry into governor via Task 25's one-time initializer.
-        vm.prank(owner);
-        governor.initializeGuardianRegistry(address(registry));
+        require(address(registry) == predictedRegistryProxy, "registry addr mismatch");
 
         // LPs
         usdc.mint(lp1, 100_000e6);

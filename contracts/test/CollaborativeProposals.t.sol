@@ -10,6 +10,7 @@ import {BatchExecutorLib} from "../src/BatchExecutorLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {MockAgentRegistry} from "./mocks/MockAgentRegistry.sol";
+import {MockRegistryMinimal} from "./mocks/MockRegistryMinimal.sol";
 
 contract CollaborativeProposalsTest is Test {
     SyndicateGovernor public governor;
@@ -17,6 +18,7 @@ contract CollaborativeProposalsTest is Test {
     BatchExecutorLib public executorLib;
     ERC20Mock public usdc;
     MockAgentRegistry public agentRegistry;
+    MockRegistryMinimal public guardianRegistry;
 
     address public owner = makeAddr("owner");
     address public leadAgent = makeAddr("leadAgent");
@@ -47,6 +49,7 @@ contract CollaborativeProposalsTest is Test {
         targetToken = new ERC20Mock("Target", "TGT", 18);
         executorLib = new BatchExecutorLib();
         agentRegistry = new MockAgentRegistry();
+        guardianRegistry = new MockRegistryMinimal();
 
         leadNftId = agentRegistry.mint(leadAgent);
         coNftId1 = agentRegistry.mint(coAgent1);
@@ -56,7 +59,8 @@ contract CollaborativeProposalsTest is Test {
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: owner,
                     votingPeriod: VOTING_PERIOD,
                     executionWindow: EXECUTION_WINDOW,
@@ -70,7 +74,9 @@ contract CollaborativeProposalsTest is Test {
                     parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
                     protocolFeeRecipient: address(0)
-                }))
+                }),
+                address(guardianRegistry)
+            )
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 

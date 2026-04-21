@@ -88,10 +88,17 @@ contract OpenProposalCountTest is Test {
         vm.prank(owner);
         vault.registerAgent(agentNftId, agent);
 
+        // Governor + registry — circular init dep resolved by predicting the
+        // registry proxy via `vm.computeCreateAddress`: govImpl (+0),
+        // govProxy (+1), regImpl (+2), regProxy (+3).
+        uint256 baseNonce = vm.getNonce(address(this));
+        address predictedRegistryProxy = vm.computeCreateAddress(address(this), baseNonce + 3);
+
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: owner,
                     votingPeriod: VOTING_PERIOD,
                     executionWindow: EXECUTION_WINDOW,
@@ -105,7 +112,9 @@ contract OpenProposalCountTest is Test {
                     parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
                     protocolFeeRecipient: address(0)
-                }))
+                }),
+                predictedRegistryProxy
+            )
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 
@@ -129,9 +138,7 @@ contract OpenProposalCountTest is Test {
             )
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(regImpl), regInit)));
-
-        vm.prank(owner);
-        governor.initializeGuardianRegistry(address(registry));
+        require(address(registry) == predictedRegistryProxy, "registry addr mismatch");
 
         usdc.mint(lp1, 100_000e6);
         usdc.mint(lp2, 100_000e6);

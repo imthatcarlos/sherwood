@@ -47,11 +47,21 @@ contract DeployTestnet is ScriptBase {
         SyndicateVault vaultImpl = new SyndicateVault();
         console.log("Vault implementation:", address(vaultImpl));
 
-        // 3. Deploy SyndicateGovernor (UUPS proxy)
+        // 3. Deploy SyndicateGovernor (UUPS proxy). Governor init requires the
+        //    registry address, but the registry init requires the governor, so
+        //    we predict the registry proxy address via `vm.computeCreateAddress`:
+        //    govImpl (+0), govProxy (+1), registryImpl (+2), registryProxy (+3),
+        //    factoryImpl (+4), factoryProxy (+5). The registry is deployed right
+        //    after and `require`-checked to match.
+        uint256 baseNonce = vm.getNonce(deployer);
+        address predictedRegistryProxy = vm.computeCreateAddress(deployer, baseNonce + 3);
+        address predictedFactoryProxy = vm.computeCreateAddress(deployer, baseNonce + 5);
+
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInitData = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: deployer,
                     votingPeriod: 1 hours,
                     executionWindow: 1 days,
@@ -65,19 +75,17 @@ contract DeployTestnet is ScriptBase {
                     parameterChangeDelay: 1 days,
                     protocolFeeBps: 200,
                     protocolFeeRecipient: deployer
-                }))
+                }),
+                predictedRegistryProxy
+            )
         );
         address governorProxy = address(new ERC1967Proxy(address(govImpl), govInitData));
         console.log("SyndicateGovernor:", governorProxy);
 
-        // 4. Deploy GuardianRegistry with predicted factory address. Circular
-        //    dep between factory↔registry is resolved by `vm.computeCreateAddress`:
-        //    the next 3 `new X()` calls bump deployer nonce by 3 (registry impl,
-        //    registry proxy, factory impl), so the factory proxy lands at
-        //    nonce+3. If WOOD isn't deployed yet on testnet, the registry is
-        //    initialized with address(0x1) as a placeholder — override via
-        //    `WOOD_TOKEN` env var when real WOOD exists.
-        address predictedFactoryProxy = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 3);
+        // 4. Deploy GuardianRegistry at the predicted address. If WOOD isn't
+        //    deployed yet on testnet, the registry is initialized with
+        //    address(0x1) as a placeholder — override via `WOOD_TOKEN` env var
+        //    when real WOOD exists.
         GuardianRegistry registryImpl = new GuardianRegistry();
         address woodToken = vm.envOr("WOOD_TOKEN", address(0x1));
         bytes memory regInitData = abi.encodeCall(
@@ -96,6 +104,7 @@ contract DeployTestnet is ScriptBase {
             )
         );
         address registryProxy = address(new ERC1967Proxy(address(registryImpl), regInitData));
+        require(registryProxy == predictedRegistryProxy, "registry addr mismatch");
         console.log("GuardianRegistry:", registryProxy);
 
         // 5. Deploy SyndicateFactory (UUPS proxy). Must match predictedFactoryProxy.
@@ -116,9 +125,6 @@ contract DeployTestnet is ScriptBase {
         SyndicateFactory factory = SyndicateFactory(address(new ERC1967Proxy(address(factoryImpl), factoryInitData)));
         require(address(factory) == predictedFactoryProxy, "factory addr mismatch");
         console.log("SyndicateFactory:", address(factory));
-
-        // 6. Wire registry into governor (one-shot setter).
-        SyndicateGovernor(governorProxy).initializeGuardianRegistry(registryProxy);
 
         vm.stopBroadcast();
 

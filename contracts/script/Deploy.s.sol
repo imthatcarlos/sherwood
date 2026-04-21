@@ -113,21 +113,27 @@ contract DeploySherwood is ScriptBase {
         d.vaultImpl = c3.deploy(SALT_VAULT_IMPL, abi.encodePacked(type(SyndicateVault).creationCode));
         console.log("VaultImpl:", d.vaultImpl);
 
-        // 3. SyndicateGovernor implementation + proxy (registry wired post-deploy)
+        // 3. SyndicateGovernor implementation + proxy. The registry is required
+        //    at init-time, but the registry itself needs the governor address,
+        //    so we break the circular dep with CREATE3 `addressOf(salt)` —
+        //    predict the registry proxy address, pass it to governor init, then
+        //    deploy the registry at that address pointing at the real governor.
+        address predictedRegistryProxy = c3.addressOf(SALT_REGISTRY_PROXY);
+        console.log("Predicted RegistryProxy:", predictedRegistryProxy);
         address govImpl = c3.deploy(SALT_GOVERNOR_IMPL, abi.encodePacked(type(SyndicateGovernor).creationCode));
-        d.governorProxy = _deployGovernorProxy(c3, govImpl, d.deployer, cfg);
+        d.governorProxy = _deployGovernorProxy(c3, govImpl, d.deployer, predictedRegistryProxy, cfg);
         console.log("GovernorProxy:", d.governorProxy);
 
-        // 4. GuardianRegistry impl + proxy. Circular dep resolved by predicting
-        //    the factory proxy address via CREATE3 `addressOf(salt)` — same
-        //    computation the Create3Factory uses at deploy time, so the
-        //    prediction is exact regardless of deployer nonce.
+        // 4. GuardianRegistry impl + proxy. Factory address also predicted via
+        //    CREATE3 — same computation the Create3Factory uses at deploy time,
+        //    so the prediction is exact regardless of deployer nonce.
         address predictedFactoryProxy = c3.addressOf(SALT_FACTORY_PROXY);
         console.log("Predicted FactoryProxy:", predictedFactoryProxy);
         address registryImpl = c3.deploy(SALT_REGISTRY_IMPL, abi.encodePacked(type(GuardianRegistry).creationCode));
         d.registryProxy =
             _deployRegistryProxy(c3, registryImpl, d.deployer, d.governorProxy, predictedFactoryProxy, cfg);
         console.log("GuardianRegistryProxy:", d.registryProxy);
+        require(d.registryProxy == predictedRegistryProxy, "registry addr mismatch");
 
         // 5. SyndicateFactory impl + proxy — now with real registry address.
         address factoryImpl = c3.deploy(SALT_FACTORY_IMPL, abi.encodePacked(type(SyndicateFactory).creationCode));
@@ -135,15 +141,11 @@ contract DeploySherwood is ScriptBase {
         console.log("FactoryProxy:", d.factoryProxy);
         require(d.factoryProxy == predictedFactoryProxy, "factory addr mismatch");
 
-        // 6. Wire registry into governor (one-shot, owner-only).
-        SyndicateGovernor(d.governorProxy).initializeGuardianRegistry(d.registryProxy);
-        console.log("Governor.initializeGuardianRegistry done");
-
-        // 7. Register factory on governor
+        // 6. Register factory on governor
         SyndicateGovernor(d.governorProxy).setFactory(d.factoryProxy);
         console.log("Governor.setFactory done");
 
-        // 8. Seed slash appeal reserve + epoch 0 rewards (best-effort; skipped
+        // 7. Seed slash appeal reserve + epoch 0 rewards (best-effort; skipped
         //    on zero amounts so testnets don't need a WOOD balance).
         _seedRegistry(d.deployer, d.registryProxy, cfg);
 
@@ -172,13 +174,17 @@ contract DeploySherwood is ScriptBase {
         console.log("Next: forge script script/DeployTemplates.s.sol --rpc-url <chain> --broadcast");
     }
 
-    function _deployGovernorProxy(Create3Factory c3, address govImpl, address deployer, Config memory cfg)
-        internal
-        returns (address)
-    {
+    function _deployGovernorProxy(
+        Create3Factory c3,
+        address govImpl,
+        address deployer,
+        address registryProxy,
+        Config memory cfg
+    ) internal returns (address) {
         bytes memory initData = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: deployer,
                     votingPeriod: 1 days,
                     executionWindow: 1 days,
@@ -192,7 +198,9 @@ contract DeploySherwood is ScriptBase {
                     parameterChangeDelay: 3 days,
                     protocolFeeBps: cfg.protocolFeeBps,
                     protocolFeeRecipient: deployer
-                }))
+                }),
+                registryProxy
+            )
         );
         return c3.deploy(
             SALT_GOVERNOR_PROXY, abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(govImpl, initData))
@@ -345,7 +353,7 @@ contract DeploySherwood is ScriptBase {
         _checkUint("registry.coolDownPeriod", reg.coolDownPeriod(), DEFAULT_COOLDOWN);
         _checkUint("registry.reviewPeriod", reg.reviewPeriod(), DEFAULT_REVIEW_PERIOD);
         _checkUint("registry.blockQuorumBps", reg.blockQuorumBps(), DEFAULT_BLOCK_QUORUM_BPS);
-        // Governor now knows about the registry (set via initializeGuardianRegistry).
+        // Governor knows about the registry (set at init-time).
         _checkAddr("gov.guardianRegistry", SyndicateGovernor(governorAddr).guardianRegistry(), registryAddr);
     }
 

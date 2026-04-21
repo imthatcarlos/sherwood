@@ -10,6 +10,7 @@ import {BatchExecutorLib} from "../src/BatchExecutorLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {MockAgentRegistry} from "./mocks/MockAgentRegistry.sol";
+import {MockRegistryMinimal} from "./mocks/MockRegistryMinimal.sol";
 
 contract SyndicateGovernorTest is Test {
     SyndicateGovernor public governor;
@@ -17,6 +18,7 @@ contract SyndicateGovernorTest is Test {
     BatchExecutorLib public executorLib;
     ERC20Mock public usdc;
     MockAgentRegistry public agentRegistry;
+    MockRegistryMinimal public guardianRegistry;
 
     address public owner = makeAddr("owner");
     address public agent = makeAddr("agent");
@@ -42,6 +44,7 @@ contract SyndicateGovernorTest is Test {
         targetToken = new ERC20Mock("Target", "TGT", 18);
         executorLib = new BatchExecutorLib();
         agentRegistry = new MockAgentRegistry();
+        guardianRegistry = new MockRegistryMinimal();
         agentNftId = agentRegistry.mint(agent);
 
         SyndicateVault vaultImpl = new SyndicateVault();
@@ -66,7 +69,8 @@ contract SyndicateGovernorTest is Test {
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: owner,
                     votingPeriod: VOTING_PERIOD,
                     executionWindow: EXECUTION_WINDOW,
@@ -80,7 +84,9 @@ contract SyndicateGovernorTest is Test {
                     parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 200,
                     protocolFeeRecipient: owner
-                }))
+                }),
+                address(guardianRegistry)
+            )
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 
@@ -827,7 +833,8 @@ contract SyndicateGovernorTest is Test {
         SyndicateGovernor govImpl2 = new SyndicateGovernor();
         bytes memory govInit2 = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: owner,
                     votingPeriod: VOTING_PERIOD,
                     executionWindow: EXECUTION_WINDOW,
@@ -841,7 +848,9 @@ contract SyndicateGovernorTest is Test {
                     parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
                     protocolFeeRecipient: address(0)
-                }))
+                }),
+                address(guardianRegistry)
+            )
         );
         SyndicateGovernor gov2 = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl2), govInit2)));
 
@@ -856,7 +865,8 @@ contract SyndicateGovernorTest is Test {
         SyndicateGovernor govImpl2 = new SyndicateGovernor();
         bytes memory govInit2 = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: owner,
                     votingPeriod: VOTING_PERIOD,
                     executionWindow: EXECUTION_WINDOW,
@@ -870,7 +880,9 @@ contract SyndicateGovernorTest is Test {
                     parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
                     protocolFeeRecipient: address(0)
-                }))
+                }),
+                address(guardianRegistry)
+            )
         );
         SyndicateGovernor gov2 = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl2), govInit2)));
 

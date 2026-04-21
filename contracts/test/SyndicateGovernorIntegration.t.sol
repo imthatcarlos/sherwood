@@ -12,6 +12,7 @@ import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {MockAgentRegistry} from "./mocks/MockAgentRegistry.sol";
 import {MockMToken} from "./mocks/MockMToken.sol";
 import {MockComptroller} from "./mocks/MockComptroller.sol";
+import {MockRegistryMinimal} from "./mocks/MockRegistryMinimal.sol";
 
 /**
  * @title SyndicateGovernorIntegrationTest
@@ -28,6 +29,7 @@ contract SyndicateGovernorIntegrationTest is Test {
     MockAgentRegistry public agentRegistry;
     MockMToken public mUsdc;
     MockComptroller public comptroller;
+    MockRegistryMinimal public guardianRegistry;
 
     address public owner = makeAddr("owner");
     address public agent = makeAddr("agent");
@@ -53,6 +55,7 @@ contract SyndicateGovernorIntegrationTest is Test {
         comptroller = new MockComptroller();
         executorLib = new BatchExecutorLib();
         agentRegistry = new MockAgentRegistry();
+        guardianRegistry = new MockRegistryMinimal();
         agentNftId = agentRegistry.mint(agent);
 
         SyndicateVault vaultImpl = new SyndicateVault();
@@ -77,7 +80,8 @@ contract SyndicateGovernorIntegrationTest is Test {
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: owner,
                     votingPeriod: VOTING_PERIOD,
                     executionWindow: EXECUTION_WINDOW,
@@ -91,7 +95,9 @@ contract SyndicateGovernorIntegrationTest is Test {
                     parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 200,
                     protocolFeeRecipient: owner
-                }))
+                }),
+                address(guardianRegistry)
+            )
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 

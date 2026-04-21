@@ -53,11 +53,20 @@ contract OwnerStakeAtCreationTest is Test {
         creatorAgentId = agentRegistry.mint(creator);
         newOwnerAgentId = agentRegistry.mint(newOwner);
 
+        // Governor + factory + registry triangle — circular init deps resolved
+        // by predicting proxy addresses via `vm.computeCreateAddress`.
+        // From this.nonce baseline: govImpl (+0), govProxy (+1), factoryImpl (+2),
+        // regImpl (+3), regProxy (+4), factoryProxy (+5).
+        uint256 baseNonce = vm.getNonce(address(this));
+        address predictedRegistryProxy = vm.computeCreateAddress(address(this), baseNonce + 4);
+        address predictedFactoryProxy = vm.computeCreateAddress(address(this), baseNonce + 5);
+
         // Governor
         SyndicateGovernor govImpl = new SyndicateGovernor();
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: owner,
                     votingPeriod: 1 days,
                     executionWindow: 1 days,
@@ -71,29 +80,22 @@ contract OwnerStakeAtCreationTest is Test {
                     parameterChangeDelay: 1 days,
                     protocolFeeBps: 0,
                     protocolFeeRecipient: address(0)
-                }))
+                }),
+                predictedRegistryProxy
+            )
         );
         governor = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl), govInit)));
 
-        // Factory (guardianRegistry set below after we deploy the registry)
+        // Factory + registry — registry needs factory address, factory needs
+        // registry address. Deploy in order matching the nonce plan above.
         SyndicateFactory factoryImpl = new SyndicateFactory();
-        // Predict registry address so we can wire it into factory.initialize.
-        // Cleaner: deploy registry first.
         GuardianRegistry regImpl = new GuardianRegistry();
-        bytes memory regInit; // assigned after factory proxy address known
-
-        // The registry needs the factory address, and the factory needs the
-        // registry address — circular. Deploy registry first with a tentative
-        // factory that we overwrite via upgrade, OR predict the factory address
-        // from deployer nonce. Simplest: deploy a registry whose `factory` is
-        // set to a predicted factory proxy address using `vm.computeCreateAddress`.
-        address factoryProxy = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
-        regInit = abi.encodeCall(
+        bytes memory regInit = abi.encodeCall(
             GuardianRegistry.initialize,
             (
                 owner,
                 address(governor),
-                factoryProxy,
+                predictedFactoryProxy,
                 address(wood),
                 MIN_GUARDIAN_STAKE,
                 MIN_OWNER_STAKE,
@@ -104,6 +106,7 @@ contract OwnerStakeAtCreationTest is Test {
             )
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(regImpl), regInit)));
+        require(address(registry) == predictedRegistryProxy, "registry address prediction mismatch");
 
         bytes memory factoryInit = abi.encodeCall(
             SyndicateFactory.initialize,
@@ -119,14 +122,11 @@ contract OwnerStakeAtCreationTest is Test {
                 }))
         );
         factory = SyndicateFactory(address(new ERC1967Proxy(address(factoryImpl), factoryInit)));
-        require(address(factory) == factoryProxy, "factory address prediction mismatch");
+        require(address(factory) == predictedFactoryProxy, "factory address prediction mismatch");
 
         // Hand the governor's addVault gate to the factory.
         vm.prank(owner);
         governor.setFactory(address(factory));
-        // Wire registry into governor via Task 25.
-        vm.prank(owner);
-        governor.initializeGuardianRegistry(address(registry));
 
         // Fund creator with WOOD so they can prepare owner stake.
         wood.mint(creator, 100_000e18);

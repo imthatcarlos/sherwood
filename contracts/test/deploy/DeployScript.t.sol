@@ -38,10 +38,19 @@ contract DeployScriptTest is Test {
 
         // Irrelevant pre-steps (executor, vault impl) for this test — skip to
         // the governor+registry+factory triangle.
+        //
+        // The governor init needs the registry address; the registry init needs
+        // the governor address. Resolve via CREATE3 `addressOf` prediction.
+        address predictedRegistryProxy = c3.addressOf(SALT_REGISTRY_PROXY);
+        assertTrue(predictedRegistryProxy != address(0));
+        address predictedFactoryProxy = c3.addressOf(SALT_FACTORY_PROXY);
+        assertTrue(predictedFactoryProxy != address(0));
+
         address govImpl = c3.deploy(SALT_GOVERNOR_IMPL, abi.encodePacked(type(SyndicateGovernor).creationCode));
         bytes memory govInit = abi.encodeCall(
             SyndicateGovernor.initialize,
-            (ISyndicateGovernor.InitParams({
+            (
+                ISyndicateGovernor.InitParams({
                     owner: deployer,
                     votingPeriod: 1 days,
                     executionWindow: 1 days,
@@ -55,19 +64,17 @@ contract DeployScriptTest is Test {
                     parameterChangeDelay: 3 days,
                     protocolFeeBps: 200,
                     protocolFeeRecipient: deployer
-                }))
+                }),
+                predictedRegistryProxy
+            )
         );
         address govProxy = c3.deploy(
             SALT_GOVERNOR_PROXY, abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(govImpl, govInit))
         );
 
-        // Predict the factory proxy BEFORE deploying the registry.
-        address predictedFactoryProxy = c3.addressOf(SALT_FACTORY_PROXY);
-        assertTrue(predictedFactoryProxy != address(0));
-
-        // Deploy registry with predicted factory. If CREATE3 prediction is off,
-        // the factory-bound invariants (e.g. `bindOwnerStake` onlyFactory) would
-        // silently point at the wrong address.
+        // Deploy registry at the predicted address. If CREATE3 prediction is
+        // off, the factory-bound invariants (e.g. `bindOwnerStake` onlyFactory)
+        // would silently point at the wrong address.
         address registryImpl = c3.deploy(SALT_REGISTRY_IMPL, abi.encodePacked(type(GuardianRegistry).creationCode));
         bytes memory regInit = abi.encodeCall(
             GuardianRegistry.initialize,
@@ -76,6 +83,7 @@ contract DeployScriptTest is Test {
         address registryProxy = c3.deploy(
             SALT_REGISTRY_PROXY, abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(registryImpl, regInit))
         );
+        assertEq(registryProxy, predictedRegistryProxy, "CREATE3 registry prediction mismatch");
 
         // Now deploy the factory and assert its proxy address matches the
         // prediction. Use a tiny vault impl / executor stub — not validated here.
@@ -101,8 +109,7 @@ contract DeployScriptTest is Test {
 
         assertEq(factoryProxy, predictedFactoryProxy, "CREATE3 factory prediction mismatch");
 
-        // Post-wire the governor (one-shot).
-        SyndicateGovernor(govProxy).initializeGuardianRegistry(registryProxy);
+        // Governor was wired to the registry at init-time via CREATE3 prediction.
         assertEq(SyndicateGovernor(govProxy).guardianRegistry(), registryProxy);
 
         // Registry sees the real factory (not deployer placeholder).

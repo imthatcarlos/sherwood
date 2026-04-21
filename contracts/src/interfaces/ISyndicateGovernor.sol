@@ -126,7 +126,6 @@ interface ISyndicateGovernor {
     error NotInGuardianReview();
     error EmergencySettleNotReady();
     error RegistryNotSet();
-    error RegistryMismatch();
 
     // ── Collaborative proposal errors ──
     error NotCoProposer();

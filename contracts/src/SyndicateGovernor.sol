@@ -98,7 +98,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     /// @notice Recipient of protocol fees
     address private _protocolFeeRecipient;
 
-    /// @notice Guardian registry (wired in Task 25). Zero until then; emergency fns revert.
+    /// @notice Guardian registry. Set in `initialize`; required (non-zero).
     address internal _guardianRegistry;
 
     // ── Guardian-review storage (Task 24 / PR #229) ──
@@ -126,17 +126,9 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         _disableInitializers();
     }
 
-    /// @notice One-time setter for the guardian registry (Task 25).
-    /// @dev Kept as a second-stage initializer to avoid breaking the existing
-    ///      `initialize(InitParams)` ABI on testnets. Callable once by owner.
-    function initializeGuardianRegistry(address guardianRegistry_) external onlyOwner {
-        if (guardianRegistry_ == address(0)) revert ZeroAddress();
-        if (_guardianRegistry != address(0)) revert RegistryMismatch();
-        _guardianRegistry = guardianRegistry_;
-    }
-
-    function initialize(InitParams memory p) external initializer {
+    function initialize(InitParams memory p, address guardianRegistry_) external initializer {
         if (p.owner == address(0)) revert ZeroAddress();
+        if (guardianRegistry_ == address(0)) revert ZeroAddress();
         if (
             p.minStrategyDuration < ABSOLUTE_MIN_STRATEGY_DURATION
                 || p.maxStrategyDuration > ABSOLUTE_MAX_STRATEGY_DURATION
@@ -174,6 +166,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         _parameterChangeDelay = p.parameterChangeDelay;
         _protocolFeeBps = p.protocolFeeBps;
         _protocolFeeRecipient = p.protocolFeeRecipient;
+        _guardianRegistry = guardianRegistry_;
         _reentrancyStatus = _NOT_ENTERED;
     }
 
