@@ -244,6 +244,18 @@ contract SyndicateVault is
     // ==================== ADMIN ====================
 
     /// @inheritdoc ISyndicateVault
+    /// @dev V-M6: ERC-8004 NFT ownership is verified **at registration time
+    ///      only**. If the `agentId` NFT is subsequently transferred to a
+    ///      different wallet, the registered `agentAddress` retains its
+    ///      privileges on this vault until the owner explicitly calls
+    ///      `removeAgent`. This is an intentional trade-off: re-querying NFT
+    ///      ownership on every execution would add a per-call external view to
+    ///      the hot path, and the ERC-8004 registry is an external dependency
+    ///      whose operational posture (upgrade cadence, pause semantics) the
+    ///      vault should not hard-couple to. Off-chain reputation / guardian
+    ///      systems should monitor NFT transfers and trigger `removeAgent` via
+    ///      the owner when an identity moves. See CLAUDE.md "Agent Identity
+    ///      (ERC-8004)" for the full model.
     function registerAgent(uint256 agentId, address agentAddress) external onlyOwner {
         if (agentAddress == address(0)) revert ZeroAddress();
         if (_agents[agentAddress].active) revert AgentAlreadyRegistered();
