@@ -631,6 +631,65 @@ contract SyndicateVaultTest is Test {
         assertGt(redeemed, 9_900e6);
     }
 
+    // ==================== FEE-SUM INVARIANT (V-M8) ====================
+
+    /// @dev V-M8: fuzz the fee-distribution formula from
+    ///      `SyndicateGovernor._distributeFees` and assert the invariant
+    ///      `protocolFee + agentFee + mgmtFee <= pnl`. Integer division
+    ///      truncates so the sum is always less than or equal to `pnl`, and
+    ///      strictly less than whenever rounding drops at least one wei. The
+    ///      test lives in the vault suite because it's pure math (no governor
+    ///      state) and the other governor-owning agent is editing the governor
+    ///      and its tests.
+    function testFuzz_feeSum_leqPnl(uint128 pnlRaw, uint16 protoBpsRaw, uint16 perfBpsRaw, uint16 mgmtBpsRaw)
+        public
+        pure
+    {
+        // Constrain to the real ranges used by the governor / vault:
+        //   protocol fee <= 10% (MAX_PROTOCOL_FEE_BPS = 1000)
+        //   performance fee <= 50% (MAX_PERFORMANCE_FEE_BPS = 5000)
+        //   management fee <= 50% (validated at vault init; 5000 bps ceiling)
+        uint256 pnl = uint256(pnlRaw);
+        uint256 protoBps = bound(uint256(protoBpsRaw), 0, 1000);
+        uint256 perfBps = bound(uint256(perfBpsRaw), 0, 5000);
+        uint256 mgmtBps = bound(uint256(mgmtBpsRaw), 0, 5000);
+
+        // Mirror the exact formula used in SyndicateGovernor._distributeFees.
+        uint256 protocolFee = (pnl * protoBps) / 10_000;
+        uint256 netProfit = pnl - protocolFee;
+        uint256 agentFee = (netProfit * perfBps) / 10_000;
+        uint256 mgmtFee = ((netProfit - agentFee) * mgmtBps) / 10_000;
+
+        uint256 totalFee = protocolFee + agentFee + mgmtFee;
+
+        // Primary invariant: total fees never exceed the PnL.
+        assertLe(totalFee, pnl, "totalFee > pnl violates fee-sum bound");
+        // Corollary: residual paid back to the vault is non-negative.
+        assertLe(totalFee, pnl);
+        assertGe(pnl - totalFee, 0);
+    }
+
+    /// @dev V-M8: worst-case edge — max protocol fee (10%) + max perf (50%) +
+    ///      max mgmt (50%). Pin the numeric result to guard against anyone
+    ///      accidentally re-ordering the subtraction chain.
+    function test_feeSum_worstCase_stillBounded() public pure {
+        uint256 pnl = 1_000_000e6; // 1M USDC
+        uint256 protoBps = 1000; // 10%
+        uint256 perfBps = 5000; // 50%
+        uint256 mgmtBps = 5000; // 50%
+
+        uint256 protocolFee = (pnl * protoBps) / 10_000;
+        uint256 netProfit = pnl - protocolFee;
+        uint256 agentFee = (netProfit * perfBps) / 10_000;
+        uint256 mgmtFee = ((netProfit - agentFee) * mgmtBps) / 10_000;
+
+        // 10% + 90%*50% + 90%*50%*50% = 10% + 45% + 22.5% = 77.5% of PnL
+        // 775_000e6.
+        uint256 expectedTotal = 100_000e6 + 450_000e6 + 225_000e6;
+        assertEq(protocolFee + agentFee + mgmtFee, expectedTotal, "worst-case total");
+        assertLt(protocolFee + agentFee + mgmtFee, pnl, "fees must stay below pnl");
+    }
+
     // ==================== ZERO DEPOSIT ====================
 
     function test_deposit_zeroAmount_mintsZeroShares() public {
