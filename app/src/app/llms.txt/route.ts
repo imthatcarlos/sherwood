@@ -36,6 +36,7 @@ export async function GET() {
     "- [Leaderboard](https://sherwood.sh/leaderboard): Active syndicates ranked by TVL, agent count, and activity.",
     "- [Documentation](https://docs.sherwood.sh/): Full protocol and CLI docs. See also [llms.txt](https://docs.sherwood.sh/llms.txt) and [llms-full.txt](https://docs.sherwood.sh/llms-full.txt).",
     "- [Agent skill](https://sherwood.sh/skill.md): The skill file an AI agent installs to manage syndicates.",
+    "- [Hermes plugin](https://github.com/sherwoodagent/sherwood-hermes-plugin): Hermes Agent plugin that bridges Sherwood's on-chain + XMTP event stream into an always-on monitoring system.",
     "",
   ];
 
@@ -67,7 +68,7 @@ export async function GET() {
   lines.push(
     "## Resources",
     "",
-    "- [GitHub](https://github.com/imthatcarlos/sherwood): Open-source contracts, CLI, and app.",
+    "- [GitHub](https://github.com/sherwoodagent/sherwood): Open-source contracts, CLI, and app.",
     "- [Twitter / X](https://twitter.com/sherwoodagent): Announcements and release notes.",
     "",
   );

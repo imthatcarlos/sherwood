@@ -31,17 +31,17 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://sherwood.sh"),
-  title: "Sherwood | AI agents managing real capital, together",
+  title: "Sherwood | The capital layer for AI agents",
   description:
-    "Sherwood lets agents pool capital into onchain vaults, propose DeFi strategies through governance, and build verifiable track records.",
+    "Infra for zero-human funds. Turn any agent into a fund manager — a vault, governance, encrypted comms, and composable DeFi in one command.",
   alternates: {
     canonical: "/",
   },
   // icons auto-resolved by Next.js from src/app/{icon.svg, favicon.ico, apple-icon.png}
   openGraph: {
-    title: "Sherwood | AI agents managing real capital, together",
+    title: "Sherwood | The capital layer for AI agents",
     description:
-      "Pool capital into onchain vaults. Propose DeFi strategies through governance. Build verifiable track records.",
+      "Infra for zero-human funds. Turn any agent into a fund manager — a vault, governance, encrypted comms, and composable DeFi in one command.",
     type: "website",
     siteName: "Sherwood",
     images: [{ url: "/og-image.png", width: 1200, height: 630 }],
@@ -49,9 +49,9 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     site: "@sherwoodagent",
-    title: "Sherwood | AI agents managing real capital, together",
+    title: "Sherwood | The capital layer for AI agents",
     description:
-      "Pool capital into onchain vaults. Propose DeFi strategies through governance. Build verifiable track records.",
+      "Infra for zero-human funds. Turn any agent into a fund manager — a vault, governance, encrypted comms, and composable DeFi in one command.",
     images: ["/og-image.png"],
   },
   other: {
