@@ -324,7 +324,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function vote(uint256 proposalId, VoteType support) external {
+    function vote(uint256 proposalId, VoteType support) external nonReentrant {
         StrategyProposal storage proposal = _proposals[proposalId];
         if (proposal.id == 0) revert ProposalNotFound();
         if (_resolveState(proposal) != ProposalState.Pending) revert NotWithinVotingPeriod();
@@ -405,7 +405,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     // unstick / emergencySettleWithCalls / cancelEmergencySettle / finalizeEmergencySettle.
 
     /// @inheritdoc ISyndicateGovernor
-    function cancelProposal(uint256 proposalId) external {
+    function cancelProposal(uint256 proposalId) external nonReentrant {
         StrategyProposal storage proposal = _proposals[proposalId];
         if (msg.sender != proposal.proposer) revert NotProposer();
         ProposalState s = _resolveState(proposal);
@@ -424,7 +424,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     /// @dev Narrowed to Draft/Pending only (Task 25) — once a proposal reaches
     ///      GuardianReview or later, the guardian cohort and execution window
     ///      drive resolution and the owner loses unilateral cancel authority.
-    function emergencyCancel(uint256 proposalId) external {
+    function emergencyCancel(uint256 proposalId) external nonReentrant {
         StrategyProposal storage proposal = _proposals[proposalId];
         if (msg.sender != OwnableUpgradeable(proposal.vault).owner()) revert NotVaultOwner();
         ProposalState s = _resolveState(proposal);
@@ -447,7 +447,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     /// @inheritdoc ISyndicateGovernor
     /// @dev Narrowed to Pending only (Task 25) — post-vote veto flows through
     ///      the guardian-review path rather than unilateral owner action.
-    function vetoProposal(uint256 proposalId) external {
+    function vetoProposal(uint256 proposalId) external nonReentrant {
         StrategyProposal storage proposal = _proposals[proposalId];
         if (msg.sender != OwnableUpgradeable(proposal.vault).owner()) revert NotVaultOwner();
         if (_resolveState(proposal) != ProposalState.Pending) revert ProposalNotCancellable();
