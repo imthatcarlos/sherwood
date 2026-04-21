@@ -120,6 +120,12 @@ interface ISyndicateGovernor {
     error StrategyDurationNotElapsed();
     error InvalidProtocolFeeBps();
     error InvalidProtocolFeeRecipient();
+    /// @notice G-M1: Revert if a vault already has a non-terminal proposal
+    ///         (Draft / Pending / GuardianReview / Approved / Executed) when
+    ///         a new propose() or approveCollaboration Draft->Pending is
+    ///         attempted. Prevents duplicate lifecycles that would race the
+    ///         same vault state.
+    error VaultHasOpenProposal();
 
     // ── Guardian-review emergency settle errors (Task 24) ──
     error OwnerBondInsufficient();

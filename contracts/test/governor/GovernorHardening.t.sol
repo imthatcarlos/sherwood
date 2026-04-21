@@ -373,4 +373,62 @@ contract GovernorHardeningTest is Test {
         vm.expectRevert(ISyndicateGovernor.ProposalNotCancellable.selector);
         governor.emergencyCancel(proposalId);
     }
+
+    // ==================== G-M1 — propose blocks on open proposal ====================
+
+    /// @notice G-M1: `propose` must revert when the vault already has a
+    ///         non-terminal proposal bound to it (here: Pending). Prevents
+    ///         duplicate lifecycles racing the same vault state.
+    function test_propose_revertsIfVaultHasPending() public {
+        _depositLps();
+        // First proposal -> Pending, bumps openProposalCount[vault] to 1.
+        _createSoloPending();
+
+        // Second propose from a different agent must now revert.
+        vm.prank(co1);
+        vm.expectRevert(ISyndicateGovernor.VaultHasOpenProposal.selector);
+        governor.propose(
+            address(vault),
+            "ipfs://dup",
+            2000,
+            7 days,
+            _execCalls(),
+            _settleCalls(),
+            new ISyndicateGovernor.CoProposer[](0)
+        );
+    }
+
+    /// @notice G-M1: `approveCollaboration` must revert the Draft -> Pending
+    ///         transition if the vault has another non-terminal proposal.
+    ///         The Draft itself stays alive so it can re-transition later.
+    function test_approveCollaboration_revertsIfVaultHasPending() public {
+        _depositLps();
+
+        // Stage a Draft (lead + 1 co-prop) BEFORE the blocking Pending exists.
+        // Draft doesn't bump openProposalCount.
+        ISyndicateGovernor.CoProposer[] memory cps = new ISyndicateGovernor.CoProposer[](1);
+        cps[0] = ISyndicateGovernor.CoProposer({agent: co1, splitBps: 3000});
+        vm.prank(leadAgent);
+        uint256 draftId =
+            governor.propose(address(vault), "ipfs://draft", 2000, 7 days, _execCalls(), _settleCalls(), cps);
+
+        // Create a separate solo Pending that bumps the counter to 1.
+        // Use a fresh agent — the lead is already attached to draftId.
+        vm.prank(co2);
+        governor.propose(
+            address(vault),
+            "ipfs://pending",
+            2000,
+            7 days,
+            _execCalls(),
+            _settleCalls(),
+            new ISyndicateGovernor.CoProposer[](0)
+        );
+
+        // The final co-prop approve would flip draftId to Pending, but the
+        // G-M1 guard blocks it.
+        vm.prank(co1);
+        vm.expectRevert(ISyndicateGovernor.VaultHasOpenProposal.selector);
+        governor.approveCollaboration(draftId);
+    }
 }

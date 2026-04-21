@@ -254,69 +254,47 @@ contract ActiveProposalPreservationTest is Test {
     // G-C2 / G-C3 regression tests
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice `cancelProposal(B)` by proposer must not touch `_activeProposal[V]`
-    ///         when V already has an unrelated Executed proposal A.
+    /// @notice G-M1 supersedes the original G-C2 scenario: creating proposal B
+    ///         on a vault that already has a non-terminal proposal A is now
+    ///         blocked at `propose` time with `VaultHasOpenProposal`. The
+    ///         `_activeProposal[V]` pointer therefore cannot be reached by any
+    ///         cancel path targeting a concurrent B. This test pins the new
+    ///         invariant: the attack surface is closed at the entry point.
     function test_cancelProposal_preservesActiveProposalOfDifferentPid() public {
         uint256 pidA = _driveToExecuted();
 
-        // B: create a fresh Pending proposal on the same vault while A is live.
-        uint256 pidB = _propose("ipfs://B");
-        assertEq(
-            uint256(governor.getProposal(pidB).state),
-            uint256(ISyndicateGovernor.ProposalState.Pending),
-            "B should start Pending"
-        );
-        assertTrue(pidA != pidB, "distinct proposal ids");
-
-        // Proposer (agent) cancels B during Pending.
+        // Attempt to create a second proposal on the same vault — must revert.
         vm.prank(agent);
-        governor.cancelProposal(pidB);
-        assertEq(
-            uint256(governor.getProposal(pidB).state),
-            uint256(ISyndicateGovernor.ProposalState.Cancelled),
-            "B must be Cancelled"
-        );
+        vm.expectRevert(ISyndicateGovernor.VaultHasOpenProposal.selector);
+        governor.propose(address(vault), "ipfs://B", 1000, 7 days, _execCalls(), _settleCalls(), _emptyCoProposers());
 
+        // A remains live, pointer untouched.
         _assertAStillLive(pidA);
     }
 
-    /// @notice `vetoProposal(B)` by vault owner must not touch `_activeProposal[V]`
-    ///         when V already has an unrelated Executed proposal A.
+    /// @notice G-M1 supersedes the original G-C3 scenario (vetoProposal path).
+    ///         The concurrent-proposal surface is closed before `vetoProposal`
+    ///         can be reached on a distinct B; pointer preservation follows
+    ///         trivially.
     function test_vetoProposal_preservesActiveProposalOfDifferentPid() public {
         uint256 pidA = _driveToExecuted();
 
-        uint256 pidB = _propose("ipfs://B");
-        assertTrue(pidA != pidB, "distinct proposal ids");
-
-        // Vault owner vetoes B during Pending.
-        vm.prank(owner);
-        governor.vetoProposal(pidB);
-        assertEq(
-            uint256(governor.getProposal(pidB).state),
-            uint256(ISyndicateGovernor.ProposalState.Rejected),
-            "B must be Rejected"
-        );
+        vm.prank(agent);
+        vm.expectRevert(ISyndicateGovernor.VaultHasOpenProposal.selector);
+        governor.propose(address(vault), "ipfs://B", 1000, 7 days, _execCalls(), _settleCalls(), _emptyCoProposers());
 
         _assertAStillLive(pidA);
     }
 
-    /// @notice `emergencyCancel(B)` by vault owner must not touch
-    ///         `_activeProposal[V]` when V already has an unrelated Executed
-    ///         proposal A.
+    /// @notice G-M1 supersedes the original G-C3 scenario (emergencyCancel path).
+    ///         Same reasoning as above — the concurrent-proposal surface is
+    ///         closed at `propose` time.
     function test_emergencyCancel_preservesActiveProposalOfDifferentPid() public {
         uint256 pidA = _driveToExecuted();
 
-        uint256 pidB = _propose("ipfs://B");
-        assertTrue(pidA != pidB, "distinct proposal ids");
-
-        // Vault owner emergency-cancels B during Pending.
-        vm.prank(owner);
-        governor.emergencyCancel(pidB);
-        assertEq(
-            uint256(governor.getProposal(pidB).state),
-            uint256(ISyndicateGovernor.ProposalState.Cancelled),
-            "B must be Cancelled"
-        );
+        vm.prank(agent);
+        vm.expectRevert(ISyndicateGovernor.VaultHasOpenProposal.selector);
+        governor.propose(address(vault), "ipfs://B", 1000, 7 days, _execCalls(), _settleCalls(), _emptyCoProposers());
 
         _assertAStillLive(pidA);
     }

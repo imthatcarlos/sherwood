@@ -436,11 +436,23 @@ contract SyndicateGovernorTest is Test {
         governor.executeProposal(proposalId);
     }
 
-    function test_executeProposal_strategyAlreadyActive_reverts() public {
+    /// @dev Post G-M1, `propose` reverts on `VaultHasOpenProposal` before
+    ///      reaching the `StrategyAlreadyActive` guard inside `executeProposal`.
+    ///      Belt-and-suspenders: the `executeProposal` guard stays as a safety
+    ///      net, but the new primary defense is the propose-time check.
+    function test_propose_blocksDuplicateWhileExecuted() public {
         _createAndExecuteProposal(1500, 7 days);
-        uint256 proposalId2 = _createApprovedProposal(1500, 7 days);
-        vm.expectRevert(ISyndicateGovernor.StrategyAlreadyActive.selector);
-        governor.executeProposal(proposalId2);
+        vm.prank(agent);
+        vm.expectRevert(ISyndicateGovernor.VaultHasOpenProposal.selector);
+        governor.propose(
+            address(vault),
+            "ipfs://dup",
+            1500,
+            7 days,
+            _simpleExecuteCalls(),
+            _simpleSettlementCalls(),
+            _emptyCoProposers()
+        );
     }
 
     function test_executeProposal_afterCooldown_succeeds() public {
@@ -777,25 +789,33 @@ contract SyndicateGovernorTest is Test {
 
     // ==================== COOLDOWN BLOCKS RE-EXECUTION ====================
 
+    /// @dev Post G-M1: proposal 2 cannot be created while proposal 1 is still
+    ///      Executed (openProposalCount != 0). After settling proposal 1, the
+    ///      cooldown window opens on the vault. We pin the COOLDOWN path by
+    ///      creating+approving proposal 2 purely via propose + votes + warp
+    ///      past ONLY the voting window (not the cooldown), then showing
+    ///      `executeProposal` reverts `CooldownNotElapsed`.
     function test_cooldown_blocksExecution() public {
-        // Execute proposal 1
+        // Execute proposal 1 then settle it. `_lastSettledAt[vault]` = now.
         uint256 proposalId1 = _createAndExecuteProposal(1500, 7 days);
-
-        // While proposal 1 is active, create proposal 2 and let it reach voting
-        uint256 proposalId2 = _createSimpleProposal(1500, 7 days);
-        // Vote to approve proposal 2
-        vm.prank(lp1);
-        governor.vote(proposalId2, ISyndicateGovernor.VoteType.For);
-        vm.prank(lp2);
-        governor.vote(proposalId2, ISyndicateGovernor.VoteType.For);
-        // Warp past voting period for proposal 2
-        vm.warp(block.timestamp + VOTING_PERIOD + 1);
-
-        // Settle proposal 1 (proposer can settle anytime)
         vm.prank(agent);
         governor.settleProposal(proposalId1);
+        uint256 settledAt = block.timestamp;
 
-        // Immediately try to execute proposal 2 — cooldown should block it
+        // Stretch cooldown to make it safely exceed voting window for this test.
+        vm.prank(owner);
+        governor.setCooldownPeriod(5 days);
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        vm.prank(owner);
+        governor.finalizeParameterChange(keccak256("cooldownPeriod"));
+
+        // Propose 2 + drive to Approved. Uses `_createApprovedProposal` which
+        // warps past voting period but NOT past the 5-day cooldown.
+        uint256 proposalId2 = _createApprovedProposal(1500, 7 days);
+
+        // Cooldown has not elapsed — execute must revert.
+        assertGt(governor.getCooldownEnd(address(vault)), block.timestamp, "still in cooldown");
+        assertLt(block.timestamp, settledAt + 5 days, "pre-cooldown sanity");
         vm.expectRevert(ISyndicateGovernor.CooldownNotElapsed.selector);
         governor.executeProposal(proposalId2);
     }

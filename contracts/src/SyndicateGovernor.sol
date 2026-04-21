@@ -267,6 +267,11 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     ) external returns (uint256 proposalId) {
         if (!_registeredVaults.contains(vault)) revert VaultNotRegistered();
         if (!ISyndicateVault(vault).isAgent(msg.sender)) revert NotRegisteredAgent();
+        // G-M1: block new proposals when the vault still has a non-terminal
+        // lifecycle bound to it (Pending / GuardianReview / Approved / Executed).
+        // Draft co-proposals do not count toward openProposalCount and are
+        // independently gated at their Draft -> Pending transition.
+        if (openProposalCount[vault] != 0) revert VaultHasOpenProposal();
         if (performanceFeeBps > _params.maxPerformanceFeeBps) revert PerformanceFeeTooHigh();
         if (strategyDuration > _params.maxStrategyDuration) revert StrategyDurationTooLong();
         if (strategyDuration < _params.minStrategyDuration) revert StrategyDurationTooShort();
@@ -494,6 +499,10 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         emit CollaborationApproved(proposalId, msg.sender);
 
         if (_approvedCount[proposalId] == _coProposers[proposalId].length) {
+            // G-M1: block Draft -> Pending if the vault already has another
+            // non-terminal proposal bound to it. The Draft can remain and
+            // re-attempt once the blocking proposal terminates.
+            if (openProposalCount[proposal.vault] != 0) revert VaultHasOpenProposal();
             // Transition to Pending -- voting begins
             uint256 reviewPeriod_ =
                 _guardianRegistry != address(0) ? IGuardianRegistry(_guardianRegistry).reviewPeriod() : 0;
