@@ -140,9 +140,12 @@ contract DeploySherwood is ScriptBase {
         console.log("FactoryProxy:", d.factoryProxy);
         require(d.factoryProxy == predictedFactoryProxy, "factory addr mismatch");
 
-        // 6. Register factory on governor
+        // 6. Queue factory registration on governor. G-M4: setFactory is
+        //    timelocked via the GovernorParameters dispatcher. The deployer
+        //    must run `FinalizeParams.s.sol` with the PARAM_FACTORY key after
+        //    `parameterChangeDelay` has elapsed to complete the wiring.
         SyndicateGovernor(d.governorProxy).setFactory(d.factoryProxy);
-        console.log("Governor.setFactory done");
+        console.log("Governor.setFactory queued -- finalize after parameterChangeDelay");
 
         // 7. Seed slash appeal reserve + epoch 0 rewards (best-effort; skipped
         //    on zero amounts so testnets don't need a WOOD balance).
@@ -310,7 +313,12 @@ contract DeploySherwood is ScriptBase {
         _checkUint("gov.maxStrategyDuration", p.maxStrategyDuration, maxDays * 1 days);
         _checkUint("gov.protocolFeeBps", governor.protocolFeeBps(), 200);
         _checkAddr("gov.protocolFeeRecipient", governor.protocolFeeRecipient(), deployer);
-        _checkAddr("gov.factory", governor.factory(), factoryAddr);
+        // G-M4: gov.factory is queued in step 6 and finalized out-of-band after
+        //       parameterChangeDelay. Validate the queued pending change
+        //       instead of the live value.
+        ISyndicateGovernor.PendingChange memory pendingFactory = governor.getPendingChange(governor.PARAM_FACTORY());
+        require(pendingFactory.exists, "gov.factory: queued change missing");
+        _checkAddr("gov.factory (pending)", address(uint160(pendingFactory.newValue)), factoryAddr);
     }
 
     function _validateFactory(

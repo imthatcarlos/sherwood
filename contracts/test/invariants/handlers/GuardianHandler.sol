@@ -163,7 +163,13 @@ contract GuardianHandler is Test {
     ///      uses a weaker-but-valid invariant: the set of currently-slashed
     ///      guardians at any blocked proposal is a superset of those who
     ///      were slashed in that round.
-    function _snapshotApprovers(uint256 /*pid*/) private view returns (address[] memory out) {
+    function _snapshotApprovers(
+        uint256 /*pid*/
+    )
+        private
+        view
+        returns (address[] memory out)
+    {
         // Return empty — the invariant test reformulates INV-2 in a way
         // that does not depend on exact approver identity. See
         // GuardianInvariantsTest.invariant_slashedGuardiansZero.

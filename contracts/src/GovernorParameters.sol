@@ -61,6 +61,7 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
     bytes32 public constant PARAM_MAX_CO_PROPOSERS = keccak256("maxCoProposers");
     bytes32 public constant PARAM_PROTOCOL_FEE_BPS = keccak256("protocolFeeBps");
     bytes32 public constant PARAM_PROTOCOL_FEE_RECIPIENT = keccak256("protocolFeeRecipient");
+    bytes32 public constant PARAM_FACTORY = keccak256("factory");
 
     // ── Virtual accessors (implemented by SyndicateGovernor) ──
 
@@ -70,81 +71,64 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
     function _getProtocolFeeRecipient() internal view virtual returns (address);
 
     // ── Parameter setters (queue-based) ──
+    //
+    // Queue-time validation has been dropped in favor of single-source-of-truth
+    // finalize-time validation in `_applyChange`. Rationale:
+    //   - Cross-parameter invariants (min vs max strategy duration, bps > 0 ⇒
+    //     recipient != 0) must be re-checked at finalize anyway, against live
+    //     state.
+    //   - Duplicating the simple-range checks costs ~50 bytes per setter at
+    //     runtime and only buys a slightly-earlier owner error message.
+    //   - The owner can always `cancelParameterChange(paramKey)` if they
+    //     notice the invalid value before the delay elapses.
 
     /// @inheritdoc ISyndicateGovernor
     function setVotingPeriod(uint256 newVotingPeriod) external onlyOwner {
-        _validateVotingPeriod(newVotingPeriod);
         _queueChange(PARAM_VOTING_PERIOD, newVotingPeriod);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setExecutionWindow(uint256 newExecutionWindow) external onlyOwner {
-        _validateExecutionWindow(newExecutionWindow);
         _queueChange(PARAM_EXECUTION_WINDOW, newExecutionWindow);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setVetoThresholdBps(uint256 newVetoThresholdBps) external onlyOwner {
-        _validateVetoThresholdBps(newVetoThresholdBps);
         _queueChange(PARAM_VETO_THRESHOLD_BPS, newVetoThresholdBps);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setMaxPerformanceFeeBps(uint256 newMaxPerformanceFeeBps) external onlyOwner {
-        _validateMaxPerformanceFeeBps(newMaxPerformanceFeeBps);
         _queueChange(PARAM_MAX_PERF_FEE, newMaxPerformanceFeeBps);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setMinStrategyDuration(uint256 newMinStrategyDuration) external onlyOwner {
-        GovernorParams storage params = _getParams();
-        if (
-            newMinStrategyDuration < ABSOLUTE_MIN_STRATEGY_DURATION
-                || newMinStrategyDuration > params.maxStrategyDuration
-        ) {
-            revert InvalidStrategyDurationBounds();
-        }
         _queueChange(PARAM_MIN_STRATEGY_DURATION, newMinStrategyDuration);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setMaxStrategyDuration(uint256 newMaxStrategyDuration) external onlyOwner {
-        GovernorParams storage params = _getParams();
-        if (
-            newMaxStrategyDuration > ABSOLUTE_MAX_STRATEGY_DURATION
-                || newMaxStrategyDuration < params.minStrategyDuration
-        ) {
-            revert InvalidStrategyDurationBounds();
-        }
         _queueChange(PARAM_MAX_STRATEGY_DURATION, newMaxStrategyDuration);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setCooldownPeriod(uint256 newCooldownPeriod) external onlyOwner {
-        _validateCooldownPeriod(newCooldownPeriod);
         _queueChange(PARAM_COOLDOWN, newCooldownPeriod);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setCollaborationWindow(uint256 newCollaborationWindow) external onlyOwner {
-        if (newCollaborationWindow < MIN_COLLABORATION_WINDOW || newCollaborationWindow > MAX_COLLABORATION_WINDOW) {
-            revert InvalidCollaborationWindow();
-        }
         _queueChange(PARAM_COLLAB_WINDOW, newCollaborationWindow);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setMaxCoProposers(uint256 newMaxCoProposers) external onlyOwner {
-        if (newMaxCoProposers == 0 || newMaxCoProposers > ABSOLUTE_MAX_CO_PROPOSERS) {
-            revert InvalidMaxCoProposers();
-        }
         _queueChange(PARAM_MAX_CO_PROPOSERS, newMaxCoProposers);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setProtocolFeeBps(uint256 newProtocolFeeBps) external onlyOwner {
-        if (newProtocolFeeBps > MAX_PROTOCOL_FEE_BPS) revert InvalidProtocolFeeBps();
-        if (newProtocolFeeBps > 0 && _getProtocolFeeRecipient() == address(0)) revert InvalidProtocolFeeRecipient();
         _queueChange(PARAM_PROTOCOL_FEE_BPS, newProtocolFeeBps);
     }
 
@@ -152,6 +136,16 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
     function setProtocolFeeRecipient(address newRecipient) external onlyOwner {
         if (newRecipient == address(0)) revert InvalidProtocolFeeRecipient();
         _queueChange(PARAM_PROTOCOL_FEE_RECIPIENT, uint256(uint160(newRecipient)));
+    }
+
+    /// @inheritdoc ISyndicateGovernor
+    /// @dev G-M4: factory rotation is now timelocked. Shares the same
+    ///      queue/finalize/cancel lifecycle as protocolFeeRecipient (address-
+    ///      as-uint160 encoding). Initial wiring at deploy time uses the same
+    ///      path; operators must plan for the `parameterChangeDelay` wait.
+    function setFactory(address newFactory) external onlyOwner {
+        if (newFactory == address(0)) revert ZeroAddress();
+        _queueChange(PARAM_FACTORY, uint256(uint160(newFactory)));
     }
 
     // ── Timelock functions ──
@@ -260,9 +254,13 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
             if (newValue > 0 && _getProtocolFeeRecipient() == address(0)) revert InvalidProtocolFeeRecipient();
             old = _applyProtocolFeeBpsChange(newValue);
         } else if (paramKey == PARAM_PROTOCOL_FEE_RECIPIENT) {
-            if (address(uint160(newValue)) == address(0)) revert InvalidProtocolFeeRecipient();
-            old = uint256(uint160(_getProtocolFeeRecipient()));
-            _setProtocolFeeRecipient(address(uint160(newValue)));
+            address newAddr = address(uint160(newValue));
+            if (newAddr == address(0)) revert InvalidProtocolFeeRecipient();
+            old = _applyAddressParam(paramKey, newAddr);
+        } else if (paramKey == PARAM_FACTORY) {
+            address newAddr = address(uint160(newValue));
+            if (newAddr == address(0)) revert ZeroAddress();
+            old = _applyAddressParam(paramKey, newAddr);
         } else {
             revert InvalidParameterKey();
         }
@@ -273,8 +271,12 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
     /// @dev Apply protocol fee change — implemented by SyndicateGovernor
     function _applyProtocolFeeBpsChange(uint256 newValue) internal virtual returns (uint256 old);
 
-    /// @dev Apply protocol fee recipient change — implemented by SyndicateGovernor
-    function _setProtocolFeeRecipient(address newRecipient) internal virtual;
+    /// @dev Apply an address-keyed parameter change — implemented by
+    ///      SyndicateGovernor. Unified for `PARAM_PROTOCOL_FEE_RECIPIENT` and
+    ///      `PARAM_FACTORY` to keep the dispatcher small. Returns the old
+    ///      address packed as `uint256(uint160(...))` for the uniform
+    ///      `ParameterChangeFinalized` event.
+    function _applyAddressParam(bytes32 paramKey, address newAddr) internal virtual returns (uint256 old);
 
     // ── Validation helpers ──
 

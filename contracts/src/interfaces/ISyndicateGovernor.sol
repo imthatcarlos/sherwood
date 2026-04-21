@@ -236,19 +236,14 @@ interface ISyndicateGovernor {
     // ── Guardian-review lifecycle events (Task 25) ──
     event GuardianReviewResolved(uint256 indexed proposalId, bool blocked);
 
-    event FactoryUpdated(address indexed factory);
     event VaultAdded(address indexed vault);
     event VaultRemoved(address indexed vault);
-
-    event VotingPeriodUpdated(uint256 oldValue, uint256 newValue);
-    event ExecutionWindowUpdated(uint256 oldValue, uint256 newValue);
-    event VetoThresholdBpsUpdated(uint256 oldValue, uint256 newValue);
-    event MaxPerformanceFeeBpsUpdated(uint256 oldValue, uint256 newValue);
-    event MinStrategyDurationUpdated(uint256 oldValue, uint256 newValue);
-    event MaxStrategyDurationUpdated(uint256 oldValue, uint256 newValue);
-    event CooldownPeriodUpdated(uint256 oldValue, uint256 newValue);
-    event ProtocolFeeBpsUpdated(uint256 oldValue, uint256 newValue);
-    event ProtocolFeeRecipientUpdated(address oldRecipient, address newRecipient);
+    // All parameter updates (votingPeriod / executionWindow / vetoThresholdBps /
+    // maxPerformanceFeeBps / minStrategyDuration / maxStrategyDuration /
+    // cooldownPeriod / collaborationWindow / maxCoProposers / protocolFeeBps /
+    // protocolFeeRecipient / factory) are surfaced via the uniform
+    // `ParameterChangeFinalized(paramKey, oldValue, newValue)` event. Off-chain
+    // consumers filter by `keccak256(name)` rather than per-param topics.
 
     // ── Collaborative proposal events ──
     event CollaborativeProposalCreated(
@@ -258,8 +253,6 @@ interface ISyndicateGovernor {
     event CollaborationRejected(uint256 indexed proposalId, address indexed agent);
     event CollaborationTransitionedToPending(uint256 indexed proposalId);
     event CollaborationDeadlineExpired(uint256 indexed proposalId);
-    event CollaborationWindowUpdated(uint256 oldValue, uint256 newValue);
-    event MaxCoProposersUpdated(uint256 oldValue, uint256 newValue);
 
     // ── Timelock events ──
     event ParameterChangeQueued(bytes32 indexed paramKey, uint256 newValue, uint256 effectiveAt);

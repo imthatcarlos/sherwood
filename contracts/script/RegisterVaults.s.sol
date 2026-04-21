@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {console} from "forge-std/Script.sol";
 import {SyndicateGovernor} from "../src/SyndicateGovernor.sol";
+import {ISyndicateGovernor} from "../src/interfaces/ISyndicateGovernor.sol";
 import {ScriptBase} from "./ScriptBase.sol";
 
 /**
@@ -33,9 +34,25 @@ contract RegisterVaults is ScriptBase {
 
         vm.startBroadcast();
 
-        // 1. Set factory on governor (so future createSyndicate auto-registers)
-        governor.setFactory(factoryAddr);
-        console.log("setFactory done");
+        // 1. Queue or finalize factory registration. G-M4: setFactory is now
+        //    timelocked via the governor parameter dispatcher. On first run
+        //    this queues the change; re-run after `parameterChangeDelay` to
+        //    hit the finalize branch and actually wire the factory.
+        bytes32 paramKey = governor.PARAM_FACTORY();
+        if (governor.factory() == factoryAddr) {
+            console.log("factory already wired; skipping queue");
+        } else {
+            ISyndicateGovernor.PendingChange memory pending = governor.getPendingChange(paramKey);
+            if (!pending.exists) {
+                governor.setFactory(factoryAddr);
+                console.log("setFactory queued; re-run after parameterChangeDelay to finalize");
+                vm.stopBroadcast();
+                return;
+            }
+            require(block.timestamp >= pending.effectiveAt, "parameterChangeDelay not elapsed");
+            governor.finalizeParameterChange(paramKey);
+            console.log("setFactory finalized");
+        }
 
         // 2. Register existing vaults
         for (uint256 i = 0; i < vaults.length; i++) {

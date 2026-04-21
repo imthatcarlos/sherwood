@@ -670,9 +670,16 @@ contract SyndicateGovernorTest is Test {
     }
 
     function test_setVotingPeriod_tooLow_reverts() public {
-        vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.InvalidVotingPeriod.selector);
+        // Queue-time validation was dropped to reclaim governor bytecode (see
+        // GovernorParameters header). Range bounds are re-checked at finalize
+        // time. The owner's escape hatch is `cancelParameterChange`.
+        vm.startPrank(owner);
         governor.setVotingPeriod(30 minutes);
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        bytes32 key = governor.PARAM_VOTING_PERIOD();
+        vm.expectRevert(ISyndicateGovernor.InvalidVotingPeriod.selector);
+        governor.finalizeParameterChange(key);
+        vm.stopPrank();
     }
 
     function test_setters_notOwner_reverts() public {
@@ -721,8 +728,13 @@ contract SyndicateGovernorTest is Test {
         // benign contract address.
         address newVault = address(executorLib);
         address factoryAddr = makeAddr("factory");
-        vm.prank(owner);
+        // G-M4: setFactory is now timelocked through the GovernorParameters
+        // dispatcher. Queue → warp → finalize.
+        vm.startPrank(owner);
         governor.setFactory(factoryAddr);
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        governor.finalizeParameterChange(governor.PARAM_FACTORY());
+        vm.stopPrank();
         vm.prank(factoryAddr);
         governor.addVault(newVault);
         assertTrue(governor.isRegisteredVault(newVault));
@@ -935,10 +947,17 @@ contract SyndicateGovernorTest is Test {
         );
         SyndicateGovernor gov2 = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl2), govInit2)));
 
-        // Try to set fee > 0 without a recipient — should revert
-        vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.InvalidProtocolFeeRecipient.selector);
+        // Try to finalize fee > 0 without a recipient — must revert. Queue-time
+        // validation was dropped to reclaim governor bytecode; the invariant
+        // (bps > 0 ⇒ recipient != 0) is re-checked at finalize time in
+        // `_applyChange` / `_applyProtocolFeeBpsChange`.
+        bytes32 bpsKey = gov2.PARAM_PROTOCOL_FEE_BPS();
+        vm.startPrank(owner);
         gov2.setProtocolFeeBps(200);
+        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        vm.expectRevert(ISyndicateGovernor.InvalidProtocolFeeRecipient.selector);
+        gov2.finalizeParameterChange(bpsKey);
+        vm.stopPrank();
     }
 
     function test_setProtocolFeeBps_zeroWithNoRecipient_succeeds() public {

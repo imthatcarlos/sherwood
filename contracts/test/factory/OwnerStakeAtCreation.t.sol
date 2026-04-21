@@ -124,8 +124,12 @@ contract OwnerStakeAtCreationTest is Test {
         require(address(factory) == predictedFactoryProxy, "factory address prediction mismatch");
 
         // Hand the governor's addVault gate to the factory.
-        vm.prank(owner);
+        // G-M4: setFactory is timelocked. Queue → warp → finalize.
+        vm.startPrank(owner);
         governor.setFactory(address(factory));
+        vm.warp(block.timestamp + 1 days + 1);
+        governor.finalizeParameterChange(governor.PARAM_FACTORY());
+        vm.stopPrank();
 
         // Fund creator with WOOD so they can prepare owner stake.
         wood.mint(creator, 100_000e18);

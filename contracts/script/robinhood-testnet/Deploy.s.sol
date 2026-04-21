@@ -109,9 +109,11 @@ contract DeployRobinhoodTestnet is ScriptBase {
         require(address(factory) == predictedFactoryProxy, "factory addr mismatch");
         console.log("SyndicateFactory:", address(factory));
 
-        // 6. Register factory on governor so addVault() works during createSyndicate
+        // 6. Queue factory registration on governor. G-M4: setFactory is
+        //    timelocked; deployer must run FinalizeParams after
+        //    parameterChangeDelay elapses to wire the factory.
         SyndicateGovernor(governorProxy).setFactory(address(factory));
-        console.log("Governor.setFactory:", address(factory));
+        console.log("Governor.setFactory queued:", address(factory));
 
         vm.stopBroadcast();
 

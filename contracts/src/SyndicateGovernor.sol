@@ -571,12 +571,6 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setFactory(address factory_) external onlyOwner {
-        factory = factory_;
-        emit FactoryUpdated(factory_);
-    }
-
-    /// @inheritdoc ISyndicateGovernor
     function removeVault(address vault) external onlyOwner {
         if (!_registeredVaults.remove(vault)) revert VaultNotRegistered();
         emit VaultRemoved(vault);
@@ -715,8 +709,19 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         _protocolFeeBps = newValue;
     }
 
-    function _setProtocolFeeRecipient(address newRecipient) internal override {
-        _protocolFeeRecipient = newRecipient;
+    /// @dev Unified address-parameter applier. Bytecode-optimized: one virtual
+    ///      dispatch serves both `protocolFeeRecipient` (G-C5) and `factory`
+    ///      (G-M4). The old-value packing mirrors `_applyChange`'s uniform
+    ///      `ParameterChangeFinalized(key, old, new)` event.
+    function _applyAddressParam(bytes32 paramKey, address newAddr) internal override returns (uint256 old) {
+        if (paramKey == PARAM_PROTOCOL_FEE_RECIPIENT) {
+            old = uint256(uint160(_protocolFeeRecipient));
+            _protocolFeeRecipient = newAddr;
+        } else {
+            // PARAM_FACTORY — key already validated by the dispatcher ladder.
+            old = uint256(uint160(factory));
+            factory = newAddr;
+        }
     }
 
     // ==================== INTERNAL ====================
