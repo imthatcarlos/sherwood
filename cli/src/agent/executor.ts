@@ -193,9 +193,11 @@ export class TradeExecutor {
     // winners breathe and controlling loss on stopped trades. Prior 1.5x was
     // too tight — 64% of trades hit the stop, many of which reversed after.
     const ATR_STOP_MULTIPLIER = 3.5;
-    const STOP_FLOOR = 0.03;   // minimum 3% (was 2%)
-    const STOP_CAP = 0.15;     // maximum 15% (was 10% — wider stops need more room)
-    const FALLBACK_STOP = 0.05; // when no ATR available (was 3%)
+    // Autoresearch finding: 4% stop outperformed 5% on our 11-day dataset
+    // (tighter than Nunchi's 5.5x ATR but our holding periods are shorter).
+    const STOP_FLOOR = 0.03;   // minimum 3%
+    const STOP_CAP = 0.12;     // maximum 12% (tightened from 15%)
+    const FALLBACK_STOP = 0.04; // when no ATR available
 
     const atrPct = (atr && currentPrice > 0 && !isNaN(atr))
       ? atr / currentPrice

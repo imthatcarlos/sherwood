@@ -692,7 +692,8 @@ export class RiskManager {
 
       // Time-based exit: close after 48h if PnL is flat (<1%)
       const holdingHours = (Date.now() - pos.entryTimestamp) / (1000 * 60 * 60);
-      if (holdingHours > 48 && pnlPercent < 0.01 && pnlPercent > -0.01) {
+      // Autoresearch: 96h outperformed 48h — let positions run longer.
+      if (holdingHours > 96 && pnlPercent < 0.01 && pnlPercent > -0.01) {
         toClose.push(updatedPos);
         reasons[pos.tokenId] = `Time stop: held ${(holdingHours / 24).toFixed(1)} days with only ${(pnlPercent * 100).toFixed(1)}% PnL`;
         continue;

@@ -538,7 +538,7 @@ export class Backtester {
         : 0.03; // fallback to 3% (floor) when no ATR data
       const STOP_LOSS_PCT = Math.min(0.15, Math.max(0.03, atrPct * 3.5));
       const TAKE_PROFIT_PCT = STOP_LOSS_PCT * 2.0; // maintain 2:1 R:R
-      const TIME_STOP_HOURS = 48;    // 48h dead-money exit
+      const TIME_STOP_HOURS = 96;    // 96h dead-money exit (autoresearch: patience pays)
       const TRAIL_PCT = this.config.trailingStopPct ?? 0.04; // 4% trail (wider)
 
       // Open a long on BUY/STRONG_BUY or a short on SELL/STRONG_SELL

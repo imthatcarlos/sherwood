@@ -384,14 +384,14 @@ describe("RiskManager", () => {
       expect(result.reasons["bitcoin"]).toMatch(/Hard stop hit/);
     });
 
-    it("triggers time-based exit after 48h with low PnL", () => {
-      const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+    it("triggers time-based exit after 96h with low PnL", () => {
+      const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
       const pos = makePosition({
         tokenId: "bitcoin",
         entryPrice: 50000,
         stopLoss: 48500,
         takeProfit: 53000,
-        entryTimestamp: threeDaysAgo,
+        entryTimestamp: fiveDaysAgo,
       });
       // Price at 50200 => pnl = +0.4%, which is < 1% threshold
       const result = rm.checkExits([pos], { bitcoin: 50200 });

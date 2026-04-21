@@ -797,6 +797,20 @@ export function registerAgentCommands(program: Command): void {
       }
     });
 
+  // ── autoresearch ──
+  agent
+    .command("autoresearch")
+    .description("Run autonomous parameter optimization against production signal history (Karpathy/Nunchi pattern)")
+    .option("--experiments <n>", "Number of experiments to run", "50")
+    .option("--last <days>", "Only use signal rows from the last N days")
+    .action(async (options: { experiments?: string; last?: string }) => {
+      const { runAutoresearch } = await import("../agent/autoresearch.js");
+      await runAutoresearch({
+        experiments: options.experiments ? parseInt(options.experiments, 10) : 50,
+        lastDays: options.last ? parseFloat(options.last) : undefined,
+      });
+    });
+
   // ── signal-audit ──
   agent
     .command("signal-audit")
