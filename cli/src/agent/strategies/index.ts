@@ -16,12 +16,14 @@ import { TwitterSentimentStrategy } from './twitter-sentiment.js';
 import { HyperliquidFlowStrategy } from './hyperliquid-flow.js';
 import { MultiTimeframeStrategy } from './multi-timeframe.js';
 import { CrossSectionalMomentumStrategy } from './cross-sectional-momentum.js';
+import { TradingViewSignalStrategy } from './tradingview-signal.js';
 
 export type { Strategy, StrategyContext, StrategyConfig };
 export { SmartMoneyStrategy, TokenUnlockStrategy, SentimentContrarianStrategy };
 export { BreakoutOnChainStrategy, TvlMomentumStrategy, FundingRateStrategy };
 export { DexFlowStrategy, MeanReversionStrategy, TwitterSentimentStrategy, HyperliquidFlowStrategy };
 export { MultiTimeframeStrategy, CrossSectionalMomentumStrategy };
+export { TradingViewSignalStrategy };
 
 export const DEFAULT_STRATEGIES: Strategy[] = [
   // ── Active signals (fire rate >25% in production) ──
@@ -32,6 +34,7 @@ export const DEFAULT_STRATEGIES: Strategy[] = [
   new HyperliquidFlowStrategy(),      // 57% fire rate
   new MultiTimeframeStrategy(),       // 78% fire rate
   new CrossSectionalMomentumStrategy(), // cross-sectional: ranks tokens vs group
+  new TradingViewSignalStrategy(),      // TradingView MCP — 26 indicators via local server
 
   // ── Disabled: zero or near-zero fire rate in production ──
   // SmartMoneyStrategy — replaced by Nansen HL perp-trades in index.ts

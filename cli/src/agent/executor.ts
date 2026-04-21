@@ -4,14 +4,11 @@
 
 import chalk from 'chalk';
 import type { Address, Hex } from 'viem';
-import { createWalletClient, http, encodeFunctionData, encodeAbiParameters } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import type { TradeDecision } from './scoring.js';
 import type { Position } from './risk.js';
 import { RiskManager } from './risk.js';
 import { PortfolioTracker } from './portfolio.js';
-import { BASE_STRATEGY_ABI } from '../lib/abis.js';
-import { hyperevm, hyperevmTestnet } from '../lib/network.js';
+import { hlMarketBuy, hlMarketSell, resolveHLCoin, validateHLEnv } from '../lib/hyperliquid-executor.js';
 
 export interface ExecutionConfig {
   dryRun: boolean;
@@ -430,60 +427,37 @@ export class TradeExecutor {
     );
   }
 
-  /** Execute a trade on HyperEVM via the HyperliquidPerpStrategy contract */
+  /** Execute a trade on Hyperliquid perps via the hermes HL skill script. */
   private async executeHyperliquidPerp(order: OrderParams, currentPrice?: number): Promise<{ txHash: string; executedPrice: number }> {
-    if (!this.config.strategyClone) throw new Error('--strategy-clone is required for hyperliquid-perp mode');
-    if (!this.config.proposerPrivateKey) throw new Error('SHERWOOD_PROPOSER_KEY env var is required for live execution');
+    validateHLEnv();
     if (!currentPrice || currentPrice <= 0) throw new Error('currentPrice is required for live execution');
 
-    const account = privateKeyToAccount(this.config.proposerPrivateKey);
-    const chain = this.config.chain === 'hyperevm-testnet' ? hyperevmTestnet : hyperevm;
-    const client = createWalletClient({
-      account,
-      chain,
-      transport: http(),
-    });
+    const hlCoin = resolveHLCoin(order.tokenId);
+    if (!hlCoin) {
+      throw new Error(`Token ${order.tokenId} has no known Hyperliquid ticker — cannot execute live`);
+    }
 
-    // Resolve token → HL asset index for multi-asset execution
-    const assetIndex = TradeExecutor.resolveAssetIndex(order.tokenId)
-      ?? this.config.assetIndex ?? 3; // fallback to config or ETH
-
-    // limitPx: slightly above/below market for IOC (1% slippage buffer)
-    const isShort = order.side === 'sell';
-    const limitPx = isShort
-      ? priceToUint64(currentPrice * 0.99)   // below market for sell IOC
-      : priceToUint64(currentPrice * 1.01);  // above market for buy IOC
-    // sz: token quantity — fetch asset-specific szDecimals from Hyperliquid meta API
     const quantity = order.amountUsd / currentPrice;
-    const szDec = await getSzDecimals(assetIndex);
-    const sz = sizeToUint64(quantity, szDec);
-    const stopLossPx = priceToUint64(order.stopLoss);
-    const stopLossSz = sz;
+    const isShort = order.side === 'sell';
 
-    // Use multi-asset actions (6/7) that include assetIndex in calldata.
-    // One strategy clone can now trade any HL perp asset.
-    const action = isShort ? 7 : 6; // ACTION_OPEN_SHORT_MULTI / ACTION_OPEN_LONG_MULTI
-    const actionData = encodeAbiParameters(
-      [{ type: 'uint8' }, { type: 'uint32' }, { type: 'uint64' }, { type: 'uint64' }, { type: 'uint64' }, { type: 'uint64' }],
-      [action, assetIndex, limitPx, sz, stopLossPx, stopLossSz],
-    );
+    console.error(chalk.yellow(`[LIVE] Submitting ${isShort ? 'SELL' : 'BUY'} ${quantity.toFixed(6)} ${hlCoin} ($${order.amountUsd.toFixed(2)}) via HL SDK...`));
 
-    const txData = encodeFunctionData({
-      abi: BASE_STRATEGY_ABI,
-      functionName: 'updateParams',
-      args: [actionData],
-    });
+    const result = isShort
+      ? await hlMarketSell(hlCoin, quantity)
+      : await hlMarketBuy(hlCoin, quantity);
 
-    const txHash = await client.sendTransaction({
-      to: this.config.strategyClone,
-      data: txData,
-    });
+    if (!result.success) {
+      throw new Error(`Hyperliquid order failed: ${result.error}`);
+    }
 
-    console.error(chalk.green(`[LIVE] Transaction sent: ${txHash}`));
+    const executedPrice = result.executedPrice ?? currentPrice;
+    const orderId = result.orderId ?? 'unknown';
+
+    console.error(chalk.green(`[LIVE] Order filled: ${hlCoin} ${isShort ? 'SHORT' : 'LONG'} @ $${executedPrice.toFixed(4)} (oid: ${orderId})`));
 
     return {
-      txHash,
-      executedPrice: currentPrice,
+      txHash: orderId, // HL order ID serves as the "tx hash" identifier
+      executedPrice,
     };
   }
 
@@ -521,45 +495,3 @@ export class TradeExecutor {
   }
 }
 
-// ── HyperCore conversion helpers ──
-
-/** Convert a USD price (e.g. 3000.50) to HyperCore uint64 format (6-decimal fixed point). */
-function priceToUint64(priceUsd: number): bigint {
-  return BigInt(Math.round(priceUsd * 1e6));
-}
-
-/** Convert a token quantity to HyperCore uint64 format using the asset's szDecimals.
- *  HyperCore szDecimals varies per asset — MUST be fetched from the meta API. */
-function sizeToUint64(quantity: number, szDecimals: number): bigint {
-  return BigInt(Math.round(quantity * 10 ** szDecimals));
-}
-
-/** Fetch szDecimals for an asset index from Hyperliquid's meta API.
- *  Caches per session to avoid repeated calls. */
-const szDecimalsCache = new Map<number, number>();
-
-async function getSzDecimals(assetIndex: number): Promise<number> {
-  if (szDecimalsCache.has(assetIndex)) return szDecimalsCache.get(assetIndex)!;
-
-  try {
-    const res = await fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'meta' }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const meta = await res.json() as { universe: Array<{ szDecimals: number }> };
-    // Cache all assets from the response
-    for (let i = 0; i < meta.universe.length; i++) {
-      szDecimalsCache.set(i, meta.universe[i]!.szDecimals);
-    }
-  } catch (err) {
-    console.error(`Failed to fetch szDecimals from Hyperliquid meta API: ${err}`);
-  }
-
-  const dec = szDecimalsCache.get(assetIndex);
-  if (dec === undefined) {
-    throw new Error(`Unknown asset index ${assetIndex} — cannot determine szDecimals. Check Hyperliquid meta API.`);
-  }
-  return dec;
-}

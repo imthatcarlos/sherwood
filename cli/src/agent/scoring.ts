@@ -506,6 +506,7 @@ const SIGNAL_CATEGORY_MAP: Record<string, keyof ScoringWeights> = {
   tokenUnlock: "event",
   hyperliquidFlow: "onchain",
   crossSectionalMomentum: "technical",
+  tradingviewSignal: "technical",
 };
 
 /** Categories that rely on x402 paid data (Nansen, Messari). */
