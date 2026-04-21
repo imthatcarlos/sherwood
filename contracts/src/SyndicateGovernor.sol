@@ -832,11 +832,14 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             if (block.timestamp <= proposal.voteEnd) return ProposalState.Pending;
 
             // Voting ended -- optimistic: approved unless AGAINST votes reach veto threshold
+            // G-H4: skip the veto check when pastTotalSupply == 0, otherwise
+            // the threshold collapses to 0 and every proposal auto-rejects.
             uint256 pastTotalSupply = IVotes(proposal.vault).getPastTotalSupply(proposal.snapshotTimestamp);
-            uint256 vetoThreshold = (pastTotalSupply * _params.vetoThresholdBps) / 10000;
-
-            if (proposal.votesAgainst >= vetoThreshold) {
-                return ProposalState.Rejected;
+            if (pastTotalSupply > 0) {
+                uint256 vetoThreshold = (pastTotalSupply * _params.vetoThresholdBps) / 10000;
+                if (proposal.votesAgainst >= vetoThreshold) {
+                    return ProposalState.Rejected;
+                }
             }
 
             // Voting passed — fall through to guardian-review handling below.

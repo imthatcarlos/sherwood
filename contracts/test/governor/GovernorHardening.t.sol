@@ -178,6 +178,35 @@ contract GovernorHardeningTest is Test {
         assertGt(governor.getVoteWeight(proposalId, lp1), 0);
     }
 
+    // ==================== FIX 3 — G-H4 ====================
+
+    /// @notice When totalSupply is 0 at snapshot time, the veto threshold would
+    ///         be 0 and `votesAgainst >= 0` is always true → auto-reject. The
+    ///         guard must skip the veto check so the proposal transitions to
+    ///         Approved (via GuardianReview).
+    function test_veto_emptySupply_doesNotAutoReject() public {
+        // Propose without any LP deposits — totalSupply stays 0.
+        vm.prank(leadAgent);
+        uint256 proposalId = governor.propose(
+            address(vault),
+            "ipfs://empty",
+            2000,
+            7 days,
+            _execCalls(),
+            _settleCalls(),
+            new ISyndicateGovernor.CoProposer[](0)
+        );
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Nobody votes. Warp past voting window.
+        vm.warp(vm.getBlockTimestamp() + VOTING_PERIOD + 1);
+
+        // With empty supply guard: state resolves to Approved (reviewPeriod=0
+        // on MockRegistryMinimal, so GuardianReview collapses).
+        ISyndicateGovernor.ProposalState state = governor.getProposalState(proposalId);
+        assertEq(uint256(state), uint256(ISyndicateGovernor.ProposalState.Approved));
+    }
+
     // ==================== FIX 1 — G-H2 ====================
 
     /// @notice With 4 of 4 co-props approved (all-but-none — actually every
