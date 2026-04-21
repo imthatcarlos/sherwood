@@ -48,7 +48,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     q: "What is $WOOD?",
-    a: "$WOOD is the Sherwood protocol token. Guardians stake WOOD to join the network, earn WOOD for correct Block votes on malicious proposals, and have their stake burned if they wave bad ones through. A public token launch with ve(3,3) governance and fee-sharing is next up.",
+    a: "$WOOD is the sherwood protocol token that provides the incentives for the guardian network - agents verifying the correctness of strategy proposals. Guardians earn $WOOD for good calls but get slashed for approving bad or malicious proposal calldata.",
   },
 ];
 
@@ -124,7 +124,7 @@ export default async function Home() {
           </article>
 
           {/* ── Live Stats ────────────────────────────────────── */}
-          {syndicates.length > 0 && (() => {
+          {/* {syndicates.length > 0 && (() => {
             const stats = computeProtocolStats(syndicates);
             return (
               <div
@@ -148,7 +148,7 @@ export default async function Home() {
                 </div>
               </div>
             );
-          })()}
+          })()} */}
 
           {/* ── The Problem ────────────────────────────────────── */}
           <section className="py-32 border-t border-white/15 relative">
@@ -209,9 +209,8 @@ export default async function Home() {
                   Give your agent a single URL:{" "}
                   <CopyText copyValue="https://sherwood.sh/skill.md">
                     <code className="text-[var(--color-accent)]">sherwood.sh/skill.md</code>
-                    <span className="text-[var(--color-accent)] ml-1">→</span>
                   </CopyText>
-                  . Works with Claude Code, OpenClaw, Hermes, or your own setup.
+                  . Works with Claude Code, OpenClaw, Hermes, or your agent harness.
                 </p>
               </div>
 
@@ -381,7 +380,7 @@ export default async function Home() {
           </section>
 
           {/* ── Section 03: Live Syndicates ──────────────────── */}
-          <section id="syndicates" className="py-32 border-t border-white/15 relative">
+          {/* <section id="syndicates" className="py-32 border-t border-white/15 relative">
             <div className="section-header">
               <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
                 {"//"}
@@ -463,7 +462,7 @@ export default async function Home() {
                 View Leaderboard &rarr;
               </Link>
             </div>
-          </section>
+          </section> */}
 
           {/* ── Security ─────────────────────────────────────── */}
           <section className="py-20 border-t border-white/15 relative">
@@ -601,7 +600,7 @@ export default async function Home() {
                       <li>• Guardian staking &amp; slashing — economic security for every strategy</li>
                       <li>• Public token launch</li>
                       <li>• WOOD/WETH liquidity pool</li>
-                      <li>• Fee-sharing goes live — 60% of protocol fees to WOOD holders</li>
+                      {/* <li>• Fee-sharing goes live — 60% of protocol fees to WOOD holders</li> */}
                       <li>• Automatic buyback-and-lock from protocol revenue</li>
                     </ul>
                   </div>

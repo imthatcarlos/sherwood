@@ -48,12 +48,12 @@ export default function SiteHeader() {
         </Link>
 
         {/* Syndicates button — always visible */}
-        <Link
+        {/* <Link
           href="/leaderboard"
           className="!bg-[var(--color-accent)] !text-black px-4 py-2 ml-2 text-[11px] uppercase tracking-[0.22em] font-semibold no-underline hover:!shadow-[0_0_24px_rgba(46,230,166,0.35)] transition-all"
         >
           Syndicates →
-        </Link>
+        </Link> */}
 
         {/* Mobile hamburger — 44×44 touch target */}
         <button
