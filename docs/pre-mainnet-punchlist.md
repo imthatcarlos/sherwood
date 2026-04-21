@@ -79,7 +79,7 @@ Grouped by domain. All require separate PRs.
 | V-H2 ✅ | `setGovernor` orphans live proposals | 82 | Closed — `setGovernor` deleted; `governor` is set-once at factory init (`ee581a6`) |
 | V-H3 ✅ | `upgradeVault` race on current `vaultImpl` | 78 | Closed — `upgradeVault(vault, expectedImpl)` with `VaultImplMismatch` revert (`9a43e1d`) |
 | V-H5 ✅ | `rescueEth` missing `redemptionsLocked()` check | 75 | Closed — `rescueEth` now respects `redemptionsLocked()` (`df5e1e8`) |
-| V-H6 | Open `receive()` — stranded ETH | 75 | Reject or convert |
+| V-H6 ✅ | Open `receive()` — stranded ETH | 75 | Closed — `receive()` removed; vault rejects raw ETH (`2a3abe4`) |
 | I-1 ✅ | `redemptionsLocked()` fails open on `gov == 0` | — | Closed — reverts `GovernorNotSet` (`d8bdf00`) |
 | W-1 ✅ | USDC-blacklist bricks settlement via `_distributeFees` | — | Closed — try/catch + escrow + `claimUnclaimedFees(vault, token)` retry (`134e768`) |
 
@@ -154,7 +154,7 @@ Grouped by domain. All require separate PRs.
 
 | Ref | Severity | Location | Default | Fix |
 |---|---|---|---|---|
-| I-1 | HIGH | `SyndicateVault.redemptionsLocked()` | `if (gov == address(0)) return false` | Revert instead; require governor to be set |
+| I-1 ✅ | HIGH | `SyndicateVault.redemptionsLocked()` | `if (gov == address(0)) return false` | Closed — reverts `GovernorNotSet` (`d8bdf00`) |
 | I-2 | HIGH | `PortfolioStrategy` | `chainlinkVerifier == 0` accepted at init | Require non-zero |
 | I-3 | HIGH | `SyndicateGovernor._distributeFees` | `recipient == 0` silently skips the protocol fee | Require recipient non-zero when `bps > 0` (partial guard exists at init — also enforce at fee-distribution time) |
 | I-6 | HIGH | `PortfolioStrategy` + `AerodromeLPStrategy` | `amountOutMin = 0` | S-C4 fix |
