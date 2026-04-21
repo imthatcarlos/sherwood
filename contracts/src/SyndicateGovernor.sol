@@ -122,11 +122,17 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     ///      remains in the vault; this mapping is pure bookkeeping. (W-1)
     mapping(address recipient => mapping(address token => uint256)) private _unclaimedFees;
 
+    /// @dev Count of co-proposer approvals per proposal. Incremented in
+    ///      `approveCollaboration`. Drives both the all-approved transition
+    ///      and the G-H2 near-quorum cancel guard.
+    mapping(uint256 proposalId => uint256) private _approvedCount;
+
     /// @dev Reserved storage for future upgrades (shrunk by 1 for _guardianRegistry,
     ///      shrunk by 2 more for _emergencyCallsHashes + _emergencyCalls,
     ///      shrunk by 1 more for openProposalCount,
-    ///      shrunk by 1 more for _unclaimedFees)
-    uint256[28] private __gap;
+    ///      shrunk by 1 more for _unclaimedFees,
+    ///      shrunk by 1 more for _approvedCount)
+    uint256[27] private __gap;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -413,7 +419,14 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             // Pending: only during the voting period.
             if (block.timestamp > proposal.voteEnd) revert ProposalNotCancellable();
             _decOpen(proposal.vault);
-        } else if (s != ProposalState.Draft) {
+        } else if (s == ProposalState.Draft) {
+            // G-H2: block lead cancel once all-but-one co-prop has approved,
+            // preventing a front-run of the final approve tx.
+            uint256 total = _coProposers[proposalId].length;
+            if (total != 0 && _approvedCount[proposalId] + 1 >= total) {
+                revert CancelNotAllowedNearQuorum();
+            }
+        } else {
             revert ProposalNotCancellable();
         }
         proposal.state = ProposalState.Cancelled;
@@ -477,19 +490,12 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         if (coProposerApprovals[proposalId][msg.sender]) revert AlreadyApproved();
 
         coProposerApprovals[proposalId][msg.sender] = true;
+        unchecked {
+            ++_approvedCount[proposalId];
+        }
         emit CollaborationApproved(proposalId, msg.sender);
 
-        // Check if all co-proposers have approved
-        CoProposer[] storage coProps = _coProposers[proposalId];
-        bool allApproved = true;
-        for (uint256 i = 0; i < coProps.length; i++) {
-            if (!coProposerApprovals[proposalId][coProps[i].agent]) {
-                allApproved = false;
-                break;
-            }
-        }
-
-        if (allApproved) {
+        if (_approvedCount[proposalId] == _coProposers[proposalId].length) {
             // Transition to Pending -- voting begins
             uint256 reviewPeriod_ =
                 _guardianRegistry != address(0) ? IGuardianRegistry(_guardianRegistry).reviewPeriod() : 0;
