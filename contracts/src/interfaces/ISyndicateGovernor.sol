@@ -141,6 +141,9 @@ interface ISyndicateGovernor {
     error NotAuthorized();
     error InvalidMaxCoProposers();
     error Reentrancy();
+    /// @notice Revert if an active co-proposer's rounded share is 0 (G-C7).
+    /// @dev Prevents silent routing of zero-rounded shares to the lead.
+    error CoProposerShareUnderflow();
 
     // ── Timelock errors ──
     error ChangeAlreadyPending();

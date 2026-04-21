@@ -447,6 +447,92 @@ contract CollaborativeProposalsTest is Test {
         assertEq(co1Share + co2Share + leadShare, agentFee);
     }
 
+    // ==================== G-C7: zero-rounding regression ====================
+
+    /// @dev 5 active co-proposers each at MIN_SPLIT_BPS (100 bps). If the agent
+    ///      fee is small enough that `fee * 100 / 10000` rounds to zero, the
+    ///      prior behavior silently routed every zero share to the lead. We
+    ///      now revert with `CoProposerShareUnderflow` so proposers must
+    ///      structure the split meaningfully.
+    function test_coProposerShare_revertsIfRoundsToZero() public {
+        // Register 3 additional co-props so we can hit 5 at 100bps each.
+        address co3 = makeAddr("co3");
+        address co4 = makeAddr("co4");
+        address co5 = makeAddr("co5");
+        vm.startPrank(owner);
+        vault.registerAgent(agentRegistry.mint(co3), co3);
+        vault.registerAgent(agentRegistry.mint(co4), co4);
+        vault.registerAgent(agentRegistry.mint(co5), co5);
+        vm.stopPrank();
+
+        ISyndicateGovernor.CoProposer[] memory coProps = new ISyndicateGovernor.CoProposer[](5);
+        coProps[0] = ISyndicateGovernor.CoProposer({agent: coAgent1, splitBps: 100});
+        coProps[1] = ISyndicateGovernor.CoProposer({agent: coAgent2, splitBps: 100});
+        coProps[2] = ISyndicateGovernor.CoProposer({agent: co3, splitBps: 100});
+        coProps[3] = ISyndicateGovernor.CoProposer({agent: co4, splitBps: 100});
+        coProps[4] = ISyndicateGovernor.CoProposer({agent: co5, splitBps: 100});
+
+        vm.prank(leadAgent);
+        uint256 proposalId = governor.propose(
+            address(vault), "ipfs://tiny", 2000, 7 days, _simpleExecuteCalls(), _simpleSettlementCalls(), coProps
+        );
+        vm.prank(coAgent1);
+        governor.approveCollaboration(proposalId);
+        vm.prank(coAgent2);
+        governor.approveCollaboration(proposalId);
+        vm.prank(co3);
+        governor.approveCollaboration(proposalId);
+        vm.prank(co4);
+        governor.approveCollaboration(proposalId);
+        vm.prank(co5);
+        governor.approveCollaboration(proposalId);
+        vm.warp(block.timestamp + 1);
+
+        vm.prank(lp1);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.prank(lp2);
+        governor.vote(proposalId, ISyndicateGovernor.VoteType.For);
+        vm.warp(block.timestamp + VOTING_PERIOD + 1);
+
+        governor.executeProposal(proposalId);
+
+        // Profit of 49 wei of USDC (base units). perfFeeBps=2000 => agentFee = 9.
+        // 9 * 100 / 10000 = 0 → revert.
+        usdc.mint(address(vault), 49);
+
+        vm.prank(leadAgent);
+        vm.expectRevert(ISyndicateGovernor.CoProposerShareUnderflow.selector);
+        governor.settleProposal(proposalId);
+    }
+
+    /// @dev Deregistered co-proposers with splits that round to zero are
+    ///      fine — the `active && share == 0` guard only targets currently
+    ///      registered agents. This preserves the existing skip-path.
+    function test_coProposerShare_deregisteredGetsZeroOk() public {
+        uint256 proposalId = _createAndExecuteCollabProposal();
+
+        // Deregister coAgent2 — its share is now forfeit, routed to the lead.
+        vm.prank(owner);
+        vault.removeAgent(coAgent2);
+
+        // Small profit: 49 wei. perfFeeBps=2000 => agentFee=9.
+        //   coAgent1 (3000 bps, still active): 9 * 3000 / 10000 = 2
+        //   coAgent2 (1000 bps, DEREGISTERED): 9 * 1000 / 10000 = 0 → skipped (no revert)
+        //   lead: remainder = 9 - 2 = 7
+        usdc.mint(address(vault), 49);
+
+        uint256 leadBalBefore = usdc.balanceOf(leadAgent);
+        uint256 co1BalBefore = usdc.balanceOf(coAgent1);
+        uint256 co2BalBefore = usdc.balanceOf(coAgent2);
+
+        vm.prank(leadAgent);
+        governor.settleProposal(proposalId);
+
+        assertEq(usdc.balanceOf(coAgent1), co1BalBefore + 2, "active co-prop gets non-zero share");
+        assertEq(usdc.balanceOf(coAgent2), co2BalBefore, "deregistered co-prop skipped even with zero share");
+        assertGt(usdc.balanceOf(leadAgent), leadBalBefore, "lead absorbs deregistered residual");
+    }
+
     // ==================== VALIDATION ====================
 
     function test_validation_leadSplitBelow10Percent() public {

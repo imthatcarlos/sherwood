@@ -947,10 +947,14 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         if (coProps.length > 0) {
             // Distribute to co-proposers first, lead gets remainder
             // Deregistered co-proposers are skipped -- their share goes to the lead
+            // G-C7: active co-props with share == 0 revert to prevent silently
+            // routing their rounded-to-zero share to the lead.
             uint256 distributed = 0;
             for (uint256 i = 0; i < coProps.length; i++) {
                 uint256 share = (agentFee * coProps[i].splitBps) / 10000;
-                if (share > 0 && ISyndicateVault(vault).isAgent(coProps[i].agent)) {
+                bool active = ISyndicateVault(vault).isAgent(coProps[i].agent);
+                if (active && share == 0) revert CoProposerShareUnderflow();
+                if (share > 0 && active) {
                     _payFee(vault, asset, coProps[i].agent, share);
                     distributed += share;
                 }
