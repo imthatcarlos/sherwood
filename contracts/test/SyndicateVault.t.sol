@@ -488,6 +488,29 @@ contract SyndicateVaultTest is Test {
         assertEq(vault.decimals(), 12);
     }
 
+    /// @dev V-M1: `_decimalsOffset()` must read from the slot cached at `initialize`
+    ///      instead of re-calling `asset().decimals()` on every share conversion.
+    ///      If the asset's reported decimals later drifts (e.g. upgraded mock) the
+    ///      vault must keep its original offset — otherwise share-to-asset math
+    ///      changes retroactively.
+    function test_decimalsOffset_cachedAtInit() public {
+        // Baseline: USDC (6 decimals) → shares decimals = 6 + 6 = 12
+        assertEq(vault.decimals(), 12);
+        assertEq(vault.convertToShares(1e6), 1e12, "pre-drift convertToShares");
+
+        // Replace the reported decimals on the asset contract. A real ERC-20
+        // can't do this, but a malicious/upgradable asset could — we want the
+        // vault to be immune because it cached at init.
+        vm.mockCall(address(usdc), abi.encodeWithSignature("decimals()"), abi.encode(uint8(18)));
+        // Sanity: the mock is live.
+        assertEq(usdc.decimals(), 18);
+
+        // Vault view must still report the original 12 decimals — proving it
+        // pulled the offset from storage, not from a live `asset().decimals()`.
+        assertEq(vault.decimals(), 12, "vault decimals drifted after asset mock");
+        assertEq(vault.convertToShares(1e6), 1e12, "convertToShares drifted after asset mock");
+    }
+
     function test_inflationAttack_mitigated() public {
         // Classic ERC-4626 inflation attack:
         // 1. Attacker deposits 1 wei, gets shares
@@ -635,16 +658,12 @@ contract SyndicateVaultTest is Test {
 
         // Route the vault's `onlyGovernor` through the reentrant target.
         vm.mockCall(address(this), abi.encodeWithSignature("governor()"), abi.encode(address(target)));
-        vm.mockCall(
-            address(target), abi.encodeWithSignature("getActiveProposal(address)"), abi.encode(uint256(0))
-        );
+        vm.mockCall(address(target), abi.encodeWithSignature("getActiveProposal(address)"), abi.encode(uint256(0)));
 
         // Outer batch: one call into `target.ping()`, which re-enters the vault.
         BatchExecutorLib.Call[] memory calls = new BatchExecutorLib.Call[](1);
         calls[0] = BatchExecutorLib.Call({
-            target: address(target),
-            data: abi.encodeWithSelector(ReentrantTarget.ping.selector),
-            value: 0
+            target: address(target), data: abi.encodeWithSelector(ReentrantTarget.ping.selector), value: 0
         });
 
         vm.prank(address(target));

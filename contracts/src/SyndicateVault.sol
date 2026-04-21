@@ -90,8 +90,15 @@ contract SyndicateVault is
     ///         impersonate `BatchExecutorLib` without matching its bytecode.
     bytes32 private _expectedExecutorCodehash;
 
+    /// @notice Cached `asset.decimals()` used as the ERC-4626 virtual-shares
+    ///         offset. Stamped once at `initialize` so `_decimalsOffset()` is
+    ///         a pure storage read on the hot share-conversion path (no
+    ///         external call to the asset on every `previewDeposit` /
+    ///         `convertTo*` / `_deposit` / `_withdraw`).
+    uint8 private _cachedDecimalsOffset;
+
     /// @dev Reserved storage for future upgrades
-    uint256[39] private __gap;
+    uint256[38] private __gap;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -115,6 +122,7 @@ contract SyndicateVault is
         _agentRegistry = IERC721(p.agentRegistry);
         _managementFeeBps = p.managementFeeBps;
         _factory = msg.sender;
+        _cachedDecimalsOffset = IERC20Metadata(p.asset).decimals();
     }
 
     // ==================== DEPOSITOR WHITELIST ====================
@@ -333,8 +341,11 @@ contract SyndicateVault is
 
     /// @dev Virtual shares offset = asset decimals → mitigates ERC-4626 inflation/donation attack.
     ///      With USDC (6 decimals) this gives 12-decimal shares, making the attack economically infeasible.
+    /// @dev V-M1: cached at init — no external `asset().decimals()` call on the hot
+    ///      share-conversion path. Asset decimals are immutable in practice for the
+    ///      underlying USDC/ERC-20, so pinning once at init is safe.
     function _decimalsOffset() internal view virtual override returns (uint8) {
-        return uint8(IERC20Metadata(asset()).decimals());
+        return _cachedDecimalsOffset;
     }
 
     /// @dev Block deposits when paused or depositor not approved.
