@@ -241,9 +241,10 @@ uint256 public totalDelegatedStake;
 // Commission
 uint256 public constant MAX_COMMISSION_BPS = 5000;             // 50%
 uint256 public constant MAX_COMMISSION_INCREASE_PER_EPOCH = 500; // 5%
-mapping(address => uint256) private _commissionBps;
+mapping(address => uint256) private _commissionBps;              // current rate
 mapping(address => uint256) private _lastCommissionRaiseEpoch;
-mapping(address => mapping(uint256 => uint256)) private _commissionAtEpoch; // delegate => epoch => rate
+mapping(address => Checkpoints.Trace224) private _commissionCheckpoints; // history for lazy lookup
+mapping(address => mapping(uint256 => uint256)) private _commissionAtEpoch; // cache populated at first claim
 
 // Reward accounting — per-delegate
 mapping(uint256 => mapping(address => uint256)) private _blockerWeightInEpoch;  // epoch => delegate => weight
@@ -335,21 +336,19 @@ interface IGuardianRegistryV15 is IGuardianRegistry {
 
 ---
 
-## 8. Migration
+## 8. Deployment
 
-### WOOD redeploy
+### Fresh deployment — no migration
 
-- New WOOD address; airdrop existing holders 1:1 (or snapshot + claim, whichever is operationally simpler).
-- Pre-mainnet, so no production balances to preserve — just migrate test balances if relevant.
-- Update `WOOD_TOKEN` address in `contracts/chains/{chainId}.json` + CLI + docs.
+V1.5 ships as a clean redeploy alongside the V1 mainnet launch. There are no pre-existing guardian stakes or delegations to preserve:
 
-### Registry upgrade
+- **WOOD** deploys once as `ERC20VotesUpgradeable`. No airdrop, no snapshot — test balances on Base Sepolia can be re-issued trivially.
+- **GuardianRegistry** deploys once with V1.5 storage layout. No lazy/eager migration branch needed because every stake push naturally writes its own checkpoint at `stakeAsGuardian` call time. First-ever checkpoint for each guardian = their first stake.
+- Update `WOOD_TOKEN` + `GUARDIAN_REGISTRY` addresses in `contracts/chains/{chainId}.json`, `cli/src/lib/addresses.ts`, and `mintlify-docs/reference/deployments.mdx`.
 
-- `GuardianRegistry` is UUPS — upgrade in place with new implementation.
-- On first interaction post-upgrade, each guardian's existing `_guardians[g].stakedAmount` is backfilled to a checkpoint at the upgrade timestamp. Either:
-  - **Eager:** owner runs a one-time `_migrateStakes(address[] guardians)` that pushes a checkpoint for each.
-  - **Lazy:** first stake / unstake / vote operation after the upgrade pushes the checkpoint if none exists.
-- Lazy is simpler but leaves a small window where `getPastStake(g, t)` returns 0 for pre-migration timestamps. Acceptable because no pre-migration reviews will reference the new checkpoint logic.
+### Implication for UUPS
+
+Since this is a fresh deployment (not an upgrade of an already-deployed V1 registry), the storage layout can be authored freshly rather than appended. The `__gap` still matters for *future* upgrades past V1.5, but V1.5 doesn't need to honor a prior layout.
 
 ---
 
@@ -442,12 +441,17 @@ interface IGuardianRegistryV15 is IGuardianRegistry {
 
 ---
 
-## 13. Open questions
+## 13. Resolved design decisions
 
-1. **Epoch-boundary snapshotting cost.** Writing `_commissionAtEpoch[delegate][epochId]` at rollover would cost O(N) SSTOREs if done eagerly. Lazy alternative: at claim, compute `_commissionAtEpoch[delegate][epochId]` by walking the `_commissionCheckpoints` history and caching result. Lazy is cheaper but more complex. **Recommend lazy.**
-2. **Migration path for existing stakes.** Eager one-shot script vs lazy first-use backfill. Recommend lazy; document clearly.
-3. **Delegation to self.** Should a delegate be able to self-delegate (delegate to their own address)? Semantically odd — it's just staking. Recommend disallow (`require(delegate != msg.sender)`) to prevent confusion in accounting.
-4. **Unstake-delegation during active review.** Should a delegator be allowed to request unstake while their delegate has an open review that references their weight? Under checkpoint-at-open semantics, the delegator's weight was frozen into the review at `openedAt` — unstaking after that doesn't retroactively change the review outcome. Safe to allow.
+All four open questions resolved pre-implementation (2026-04-21):
+
+1. ✅ **Commission-at-epoch: lazy.** Do NOT write `_commissionAtEpoch[delegate][epochId]` at epoch rollover (would cost O(N) SSTOREs across all delegates). Instead, store a per-delegate `Checkpoints.Trace224` of commission history (`_commissionCheckpoints[delegate]`). At claim time, resolve the rate with `_commissionCheckpoints[delegate].upperLookupRecent(epochEndTimestamp[epochId])`. Cache the resolved value into `_commissionAtEpoch[delegate][epochId]` on first claim so subsequent delegator claims don't re-walk the checkpoint history.
+
+2. ✅ **No migration — fresh deployment.** There are no pre-existing guardian stakes to preserve. Every stake push naturally writes its own first checkpoint at `stakeAsGuardian` call time. No backfill branch needed in contract code. See §8.
+
+3. ✅ **Self-delegation disallowed.** `require(delegate != msg.sender, CannotSelfDelegate())` in `delegateStake`. Reasoning: self-delegation is semantically identical to `stakeAsGuardian` but would create parallel accounting (own-stake vs delegated-to-self) that slashing and reward paths would have to disambiguate. Disallow keeps the two pools strictly disjoint (INV-V1.5-1).
+
+4. ✅ **Unstake-delegation during active review: allowed.** Under checkpoint-at-open semantics, a delegator's weight was frozen into the review at `openedAt`. A later `requestUnstakeDelegation` does not retroactively change the review outcome — the review's `_voteStake[proposalId][delegate]` already captured the delegate's total weight including that delegator's contribution. The 7-day cooldown means the delegator can't get their WOOD back before the review resolves anyway. No special-case needed.
 
 ---
 
