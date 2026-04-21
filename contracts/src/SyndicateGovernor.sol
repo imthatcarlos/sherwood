@@ -974,6 +974,13 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     }
 
     /// @dev Distribute agent fee to co-proposers (if any) and lead proposer. Extracted to avoid stack-too-deep.
+    /// @dev G-M10: Assumes a non-fee-on-transfer (FOT) asset. `distributed += share` is
+    ///      booked at the requested-transfer amount, not the received amount, so the
+    ///      lead's rounding remainder is computed against the requested total. If a
+    ///      future vault ever onboards an FOT asset, `_distributeAgentFee` would
+    ///      double-count the burn — the lead would be credited what was skimmed and
+    ///      under-paid to match. USDC (the only V1 asset) is non-FOT; this branch
+    ///      stays pinned by the `non-FOT` asset requirement in the vault audit.
     function _distributeAgentFee(uint256 proposalId, address vault, address asset, address proposer, uint256 agentFee)
         internal
     {
