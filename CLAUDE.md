@@ -30,6 +30,7 @@
 For multi-domain audits/reviews, dispatch parallel subagents by domain (vault / governor / strategies / tokenomics / adapters) rather than sequential whole-codebase passes. Cross-cutting patterns surface better when each agent can go deep. For ToB-style maturity + process reviews, use the `building-secure-contracts`, `entry-point-analyzer`, `dimensional-analysis`, and `spec-to-code-compliance` skills.
 
 - **ToB skill catalog** at `~/.claude/plugins/cache/trailofbits/` — `guidelines-advisor`, `insecure-defaults`, `entry-point-analyzer`, `code-maturity-assessor`, `spec-to-code-compliance`, `second-opinion`, `property-based-testing`, `dimensional-analysis`, `audit-prep-assistant`, etc. For spec review, dispatch parallel subagents each loading one `SKILL.md` + the target spec — avoids main-context bloat.
+- **Parallel subagents must write to disjoint files.** If two agents both edit `SyndicateGovernor.sol` / `GovernorParameters.sol` / same test suites, they stall silently (observed: two 25-minute stalls). Before dispatch, map each agent's write set and confirm no overlap. `TaskStop` terminates a stalled agent; revert its dirty tree with `git stash` (NOT `git checkout --`) so its partial work can be inspected later.
 - **Spec authoring**: design specs live at `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`. Do NOT accumulate review changelogs inside the spec — git log + PR comment thread hold that history, the spec should read as a final design. If you catch yourself writing a 4th "Changelog — review N" section, stop and trim.
 - **Fetch a specific PR comment by permalink**: `gh api repos/<owner>/<repo>/issues/comments/<comment_id> --jq '.body'` (the URL suffix `#issuecomment-<id>` gives you the comment_id).
 
@@ -55,6 +56,8 @@ Source lives in `mintlify-docs/` (git submodule pointing to `imthatcarlos/mintli
 
 **Authority order when docs and code disagree:** `contracts/chains/{chainId}.json` (addresses) → `contracts/src/` (behavior) → this CLAUDE.md (intent) → `mintlify-docs/` last. Known drift areas: `reference/deployments.mdx` (stale Base addresses), `settlement.mdx` (references removed `lockRedemptions` and the removed owner-direct `executeBatch` — only `executeGovernorBatch` exists on the vault now, V-C3), `concepts.mdx` (says shareholders can `vetoProposal` — they can't), `collaborative-proposals.mdx` (incorrect auth claims). See issue #226 §4.
 
+**Pre-mainnet tracking:** `docs/pre-mainnet-punchlist.md` + GitHub issue #236 are mirrors. Every fix PR must update BOTH with the ref code (V-C1, G-C5, etc.) and the commit SHA closing the row. #225 and #226 are closed as superseded by #236.
+
 LLM-friendly versions:
 - `https://docs.sherwood.sh/llms.txt` — structured index
 - `https://docs.sherwood.sh/llms-full.txt` — complete docs in a single file
@@ -75,8 +78,12 @@ Key sections: [Learn](https://docs.sherwood.sh/learn/quickstart) | [Protocol](ht
 - Use SafeERC20 for all token transfers
 - Run `forge build` and `forge test` before every PR
 - Run `forge fmt` before committing
-- SyndicateGovernor runtime is **24,327 / 24,576 bytes (73-byte margin)** as of 2026-04, with `GovernorEmergency` extracted and `via_ir` enabled. Run `forge build --sizes` before any governor edit; CI gate fails above 24,550. Gate raised to 24,550 (still 26 bytes under EIP-170 hard limit) to accommodate G-C5 timelock dispatcher extension. See PR #229.
+- SyndicateGovernor runtime is **24,325 / 24,576 bytes (225-byte margin)** as of 2026-04 (post-G-C5, post-W-1, post-I-3). `GovernorEmergency` extracted + `via_ir` enabled + `GovernorParameters._applyChange` shares a uniform `ParameterChangeFinalized` event (no per-param typed events — saved 482 bytes). CI gate: ≤ 24,550 bytes. Run `forge build --sizes` before any governor edit.
 - **`via_ir` is on** in `foundry.toml`. Compile is ~2× slower than the legacy pipeline. Required to fit `GovernorEmergency` under the bytecode limit — do not disable without re-measuring the governor.
+- Under `via_ir = true`, the IR optimizer reorders `block.timestamp` reads across `vm.warp` cheatcodes. In tests, use `vm.getBlockTimestamp()` at each read site — never cache it in a local before a warp.
+- Reentrancy guard: use `@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol` (EIP-1153; Cancun-required but Base supports it). OZ v5 upgradeable doesn't ship `ReentrancyGuardUpgradeable`; transient is cheaper and storage-slot-free.
+- Bytecode reduction levers for `SyndicateGovernor`: (a) hoist shared event emits out of the `_applyChange` `else if` chain in `GovernorParameters` (saves ~20-50 bytes/branch), (b) drop per-parameter typed `*Updated` events in favor of the uniform `ParameterChangeFinalized(key, old, new)` (saved 482 bytes in one pass), (c) enable/bump `via_ir` (already on). `optimizer_runs` bumps didn't help meaningfully at runs=50.
+- CI size gate filter: `forge build --sizes --json | jq -r '.SyndicateGovernor.runtime_size // empty'` — `// empty` makes an unknown contract fail the check loudly instead of silently passing.
 
 ### Address Management
 
