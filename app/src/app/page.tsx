@@ -70,7 +70,8 @@ export default async function Home() {
             <div className="hero-content">
               {/* System status rail */}
               <div className="hero-rule mt-10">
-                <span>{"// System Online, Deployed Base + HyperEVM"}</span>
+                {/* <span>{"// System Online, Deployed Base + HyperEVM"}</span> */}
+                <span>{"// Launching soon"}</span>
               </div>
 
               {/* Hackathon Badge */}
