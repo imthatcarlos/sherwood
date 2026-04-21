@@ -146,6 +146,20 @@ export class TradeExecutor {
       };
     }
 
+    // Minimum conviction gate — filter out marginal "just barely crossed the
+    // threshold" entries. Trade log review (25 trades): the 3 losing shorts
+    // scored -0.10 to -0.15, winning longs scored 0.20-0.40+. Entries below
+    // 0.18 absolute score have a much higher stop-out rate because they
+    // represent weak signal consensus rather than genuine directional edge.
+    const MIN_CONVICTION_SCORE = 0.12;
+    if (Math.abs(decision.score) < MIN_CONVICTION_SCORE) {
+      return {
+        success: false,
+        error: `Score ${decision.score.toFixed(3)} below minimum conviction (${MIN_CONVICTION_SCORE})`,
+        dryRun: this.config.dryRun,
+      };
+    }
+
     // Resolve token → HL asset index for multi-asset execution.
     // If the token doesn't have a known HL perp, skip execution.
     if (this.config.mode === 'hyperliquid-perp') {

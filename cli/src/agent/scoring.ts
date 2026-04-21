@@ -137,7 +137,11 @@ export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
   // SELL side remains asymmetric with BUY: the contrarian sentiment model +
   // on-chain defaults + BTC-bullish suppression bias the aggregate score
   // positive. Empirical distribution: min -0.18, p3 ≈ -0.10, p50 ≈ +0.15.
-  "ranging":        { strongBuy: 0.30, buy: 0.15, sell: -0.08, strongSell: -0.15 },
+  // Apr 21 recalibration: shorts are 0/3 win rate, all stopped out. The sell
+  // thresholds at -0.08/-0.15 were too easy to trigger with marginal signals
+  // in a ranging/slightly-bullish market. Tightened to require much higher
+  // conviction for shorts while keeping longs at the working 0.15 level.
+  "ranging":        { strongBuy: 0.30, buy: 0.15, sell: -0.20, strongSell: -0.30 },
   "high-volatility":{ strongBuy: 0.70, buy: 0.45, sell: -0.45, strongSell: -0.70 },
   "low-volatility": { strongBuy: 0.60, buy: 0.30, sell: -0.30, strongSell: -0.60 },
 };

@@ -299,7 +299,7 @@ describe("computeTradeDecision", () => {
     expect(rangingDecision.score).toBeLessThan(0.30);
     expect(rangingDecision.action).toBe("BUY");
     expect(rangingDecision.thresholds?.buy).toBe(0.15);
-    expect(rangingDecision.thresholds?.sell).toBeCloseTo(-0.08, 2);
+    expect(rangingDecision.thresholds?.sell).toBeCloseTo(-0.20, 2);
   });
 
   it("trending-up is asymmetric — harder to SELL than default", () => {
@@ -334,29 +334,27 @@ describe("computeTradeDecision", () => {
   });
 
   it("score at sell threshold fires SELL", () => {
-    // Ranging SELL threshold = -0.10 (lowered from -0.15 in Apr 2026
-    // recalibration after dead-weight strategy removal).
-    // toBeCloseTo(−0.10, 10) handles IEEE 754 representation noise.
-    const signals: Signal[] = [makeSignal("technical", -0.10)];
+    // Ranging SELL threshold = -0.20 (tightened Apr 21 after 0/3 short win rate).
+    const signals: Signal[] = [makeSignal("technical", -0.20)];
     const decision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(decision.score).toBeCloseTo(-0.10, 10);
+    expect(decision.score).toBeCloseTo(-0.20, 10);
     expect(decision.action).toBe("SELL");
   });
 
   it("score == strongSell threshold fires STRONG_SELL", () => {
     // 3 categories to avoid convergence bonus.
-    // Ranging strongSell = -0.20 (from REGIME_THRESHOLDS, lowered Apr 2026).
+    // Ranging strongSell = -0.30 (tightened Apr 21).
     const signals: Signal[] = [
-      makeSignal("technical", -0.20),
-      makeSignal("sentiment", -0.20),
-      makeSignal("onchain", -0.20),
+      makeSignal("technical", -0.30),
+      makeSignal("sentiment", -0.30),
+      makeSignal("onchain", -0.30),
     ];
     const decision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(decision.score).toBeCloseTo(-0.20, 5);
+    expect(decision.score).toBeCloseTo(-0.30, 5);
     expect(decision.action).toBe("STRONG_SELL");
   });
 
