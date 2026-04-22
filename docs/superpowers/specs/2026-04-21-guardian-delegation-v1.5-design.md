@@ -25,9 +25,13 @@ Under V1, approving carries slashing risk with zero upside: if a proposal passes
 
 1. **Checkpoint-based vote weight.** Replace live `stakedAmount` reads with `getPastStake(g, openedAt)` at the review open time. Both numerator and denominator are now measured at the same instant — top-up bias eliminated.
 2. **Stake-pool delegation.** Any WOOD holder can `delegateStake(delegate, amount)`, moving WOOD from their wallet into the registry. The delegate's vote weight at a review = own stake + sum of delegated stakes (all checkpointed at `openedAt`). Delegators can `requestUnstakeDelegation` with the same 7-day cooldown as guardians.
-3. **DPoS commission split via Merkl.** Each delegate sets an on-chain `commissionBps` (max 5000 = 50%, max raise 500 bps / epoch). On-chain reward distribution is **moved off-chain to Merkl** (Angle Labs) — registry + governor emit events with all attribution data; Merkl's off-chain bot computes per-claimant amounts (including DPoS commission + delegator pro-rata splits + time-weighted attribution) and publishes Merkle roots to Merkl's distributor contract. Claimants pull rewards via Merkl's standard claim flow. On-chain storage for reward accounting collapses to ~0.
+3. **DPoS commission split — two distribution tracks.** Each delegate sets an on-chain `commissionBps` (max 5000 = 50%, max raise 500 bps / epoch). Distribution splits by token:
+   - **WOOD epoch block-rewards (inflationary):** routed through Merkl (Angle Labs). Registry emits `BlockerAttributed` events; Merkl's off-chain bot applies DPoS + time-weighted attribution and publishes Merkle roots.
+   - **Vault-asset guardian fees (revenue in USDC / WETH / etc.):** on-chain claim via registry. Governor funds `_proposalGuardianPool` at settlement; approvers pull via `claimProposalReward`; DPoS commission split stored in `_delegatorProposalPool`; delegators pull via `claimDelegatorProposalReward`. W-1 escrow handles recipient blacklists.
+
+   Rationale: revenue in external assets stays in our own contracts (full audit trail, atomic with settlement, no off-chain dependency for economically significant flows). Inflationary WOOD emissions we mint ourselves can safely route through Merkl — lower stakes if bot misattributes, and Merkl's time-weighted attribution for epoch-bounded distributions is more accurate than on-chain snapshots.
 4. **WOOD as ERC20VotesUpgradeable.** Redeploy WOOD to standard OZ `ERC20VotesUpgradeable` for off-chain governance UX (vote-weight indexers, Snapshot-style signalling tools). Not used for on-chain registry logic — registry uses its own checkpoints because it needs per-delegator-per-delegate attribution that ERC20Votes doesn't provide natively.
-5. **Guardian fee on settled performance.** New timelocked `guardianFeeBps` governor parameter (default 100 bps = 1%, max 500 bps = 5%). On successful settlement, `grossPnL * guardianFeeBps / 10_000` is carved out before agent fee and transferred to Merkl's distributor contract along with a `GuardianFeeAccrued(proposalId, asset, amount, settledAt)` event. Merkl's off-chain attribution reads registry events (`GuardianVoteCast`, `ReviewResolved`, `DelegationIncreased`, `CommissionSet`) to allocate per-claimant amounts (approvers + their delegators via DPoS split). Fixes Problem 3 and closes the incentive asymmetry.
+5. **Guardian fee on settled performance.** New timelocked `guardianFeeBps` governor parameter (default 100 bps = 1%, max 500 bps = 5%). On successful settlement, `grossPnL * guardianFeeBps / 10_000` is carved out before agent fee and transferred to the registry via `transferPerformanceFee(asset, registry, amount)`; registry stamps `_proposalGuardianPool[proposalId] = {asset, amount, settledAt}`. Approvers call `claimProposalReward(proposalId)` to pull their pro-rata share (DPoS commission split applied against `_commissionCheckpoints[delegate].upperLookupRecent(settledAt)`). Delegators call `claimDelegatorProposalReward(delegate, proposalId)` for their remainder share. Fixes Problem 3 and closes the incentive asymmetry.
 
 ---
 
@@ -65,14 +69,16 @@ Under V1, approving carries slashing risk with zero upside: if a proposal passes
 - **INV-V1.5-1** (single stake vs delegation source): `_guardians[g].stakedAmount` = WOOD transferred in via `stakeAsGuardian`; `_delegatedInbound[delegate]` = sum of `_delegations[delegator][delegate]` over all delegators; the two pools are disjoint.
 - **INV-V1.5-2** (vote weight sum): `getPastVoteWeight(delegate, t) == getPastStake(delegate, t) + getPastDelegated(delegate, t)` for all `t`.
 - **INV-V1.5-3** (denominator parity): `totalStakeAtOpen + totalDelegatedAtOpen` at `openReview` time exactly equals `sum(getPastVoteWeight(g, openedAt))` over the active cohort at `openedAt`.
-- **INV-V1.5-4** (delegation custody): `IERC20(WOOD).balanceOf(registry) == totalGuardianStake + totalDelegatedStake + slashAppealReserve + pendingBurn`. (No `pendingEpochRewards` term — epoch budget goes directly to Merkl.)
+- **INV-V1.5-4** (WOOD custody): `IERC20(WOOD).balanceOf(registry) == totalGuardianStake + totalDelegatedStake + slashAppealReserve + pendingBurn`. No epoch-reward term — WOOD emissions go to Merkl directly.
 - **INV-V1.5-5** (commission bounds): `0 <= commissionBps[D] <= MAX_COMMISSION_BPS` at all times.
 - **INV-V1.5-6** (commission raise-rate): per epoch, `commissionBps[D]` can only increase by at most `MAX_COMMISSION_INCREASE_PER_EPOCH`.
 - **INV-V1.5-7** (guardian-fee bounds): `0 <= guardianFeeBps <= MAX_GUARDIAN_FEE_BPS = 500` at all times; enforced at queue AND finalize.
 - **INV-V1.5-8** (fee-waterfall ordering): in `_distributeFees`, `protocolFee + guardianFee + agentFee + mgmtFee <= grossPnL` by construction (each taken from remaining).
-- **INV-V1.5-9** (guardian-fee destination): every `GuardianFeeAccrued(proposalId, asset, amount, settledAt)` emit is preceded by `IERC20(asset).balanceOf(merklDistributor) += amount` in the same tx. (Merkl is the sole settlement sink.)
+- **INV-V1.5-9** (guardian-fee split conservation): for any settled proposal P, `sum(ApproverRewardClaimed[P].commission) + sum(DelegatorProposalRewardClaimed[P].share) + sum(ApproverFeeEscrowed[P]) <= _proposalGuardianPool[P].amount`. Equality once all claims resolve.
+- **INV-V1.5-10** (guardian-fee asset custody): `IERC20(asset).balanceOf(registry) >= sum over unclaimed P { _proposalGuardianPool[P].amount where asset == P.asset } + sum(_unclaimedApproverFees keyed by asset)`. The registry holds every funded but not-yet-claimed guardian-fee slice.
+- **INV-V1.5-11** (no retroactive commission): `claimProposalReward(P).commission` uses `_commissionCheckpoints[approver].upperLookupRecent(_proposalGuardianPool[P].settledAt)` — stable once `settledAt` is stamped; later `setCommission` calls do not alter past claims.
 
-Reward-distribution correctness (sum-conservation, no-double-claim, commission-retroactive) is a Merkl-side concern — verified via off-chain Merkle root inspection, not on-chain invariants.
+WOOD epoch-reward correctness (sum-conservation, no-double-claim) is off-chain (Merkl's responsibility).
 
 ---
 
@@ -148,74 +154,136 @@ _slashApprovers(proposalId):
 
 Delegators are never slashed. A slashed delegate's `_delegatedInbound` is unchanged by the slash itself — but `getPastVoteWeight` for future reviews will reflect the delegate's reduced own stake. Delegators see their delegate become less effective (lower own weight) and can re-delegate.
 
-### 4.5 Commission configuration (only on-chain reward-related state)
+### 4.5 Commission configuration
 
 ```
 delegate ──setCommission(newBps)──▶ GuardianRegistry
                                     - require newBps <= MAX_COMMISSION_BPS (5000 = 50%)
                                     - require not raising too fast (see below)
                                     - _commissionBps[delegate] = newBps
+                                    - _commissionCheckpoints[delegate].push(now, newBps)
                                     - emit CommissionSet(delegate, oldBps, newBps)
 ```
 
-**Increase-rate limit:** commission can only be raised by `MAX_COMMISSION_INCREASE_PER_EPOCH` (default 500 = 5%) per epoch, cumulative. Decreases are unbounded. Implementation: track `_lastCommissionRaiseEpoch[delegate]` and cap `newBps - oldBps` if in the same epoch as the last raise. Prevents delegates from instant-ramping to 50% right before a reward cycle, rugging delegators.
+**Increase-rate limit:** commission can only be raised by `MAX_COMMISSION_INCREASE_PER_EPOCH` (default 500 = 5%) per epoch, cumulative. Decreases are unbounded. Tracks `_lastCommissionRaiseEpoch[delegate]` and caps `newBps - oldBps` if in the same epoch as the last raise. Prevents delegates from instant-ramping to 50% right before a reward cycle, rugging delegators.
 
-**No on-chain commission checkpointing** — Merkl's off-chain bot reads the `CommissionSet` event at the moment attribution runs (per-epoch / per-settle) and freezes the rate into that round's Merkle root. The rate at Merkle-root time is the rate that applies; subsequent `setCommission` calls affect future rounds only.
+**Checkpoint history (`_commissionCheckpoints`):** used by the on-chain guardian-fee claim path (§4.8) to look up the commission rate at `settledAt`, so the rate that applied at the time a proposal was approved is the rate that applies to the approver's claim — not the rate at claim time. Merkl bot reads the `CommissionSet` event for the WOOD epoch path (§4.7) — no on-chain dependency there.
 
-### 4.6 Reward distribution — Merkl integration
+### 4.6 Reward distribution — two tracks
 
-**All reward attribution and distribution happens off-chain via Merkl.** The registry emits events with all data Merkl needs to compute per-claimant amounts; the governor transfers reward tokens to Merkl's distributor contract; users claim via Merkl's standard UI / SDK with a Merkle proof.
+Rewards split by token:
 
-**On-chain surface (minimal):**
+| Token | Source | Distribution | Why |
+|---|---|---|---|
+| **WOOD** (epoch block-rewards) | Protocol-inflationary emissions | Merkl off-chain | Inflationary, protocol-controlled; Merkl's time-weighted attribution is more accurate than on-chain snapshots; routing through Merkl doesn't put real capital in third-party custody |
+| **Vault asset** (guardian fee on settled PnL) | LP capital, real revenue | On-chain registry claim + DPoS split + W-1 escrow | Real capital stays in our contracts (full audit trail, atomic with settle, no off-chain dependency for economically significant flows) |
 
-```
-GuardianRegistry emits:
-- GuardianVoteCast(proposalId, guardian, VoteType, weight)   // Approve / Block, weight = own + delegated @ openedAt
-- GuardianVoteChanged(proposalId, guardian, oldType, newType)
-- ReviewResolved(proposalId, blocked, slashedAmount)
-- EmergencyBlockVoteCast(proposalId, guardian, weight)
-- EmergencyReviewResolved(proposalId, blocked, slashedAmount)
-- DelegationIncreased(delegator, delegate, amount)
-- DelegationUnstakeClaimed(delegator, delegate, amount)
-- CommissionSet(delegate, oldBps, newBps)
-// All exist today or minor extensions.
+### 4.7 WOOD epoch block-rewards — Merkl path
 
-SyndicateGovernor on settle:
-- _distributeFees carves guardianFee = grossPnl * guardianFeeBps / 10000
-- IERC20(asset).safeTransfer(merklDistributor, guardianFee)
-- emit GuardianFeeAccrued(proposalId, asset, amount, settledAt)
-- No registry call. No proposalGuardianPool accounting.
+**On-chain registry emits:**
 
-Protocol epoch funding:
-- Owner calls WOOD.safeTransfer(merklDistributor, epochBudget) + emits EpochBudgetFunded(epochId, amount)
-- Alternatively: register campaign directly on Merkl's UI and fund from treasury.
+```solidity
+// In resolveReview when blocked_ == true:
+for each blocker b: emit BlockerAttributed(proposalId, currentEpoch, b, _voteStake[proposalId][b]);
+// No on-chain _blockerWeightInEpoch tracking. V1 epoch-claim code removed.
 ```
 
-**Off-chain attribution (Merkl bot + Dune query):**
+Already-emitted events that Merkl reads for epoch attribution:
+- `DelegationIncreased / Cancelled / Claimed` — per-(delegator, delegate) balance timeline
+- `CommissionSet` — rate-at-event-time
+- `GuardianVoteCast` / `GuardianVoteChanged` — per-vote records
 
-Two campaigns registered on Merkl:
+**Merkl campaign (epoch, WOOD):** registered off-chain with custom attribution. Owner funds by `WOOD.safeTransfer(merklDistributor, budget)` per epoch + emits `EpochBudgetFunded(epochId, amount)` (permissionless helper). Merkl bot computes per-claimant amounts with DPoS commission + time-weighted delegator splits, publishes roots, users claim via merkl.xyz.
 
-1. **Epoch block-reward campaign** (WOOD, recurring per-7-day epoch)
-   - Eligibility: guardians who cast `Block` votes on proposals that resolved `blocked = true` during the epoch
-   - Allocation: pro-rata by `weight` from `GuardianVoteCast` (Block side), summed over the epoch
-   - DPoS split: delegate earns `commissionBps` × share; delegators earn `(10000 − commissionBps)` × share × (delegator's `getPastDelegationTo(delegate, epochEnd)` / delegate's `getPastDelegated(delegate, epochEnd)`)
-   - Commission rate frozen at `CommissionSet` event-time for each round (see §4.5)
+### 4.8 Vault-asset guardian fee — on-chain path
 
-2. **Guardian-fee campaign** (per vault asset — usually USDC, per-settle rolling)
-   - Eligibility: guardians who cast `Approve` on a proposal that settled with `guardianFee > 0`
-   - Allocation: pro-rata by Approve-side `weight`, per proposal
-   - DPoS split: same as epoch
-   - Attribution timestamp: `settledAt` from `GuardianFeeAccrued` event
+**Fee waterfall in `SyndicateGovernor._distributeFees`:**
 
-**Merkle root publication:** Merkl's multisig publishes roots per campaign at the cadence they define (typically daily or per epoch). Sherwood's off-chain dependency is limited to Merkl — we don't run our own bot.
+```
+protocolFee = grossPnL * protocolFeeBps / 10_000            // existing
+guardianFee = grossPnL * guardianFeeBps / 10_000            // NEW
 
-**Claim UX:** `merkl.xyz/sherwood` or equivalent. Merkl's SDK produces proofs; user calls `AngleDistributor.claim(proofs[], users[], tokens[], amounts[])`.
+if (guardianFee > 0):
+  ISyndicateVault(vault).transferPerformanceFee(asset, _guardianFeeRecipient, guardianFee)
+  IGuardianRegistry(_guardianFeeRecipient).fundProposalGuardianPool(proposalId, asset, guardianFee)
 
-**W-1 blacklist resilience:** if a claimant is USDC-blacklisted, their Merkle leaf just sits unclaimed — no on-chain escrow, no special path. Claim becomes possible once the blacklist is lifted. Merkle preservation: unclaimed funds stay in Merkl distributor indefinitely.
+remaining = grossPnL - protocolFee - guardianFee
+agentFee  = remaining * perfFeeBps / 10_000
+mgmtFee   = (remaining - agentFee) * mgmtFeeBps / 10_000
+```
 
-### 4.7 Time-weighted delegation attribution
+`_guardianFeeRecipient` is a timelocked governor param that always points at the `GuardianRegistry` in V1.5. Named generically (`guardianFeeRecipient`, not `registry`) to match `protocolFeeRecipient` pattern and leave room for a future distributor swap.
 
-Merkl supports arbitrary attribution logic off-chain. Sherwood will use **time-weighted integration** as the default (V1.5b from the earlier draft): for each delegator–delegate pair and each epoch, compute `∫(balance × dt) / epochDuration` from the on-chain checkpoints. Delegators who delegated mid-epoch get proportional credit; those who unstaked mid-epoch get partial credit for the time they were delegated. This is the "correct" attribution and was previously deferred due to on-chain cost — no longer a constraint.
+**Registry: fund + claim flow:**
+
+```solidity
+// onlyGovernor
+function fundProposalGuardianPool(uint256 proposalId, address asset, uint256 amount) external {
+    if (msg.sender != governor) revert OnlyGovernor();
+    if (amount == 0) return;
+    _proposalGuardianPool[proposalId] = ProposalRewardPool({
+        asset: asset,
+        amount: uint128(amount),
+        settledAt: uint64(block.timestamp)
+    });
+    emit ProposalGuardianPoolFunded(proposalId, asset, amount);
+}
+
+// approver pulls
+function claimProposalReward(uint256 proposalId) external nonReentrant {
+    ProposalRewardPool memory pool = _proposalGuardianPool[proposalId];
+    if (pool.amount == 0) revert NoPoolFunded();
+    if (_approverClaimed[proposalId][msg.sender]) revert AlreadyClaimed();
+
+    uint256 w = _voteStake[proposalId][msg.sender];               // Approve-side only
+    if (w == 0) revert NotApprover();
+    if (_votes[proposalId][msg.sender] != GuardianVoteType.Approve) revert NotApprover();
+
+    uint256 total = _reviews[proposalId].approveStakeWeight;
+    uint256 gross = (uint256(pool.amount) * w) / total;
+
+    uint256 rate = _commissionCheckpoints[msg.sender].upperLookupRecent(pool.settledAt);
+    uint256 commission = (gross * rate) / 10_000;
+    uint256 remainder  = gross - commission;
+
+    _approverClaimed[proposalId][msg.sender] = true;
+    _delegatorProposalPool[msg.sender][proposalId] = remainder;
+
+    _safeRewardTransfer(pool.asset, msg.sender, commission, proposalId); // W-1 escrow on failure
+
+    emit ApproverRewardClaimed(proposalId, msg.sender, gross, commission, remainder);
+}
+
+// delegator pulls (after their delegate has claimed)
+function claimDelegatorProposalReward(address delegate, uint256 proposalId) external nonReentrant {
+    if (_delegatorProposalClaimed[delegate][proposalId][msg.sender]) revert AlreadyClaimed();
+    uint256 pool = _delegatorProposalPool[delegate][proposalId];
+    if (pool == 0) revert DelegatePoolEmpty();
+
+    uint64 settledAt = _proposalGuardianPool[proposalId].settledAt;
+    uint256 my = _delegationCheckpoints[msg.sender][delegate].upperLookupRecent(settledAt);
+    uint256 total = _delegatedInboundCheckpoints[delegate].upperLookupRecent(settledAt);
+    if (my == 0 || total == 0) revert NoDelegationAtSettle();
+
+    uint256 share = (pool * my) / total;
+    _delegatorProposalClaimed[delegate][proposalId][msg.sender] = true;
+
+    address asset = _proposalGuardianPool[proposalId].asset;
+    _safeRewardTransfer(asset, msg.sender, share, proposalId);
+
+    emit DelegatorProposalRewardClaimed(msg.sender, delegate, proposalId, share);
+}
+```
+
+**W-1 escrow (`_safeRewardTransfer`):** wraps `IERC20.safeTransfer` in try/catch; on failure, records `_unclaimedApproverFees[keccak256(proposalId, recipient, asset)] += amount`. Separate `flushUnclaimedApproverFee(proposalId, recipient)` to retry after blacklist lifted. Keyed by `(proposalId, recipient, asset)` to prevent cross-proposal drain (same pattern as governor's `_unclaimedFees`, V-C1-family fix).
+
+**Attribution timestamp:** `settledAt` is captured at `fundProposalGuardianPool` time and used for both commission checkpoint lookup AND delegation checkpoint lookup. Consistent snapshot across approver + delegator claims for the same proposal.
+
+**Two-step claim:** approver must claim first to populate `_delegatorProposalPool[delegate][proposalId]`. Delegators then claim their share. Delegate incentive to claim promptly is aligned (their own commission is paid out in the same tx).
+
+**Approve-side only:** blockers on a settled (not-blocked) proposal earn nothing — they lost the vote; strategy executed; no attribution. Blocker rewards come from the WOOD epoch pool (§4.7).
+
+**Non-settled proposals → no pool:** a blocked proposal never reaches `_distributeFees`, so `_proposalGuardianPool[proposalId].amount == 0`. `claimProposalReward` reverts with `NoPoolFunded`.
 
 ---
 
@@ -239,26 +307,40 @@ mapping(address delegate => Checkpoints.Trace224) private _delegatedInboundCheck
 uint256 public totalDelegatedStake;
 Checkpoints.Trace224 private _totalDelegatedCheckpoint;
 
-// ── Phase 3: commission rate (on-chain; Merkl reads as-of event-time) ──
+// ── Phase 3: commission config (on-chain, checkpointed) ──
 uint256 public constant MAX_COMMISSION_BPS = 5000;
 uint256 public constant MAX_COMMISSION_INCREASE_PER_EPOCH = 500;
-mapping(address => uint256) private _commissionBps;
+mapping(address => uint256) private _commissionBps;               // current rate
 mapping(address => uint256) private _lastCommissionRaiseEpoch;
+mapping(address => Checkpoints.Trace224) private _commissionCheckpoints; // history for settledAt lookup
 
-// __gap reduced accordingly. No reward-accounting storage — Merkl owns that.
-uint256[38] private __gap;
+// ── Phase 3: vault-asset guardian-fee pool (on-chain, per-proposal) ──
+struct ProposalRewardPool {
+    address asset;
+    uint128 amount;
+    uint64 settledAt;
+}
+mapping(uint256 => ProposalRewardPool) private _proposalGuardianPool;
+mapping(uint256 => mapping(address => bool)) private _approverClaimed;
+mapping(address => mapping(uint256 => uint256)) private _delegatorProposalPool; // delegate => proposalId => remainder
+mapping(address => mapping(uint256 => mapping(address => bool))) private _delegatorProposalClaimed;
+
+// ── Phase 3: W-1 escrow for vault-asset reward transfers ──
+// keyed by keccak256(proposalId, recipient, asset) to prevent cross-proposal drain
+mapping(bytes32 => uint256) private _unclaimedApproverFees;
+
+uint256[31] private __gap; // shrunk by +7 from the Phase 2 count
 ```
 
-**What's NOT stored on-chain** (moved to Merkl):
-- Per-epoch blocker weights / totals / budget
-- Per-proposal guardian-fee pools
-- Per-(delegate, epoch) claimed flags
-- Per-(delegator, delegate, epoch) remainder pools + claim flags
-- Commission checkpoints + epoch cache
-- W-1 approver-fee escrow
-- Any reward-claim entry points
+**What is NOT stored on-chain** (moved to Merkl):
+- V1 `_blockerWeightInEpoch`, `_totalBlockerWeightInEpoch`, `_epochBudget`, `claimEpochReward` pool/claim/sweep machinery → removed entirely in favor of `BlockerAttributed` events + Merkl WOOD campaign.
 
-**Slot cost delta from V1.5 previous plan:** −15 slots. Registry bytecode estimate: ~20.5k (vs ~23k full on-chain) — ~2.5k bytes reclaimed.
+**What IS stored on-chain** (this hybrid revert):
+- Commission rate + checkpoint history (for on-chain guardian-fee claim attribution)
+- Per-proposal guardian-fee pool + approver/delegator claim flags
+- W-1 escrow keyed by `(proposalId, recipient, asset)`
+
+**Registry bytecode projection:** Phase 2 landed at 23,092 bytes; Phase 3 adds ~1.5–2k → target ~24–25k. **EIP-170 (24,576) pressure is real** — reclaim plan in §9.
 
 ### WOOD additions
 
@@ -293,32 +375,75 @@ interface IGuardianRegistryV15 is IGuardianRegistry {
     function getPastTotalDelegated(uint256 timestamp) external view returns (uint256);
     function getPastVoteWeight(address delegate, uint256 timestamp) external view returns (uint256);
 
-    // Commission (rate only — no epoch cache, no checkpoint history; Merkl reads on emit)
+    // Commission (rate + checkpoint history for on-chain guardian-fee claim lookup)
     function setCommission(uint256 newBps) external;
     function commissionOf(address delegate) external view returns (uint256);
+    function commissionAt(address delegate, uint256 timestamp) external view returns (uint256);
 
-    // NO on-chain claim functions. Rewards distributed off-chain via Merkl.
-    // Merkl reads the following events to compute attribution.
+    // Vault-asset guardian-fee pool — on-chain (for WOOD epoch rewards, use Merkl)
+    function fundProposalGuardianPool(uint256 proposalId, address asset, uint256 amount) external; // onlyGovernor
+    function claimProposalReward(uint256 proposalId) external;                                     // approver pulls
+    function claimDelegatorProposalReward(address delegate, uint256 proposalId) external;          // delegator pulls
+    function flushUnclaimedApproverFee(uint256 proposalId, address recipient) external;            // W-1 retry
+    function proposalGuardianPool(uint256 proposalId)
+        external view returns (address asset, uint256 amount, uint64 settledAt);
+    function pendingProposalReward(uint256 proposalId, address approver) external view returns (uint256);
+    function pendingDelegatorProposalReward(address delegator, address delegate, uint256 proposalId)
+        external view returns (uint256);
+    function unclaimedApproverFee(uint256 proposalId, address recipient, address asset)
+        external view returns (uint256);
 
     event DelegationIncreased(address indexed delegator, address indexed delegate, uint256 amount);
     event DelegationUnstakeRequested(address indexed delegator, address indexed delegate, uint256 at);
     event DelegationUnstakeCancelled(address indexed delegator, address indexed delegate);
     event DelegationUnstakeClaimed(address indexed delegator, address indexed delegate, uint256 amount);
     event CommissionSet(address indexed delegate, uint256 oldBps, uint256 newBps);
+    event ProposalGuardianPoolFunded(uint256 indexed proposalId, address indexed asset, uint256 amount);
+    event ApproverRewardClaimed(
+        uint256 indexed proposalId, address indexed approver, uint256 gross, uint256 commission, uint256 remainder
+    );
+    event DelegatorProposalRewardClaimed(
+        address indexed delegator, address indexed delegate, uint256 indexed proposalId, uint256 share
+    );
+    event ApproverFeeEscrowed(
+        uint256 indexed proposalId, address indexed recipient, address indexed asset, uint256 amount
+    );
+    // V1 fundEpoch / claimEpochReward / sweepUnclaimed REMOVED (moved to Merkl).
+    // WOOD epoch-reward attribution events — read by Merkl's bot:
+    event BlockerAttributed(
+        uint256 indexed proposalId, uint256 indexed epochId, address indexed blocker, uint256 weight
+    );
 }
 ```
 
-### Governor-side events for Merkl attribution
+### Governor-side interface
 
 ```solidity
-// Emitted in SyndicateGovernor._distributeFees when guardianFeeBps > 0.
+// Storage + timelocked param
+address private _guardianFeeRecipient;
+uint256 private _guardianFeeBps;
+
+// Bounds
+uint256 public constant MAX_GUARDIAN_FEE_BPS = 500;
+
+// Parameter keys (GovernorParameters dispatcher)
+bytes32 public constant PARAM_GUARDIAN_FEE_BPS       = keccak256("guardianFeeBps");
+bytes32 public constant PARAM_GUARDIAN_FEE_RECIPIENT = keccak256("guardianFeeRecipient");
+
+// Setters (both timelocked via queue → delay → finalize)
+function setGuardianFeeBps(uint256 newBps) external; // onlyOwner
+function setGuardianFeeRecipient(address newRecipient) external; // onlyOwner
+
+// Views
+function guardianFeeBps() external view returns (uint256);
+function guardianFeeRecipient() external view returns (address);
+
+// Emitted in _distributeFees when guardianFeeBps > 0.
 event GuardianFeeAccrued(
-    uint256 indexed proposalId, address indexed asset, uint256 amount, uint64 settledAt
+    uint256 indexed proposalId, address indexed asset, address indexed recipient, uint256 amount, uint64 settledAt
 );
 
-// Emitted when the protocol owner tops up an epoch's reward campaign.
-// Owner/minter simply calls WOOD.safeTransfer(merklDistributor, amount) and
-// invokes this explicitly via a protocol helper so the event is indexed.
+// Emitted by a permissionless helper when WOOD is forwarded to Merkl for an epoch.
 event EpochBudgetFunded(uint256 indexed epochId, uint256 amount);
 ```
 
@@ -374,10 +499,11 @@ function _distributeFees(
     if (_guardianFeeBps > 0) {                                              // ← NEW BRANCH
         guardianFee = (profit * _guardianFeeBps) / 10000;
         if (guardianFee > 0) {
-            address merkl = _merklDistributor;
-            if (merkl == address(0)) revert MerklDistributorNotSet();
-            ISyndicateVault(vault).transferPerformanceFee(asset, merkl, guardianFee);
-            emit GuardianFeeAccrued(proposalId, asset, guardianFee, uint64(block.timestamp));
+            address recipient = _guardianFeeRecipient;
+            if (recipient == address(0)) revert GuardianFeeRecipientNotSet();
+            ISyndicateVault(vault).transferPerformanceFee(asset, recipient, guardianFee);
+            IGuardianRegistry(recipient).fundProposalGuardianPool(proposalId, asset, guardianFee);
+            emit GuardianFeeAccrued(proposalId, asset, recipient, guardianFee, uint64(block.timestamp));
         }
     }
 
@@ -398,13 +524,13 @@ function _distributeFees(
 }
 ```
 
-**Bytecode impact:** ~60 bytes added to `SyndicateGovernor` for the guardian-fee branch + `_merklDistributor` storage slot + `setMerklDistributor` timelocked setter. Current margin: 46 bytes under CI gate, 72 under EIP-170 — may need minor reclaim (e.g., consolidating `ISyndicateVault.transferPerformanceFee` call sites).
+**Bytecode impact:** ~80 bytes added to `SyndicateGovernor` for the guardian-fee branch + `_guardianFeeRecipient` + `_guardianFeeBps` storage + two timelocked setters. Current margin: 46 bytes under CI gate, 72 under EIP-170 — will need minor reclaim. Candidates: consolidate `ISyndicateVault.transferPerformanceFee` call sites; share `_guardianFeeRecipient` SLOAD; drop redundant fields from `GuardianFeeAccrued` (recipient already indexed).
 
-### `_merklDistributor` address management
+### `_guardianFeeRecipient` address management
 
-Timelocked governor parameter (`PARAM_MERKL_DISTRIBUTOR`), set once at deploy to Merkl's Base mainnet distributor address and changeable only via the standard parameter-change timelock. Set to `address(0)` at initialize; cannot settle with `guardianFeeBps > 0` until Merkl address is finalized.
+Timelocked governor parameter (`PARAM_GUARDIAN_FEE_RECIPIENT`), set at deploy to `GuardianRegistry` proxy address. Changeable only via the standard parameter-change timelock (same mechanism as `factory` and `protocolFeeRecipient`). Generic naming (not `registry`) so a future distributor swap — e.g. migrating to a native on-chain distributor contract if registry bytecode pressure surfaces — is a single parameter change.
 
-**No registry hook needed** — governor transfers directly to Merkl's distributor; registry is not in the reward funding path.
+**Registry hook:** `GuardianRegistry.fundProposalGuardianPool(proposalId, asset, amount)` is `onlyGovernor`. Stamps the pool struct + emits `ProposalGuardianPoolFunded`. See §4.8 for claim flow.
 
 ## 7. Voting weight integration
 
@@ -454,13 +580,26 @@ Since this is a fresh deployment (not an upgrade of an already-deployed V1 regis
 
 ## 9a. Guardian-fee test matrix additions
 
-- Settle proposal with `guardianFeeBps > 0` → Merkl distributor's asset balance increased by exactly `guardianFee`; `GuardianFeeAccrued` event emitted with correct `(proposalId, asset, amount, settledAt)`.
-- Settle with `guardianFeeBps == 0` → no Merkl transfer; no event.
-- Settle with 0 profit → `guardianFee == 0` → no Merkl transfer; no event.
-- Settle with `_merklDistributor == address(0)` and `guardianFeeBps > 0` → reverts `MerklDistributorNotSet`.
-- Blocked proposal → settlement never runs → no Merkl transfer (verified by asset-balance before/after).
+**Governor side:**
+- Settle with `guardianFeeBps > 0` + valid recipient → registry `_proposalGuardianPool[proposalId]` stamped with `{asset, amount, settledAt}`; `ProposalGuardianPoolFunded` + `GuardianFeeAccrued` both emitted.
+- Settle with `guardianFeeBps == 0` → no transfer, no event, no pool stamped.
+- Settle with 0 profit → `guardianFee == 0` → no transfer, no event, no pool stamped.
+- Settle with `_guardianFeeRecipient == address(0)` and `guardianFeeBps > 0` → reverts `GuardianFeeRecipientNotSet`.
 - Fee-waterfall sum: `protocolFee + guardianFee + agentFee + mgmtFee <= grossPnL` (INV-V1.5-8).
-- (Merkle distribution correctness — per-claimant amounts, DPoS split, commission application — is tested in the off-chain worker / Dune-query test harness, not in Solidity.)
+
+**Registry side — claim path:**
+- Two approvers different weights → each `claimProposalReward` pays pro-rata commission; `sum(commission) + sum(remainder) == gross` (INV-V1.5-9).
+- Approver is also a delegator's delegate → `claimDelegatorProposalReward` pays delegator's share pro-rata; sum preserved.
+- Double-claim reverts with `AlreadyClaimed`.
+- Claim on blocked (non-settled) proposal → reverts `NoPoolFunded`.
+- Blocker calls `claimProposalReward` → reverts `NotApprover` (Approve-side-only enforcement).
+- Commission change between settle and claim → attribution uses rate at `settledAt` (INV-V1.5-11).
+- W-1 escrow: approver blacklisted at claim time → amount escrowed in `_unclaimedApproverFees[keccak256(pid, approver, asset)]`; `flushUnclaimedApproverFee` after un-blacklist delivers.
+- W-1 escrow does NOT cross-drain: escrow on proposal A cannot be pulled via proposal B's flush path (regression for the `claimUnclaimedFees` class of bug from PR #229 review).
+
+**WOOD epoch-side (event-only in Solidity):**
+- `resolveReview` with `blocked_ == true` emits `BlockerAttributed` for each blocker with their `_voteStake` weight — assert count + weights.
+- Merkle distribution correctness (per-claimant amounts, DPoS split, time-weighted delegator attribution for WOOD) is verified in the Merkl bot / Dune query test harness, not in Solidity.
 
 ## 10. Test matrix (V1.5)
 

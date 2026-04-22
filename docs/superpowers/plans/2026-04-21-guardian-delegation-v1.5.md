@@ -519,16 +519,18 @@ bool blocked_ = (uint256(r.blockStakeWeight) * 10_000
 
 ---
 
-## Phase 3 — Commission + Merkl integration
+## Phase 3 — Commission + hybrid rewards
 
-> **Scope change (2026-04-22):** rewards distributed off-chain via Merkl.
-> Phase 3 no longer ships on-chain reward claims. Instead: (a) on-chain
-> `commissionBps` setter + raise-rate limit (readable by Merkl's bot), (b)
-> remove V1 on-chain epoch-claim machinery from registry (since V1 branch
-> not yet merged, clean up before mainnet), (c) governor `guardianFeeBps`
-> parameter + `_distributeFees` branch that transfers USDC to Merkl, (d)
-> Merkl distributor address as timelocked governor param, (e) events Merkl
-> reads for attribution.
+> **Scope change (2026-04-22):** two distribution tracks — (a) WOOD epoch
+> block-rewards route through Merkl (inflationary, controlled by us), (b)
+> vault-asset guardian fee stays on-chain (real capital, full audit trail).
+> Phase 3 ships: (1) `commissionBps` setter + rate limit + checkpoint
+> history, (2) remove V1 on-chain epoch-claim machinery (replaced by
+> `BlockerAttributed` events for Merkl), (3) governor `guardianFeeBps` +
+> `guardianFeeRecipient` timelocked params, (4) `_distributeFees` branch
+> that calls `registry.fundProposalGuardianPool`, (5) registry claim
+> functions `claimProposalReward` / `claimDelegatorProposalReward` with
+> DPoS split + W-1 escrow.
 
 ### Task 3.1 — Commission setter + rate limit
 
@@ -585,6 +587,7 @@ error CommissionRaiseExceedsLimit();
 
 mapping(address => uint256) private _commissionBps;
 mapping(address => uint256) private _lastCommissionRaiseEpoch;
+mapping(address => Checkpoints.Trace224) private _commissionCheckpoints;
 
 event CommissionSet(address indexed delegate, uint256 oldBps, uint256 newBps);
 
@@ -600,11 +603,16 @@ function setCommission(uint256 newBps) external {
         _lastCommissionRaiseEpoch[msg.sender] = curEpoch;
     }
     _commissionBps[msg.sender] = newBps;
+    _commissionCheckpoints[msg.sender].push(uint32(block.timestamp), uint224(newBps));
     emit CommissionSet(msg.sender, old, newBps);
 }
 
 function commissionOf(address delegate) external view returns (uint256) {
     return _commissionBps[delegate];
+}
+
+function commissionAt(address delegate, uint256 timestamp) external view returns (uint256) {
+    return _commissionCheckpoints[delegate].upperLookupRecent(uint32(timestamp));
 }
 ```
 
@@ -702,13 +710,14 @@ function guardianFeeBps() external view returns (uint256) { return _guardianFeeB
 
 - [ ] **Step 5: Commit** — `feat(governor): guardianFeeBps timelocked parameter`
 
-### Task 3.4 — Governor: `merklDistributor` timelocked address param
+### Task 3.4 — Governor: `guardianFeeRecipient` timelocked address param
 
-Same timelock pattern as `factory` (G-M4 closure).
+Same timelock pattern as `factory` / `protocolFeeRecipient`.
 
-- [ ] Add `PARAM_MERKL_DISTRIBUTOR` + `setMerklDistributor` + `_merklDistributor` storage + zero-check at `_distributeFees` time (defer-checking pattern: only revert if `guardianFeeBps > 0`).
-
-- [ ] Test + commit — `feat(governor): merklDistributor timelocked parameter`
+- [ ] Add `PARAM_GUARDIAN_FEE_RECIPIENT` + `setGuardianFeeRecipient(address)` + `_guardianFeeRecipient` storage.
+- [ ] Zero-check at `_distributeFees` time (revert `GuardianFeeRecipientNotSet` only if `guardianFeeBps > 0`).
+- [ ] Set at deploy to `GuardianRegistry` proxy address.
+- [ ] Test + commit — `feat(governor): guardianFeeRecipient timelocked parameter`
 
 ### Task 3.5 — Governor: `_distributeFees` guardian-fee branch
 
@@ -716,59 +725,150 @@ Same timelock pattern as `factory` (G-M4 closure).
 - Modify: `contracts/src/SyndicateGovernor.sol`
 - Test: `contracts/test/governor/GuardianFeeDistribution.t.sol`
 
-- [ ] **Step 1: Test**
+- [ ] **Step 1: Tests**
 
 ```solidity
-function test_settle_withGuardianFee_transfersToMerkl() public {
-    // Assume governor configured with guardianFeeBps=100 and merklDistributor=M.
-    // Settle proposal with 10k USDC profit.
-    uint256 merklBefore = usdc.balanceOf(merklMock);
+function test_settle_withGuardianFee_fundsRegistryPool() public {
+    // guardianFeeBps=100, recipient=registry, 10k USDC profit -> 100 USDC to registry.
     _settleProposal(10_000e6);
-    assertEq(usdc.balanceOf(merklMock), merklBefore + 100e6, "1% guardian fee to Merkl");
-    // Event emitted with correct fields.
-    // (vm.expectEmit in the actual test for GuardianFeeAccrued)
+    (address asset, uint256 amount,) = registry.proposalGuardianPool(proposalId);
+    assertEq(asset, address(usdc));
+    assertEq(amount, 100e6);
 }
 
-function test_settle_withGuardianFee_revertsIfMerklUnset() public {
-    // Configure guardianFeeBps=100 but leave merklDistributor=0.
-    vm.expectRevert(ISyndicateGovernor.MerklDistributorNotSet.selector);
+function test_settle_withGuardianFee_revertsIfRecipientUnset() public {
+    vm.expectRevert(ISyndicateGovernor.GuardianFeeRecipientNotSet.selector);
     _settleProposal(10_000e6);
 }
 
-function test_settle_zeroGuardianFee_noMerklTransfer() public {
-    // guardianFeeBps=0 → no transfer, no event.
-    uint256 merklBefore = usdc.balanceOf(merklMock);
+function test_settle_zeroGuardianFee_noFunding() public {
     _settleProposal(10_000e6);
-    assertEq(usdc.balanceOf(merklMock), merklBefore, "no transfer when bps=0");
+    (, uint256 amount,) = registry.proposalGuardianPool(proposalId);
+    assertEq(amount, 0);
 }
 ```
 
-- [ ] **Step 2: Implement** per spec §6a (concrete Solidity shown there).
+- [ ] **Step 2: Implement** per spec §6a:
 
-- [ ] **Step 3: Check governor size** — likely +60 bytes. If over 24,550, reclaim by simplifying the existing fee-distribution path per CLAUDE.md §85.
+```solidity
+if (_guardianFeeBps > 0) {
+    guardianFee = (profit * _guardianFeeBps) / 10000;
+    if (guardianFee > 0) {
+        address recipient = _guardianFeeRecipient;
+        if (recipient == address(0)) revert GuardianFeeRecipientNotSet();
+        ISyndicateVault(vault).transferPerformanceFee(asset, recipient, guardianFee);
+        IGuardianRegistry(recipient).fundProposalGuardianPool(proposalId, asset, guardianFee);
+        emit GuardianFeeAccrued(proposalId, asset, recipient, guardianFee, uint64(block.timestamp));
+    }
+}
+```
 
-- [ ] **Step 4: Commit** — `feat(governor): guardian-fee branch transfers to Merkl distributor`
+- [ ] **Step 3: Check governor size** — likely +80 bytes. If over 24,550, reclaim per CLAUDE.md §85 (consolidate `transferPerformanceFee` call sites, drop redundant event fields).
 
-### Task 3.6 — Registry: emit `EpochBudgetFunded` helper
+- [ ] **Step 4: Commit** — `feat(governor): guardian-fee branch funds registry pool`
 
-Tiny helper so protocol can document "here's how much WOOD we put into the Merkl campaign this epoch" on-chain for indexers:
+### Task 3.6 — Registry: `fundProposalGuardianPool`
+
+**Files:**
+- Modify: `contracts/src/GuardianRegistry.sol`
+- Test: `contracts/test/GuardianRegistryProposalReward.t.sol`
+
+- [ ] **Step 1: Test** onlyGovernor; struct stamped with correct `{asset, amount, settledAt}`; idempotent no-op on `amount == 0`; double-fund reverts (or overwrites — pick and document).
+
+- [ ] **Step 2: Implement** per spec §4.8:
+
+```solidity
+function fundProposalGuardianPool(uint256 proposalId, address asset, uint256 amount)
+    external
+{
+    if (msg.sender != governor) revert NotGovernor();
+    if (amount == 0) return;
+    // Assume the governor just transferred exactly `amount` of `asset` to us.
+    _proposalGuardianPool[proposalId] = ProposalRewardPool({
+        asset: asset,
+        amount: uint128(amount),
+        settledAt: uint64(block.timestamp)
+    });
+    emit ProposalGuardianPoolFunded(proposalId, asset, amount);
+}
+```
+
+- [ ] Commit — `feat(registry): fundProposalGuardianPool governor hook`
+
+### Task 3.7 — Registry: `claimProposalReward` (approver)
+
+**Files:**
+- Modify: `contracts/src/GuardianRegistry.sol`
+- Test: `contracts/test/GuardianRegistryProposalReward.t.sol`
+
+- [ ] **Step 1: Tests**
+
+```solidity
+function test_claimProposalReward_approverPaysCommission() public {
+    _settleApproved(10_000e6); // 100 USDC guardian fee
+    // One approver with 100% of approveStakeWeight, 2000 bps commission
+    vm.prank(approver1);
+    registry.setCommission(2000);
+    _openReview(); _approve(approver1); _resolve(); _settle();
+
+    uint256 before = usdc.balanceOf(approver1);
+    vm.prank(approver1);
+    registry.claimProposalReward(proposalId);
+    assertEq(usdc.balanceOf(approver1) - before, 100e6 * 2000 / 10_000);  // 20 USDC commission
+    // remainder 80 USDC stays in registry under _delegatorProposalPool[approver1][pid]
+}
+
+function test_claimProposalReward_blockerReverts() public {
+    // ...
+    vm.expectRevert(IGuardianRegistry.NotApprover.selector);
+    vm.prank(blocker1);
+    registry.claimProposalReward(proposalId);
+}
+
+function test_claimProposalReward_doubleReverts() public { /* ... */ }
+function test_claimProposalReward_commissionAtSettledAt_notAtClaim() public { /* ... */ }
+function test_claimProposalReward_blockedProposal_reverts_NoPoolFunded() public { /* ... */ }
+```
+
+- [ ] **Step 2: Implement** per spec §4.8 (full Solidity shown there, including DPoS split + `_safeRewardTransfer` for W-1 escrow).
+
+- [ ] Commit — `feat(registry): claimProposalReward (approver DPoS commission)`
+
+### Task 3.8 — Registry: `claimDelegatorProposalReward`
+
+- [ ] Test: delegator pulls pro-rata share of `_delegatorProposalPool[delegate][pid]`; requires delegate to have claimed first; double-claim reverts; no-delegation-at-settledAt reverts.
+
+- [ ] Implement per spec §4.8 (reads `_delegationCheckpoints[delegator][delegate].upperLookupRecent(settledAt)`).
+
+- [ ] Commit — `feat(registry): claimDelegatorProposalReward (DPoS delegator share)`
+
+### Task 3.9 — Registry: W-1 escrow + `flushUnclaimedApproverFee`
+
+- [ ] Add `_safeRewardTransfer(asset, recipient, amount, proposalId)` internal that wraps `safeTransfer` in try/catch; on failure records `_unclaimedApproverFees[keccak256(proposalId, recipient, asset)] += amount` + emits `ApproverFeeEscrowed`.
+
+- [ ] Add external `flushUnclaimedApproverFee(proposalId, recipient)` that transfers the escrowed amount to `recipient` if still > 0 (idempotent).
+
+- [ ] **Regression test** the cross-proposal drain fix from PR #229 review: escrow on proposal A cannot be pulled via proposal B's flush path (key must include proposalId).
+
+- [ ] Commit — `feat(registry): W-1 escrow for guardian-fee reward transfers`
+
+### Task 3.10 — Registry: emit `EpochBudgetFunded` helper
+
+Lightweight indexer helper for the WOOD epoch pool funded on Merkl:
 
 ```solidity
 event EpochBudgetFunded(uint256 indexed epochId, uint256 amount);
 
-/// @notice Permissionless helper: verifies the caller transferred `amount`
-///         WOOD to `merklDistributor` and emits an event for Merkl's bot +
-///         indexers to correlate epoch funding with campaigns. Does NOT move
-///         any funds — caller must transfer to merklDistributor directly.
-///         Doubles as the protocol's public commitment log for the epoch.
+/// @notice Permissionless — caller transfers WOOD to `guardianFeeRecipient`
+///         (or any Merkl distributor address) separately; this function only
+///         emits the event so Merkl's bot + indexers can correlate the
+///         campaign deposit with an epoch. No token movement happens here.
 function recordEpochBudget(uint256 epochId, uint256 amount) external {
     emit EpochBudgetFunded(epochId, amount);
 }
 ```
 
-Alternative: owner-only funcion that pulls WOOD from caller and forwards to Merkl in one tx. Decide based on who actually funds (treasury multisig or Minter). Recommend the former (lightweight, composable).
-
-- [ ] Test + commit
+- [ ] Test + commit — `feat(registry): EpochBudgetFunded helper`
 
 ---
 ## Phase 4 — Invariant harness + integration tests
