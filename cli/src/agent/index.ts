@@ -32,6 +32,7 @@ import {
   getBtcNetworkStats,
   getCryptoPredictions,
   getSocialData,
+  getCryptoCompareCandles,
 } from '../providers/fincept/index.js';
 import { logSignal } from "./signal-logger.js";
 import type { JudgeLogData } from "./signal-logger.js";
@@ -163,41 +164,8 @@ export class TradingAgent {
       // 1a. PRIMARY: Hyperliquid candles (4h over 30 days ≈ 180 bars — more than enough for EMA/RSI/MACD)
       this.hyperliquid.getCandles(tokenId, '4h', 30 * 24 * 60 * 60 * 1000),
 
-      // 1b. FALLBACK: CoinGecko OHLC (rate-limited on free tier)
-      this.coingecko.getOHLC(tokenId, 30).then(async (ohlcRaw) => {
-        if (!ohlcRaw || ohlcRaw.length <= 10) return null;
-
-        const rawCandles = ohlcRaw.map((c: number[]) => ({
-          timestamp: c[0]!,
-          open: c[1]!,
-          high: c[2]!,
-          low: c[3]!,
-          close: c[4] ?? c[3]!, // CoinGecko OHLC: [ts, o, h, l, c]
-          volume: 0, // OHLC endpoint doesn't include volume
-        }));
-
-        // Fetch volume data in parallel
-        try {
-          const marketData = await this.coingecko.getMarketData(tokenId, 30);
-          if (marketData?.total_volumes) {
-            // Map volumes to nearest candle by timestamp
-            for (const candle of rawCandles) {
-              const nearest = marketData.total_volumes.reduce(
-                (best: number[], v: number[]) =>
-                  Math.abs(v[0]! - candle.timestamp) < Math.abs(best[0]! - candle.timestamp)
-                    ? v
-                    : best,
-                marketData.total_volumes[0]!,
-              );
-              candle.volume = nearest[1] ?? 0;
-            }
-          }
-        } catch {
-          // Volume data optional
-        }
-
-        return rawCandles;
-      }),
+      // 1b. FALLBACK: CryptoCompare candles via Fincept (replaces CoinGecko OHLC)
+      getCryptoCompareCandles(tokenId, 180),
 
       // 2. Fetch Fear & Greed
       this.sentiment.getFearAndGreed(),

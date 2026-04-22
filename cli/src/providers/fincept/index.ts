@@ -4,3 +4,4 @@ export { getMessariFundamentals } from './messari.js';
 export { getBtcNetworkStats } from './blockchain.js';
 export { getCryptoPredictions } from './polymarket.js';
 export { getSocialData } from './sentiment.js';
+export { getCryptoCompareCandles } from './cryptocompare.js';
