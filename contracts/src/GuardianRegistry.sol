@@ -216,12 +216,44 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @dev Global delegation total history for `getPastTotalDelegated`.
     Checkpoints.Trace224 internal _totalDelegatedCheckpoint;
 
+    // ── V1.5 Phase 3: DPoS commission (Task 3.1) ──
+
+    /// @notice Max commission a delegate can charge their delegators (50%).
+    uint256 public constant MAX_COMMISSION_BPS = 5000;
+
+    /// @notice Max bps increase per epoch (5%). Prevents delegates from
+    ///         instant-ramping commission to rug their delegators' share of
+    ///         already-earned rewards. Decreases are unbounded.
+    uint256 public constant MAX_COMMISSION_INCREASE_PER_EPOCH = 500;
+
+    /// @dev Current commission rate per delegate.
+    mapping(address => uint256) internal _commissionBps;
+
+    /// @dev Epoch in which the delegate last raised (or first-set) their
+    ///      commission. Used to detect transition into a new raise-epoch so
+    ///      `_commissionEpochBaseline` can be re-anchored.
+    mapping(address => uint256) internal _lastCommissionRaiseEpoch;
+
+    /// @dev Anchor for the per-epoch cumulative raise cap. Seeded on:
+    ///      - first-ever set: baseline = newBps (rate is being announced)
+    ///      - first raise of a new epoch: baseline = rate at epochStart - 1
+    ///        (last pre-epoch checkpoint)
+    ///      Subsequent raises within the same epoch keep the baseline fixed,
+    ///      so chained raises cannot compound past
+    ///      `baseline + MAX_COMMISSION_INCREASE_PER_EPOCH` (INV-V1.5-6).
+    mapping(address => uint256) internal _commissionEpochBaseline;
+
+    /// @dev Per-delegate commission history keyed by timestamp. Consumed by
+    ///      `claimProposalReward` which looks up the rate at `settledAt` —
+    ///      closes the retroactive-raise vector (INV-V1.5-11). Also consumed
+    ///      by `setCommission` itself to derive the per-epoch raise baseline.
+    mapping(address => Checkpoints.Trace224) internal _commissionCheckpoints;
+
     /// @dev Reserved storage for future upgrades.
-    ///      Slot accounting since V1: -2 for (_stakeCheckpoints, _totalStakeCheckpoint),
-    ///      -5 more for (_delegations, _delegationCheckpoints,
-    ///      _unstakeDelegationRequestedAt, _delegatedInbound, _delegatedInboundCheckpoints),
-    ///      -2 more for (totalDelegatedStake, _totalDelegatedCheckpoint) = -9 total.
-    uint256[42] private __gap;
+    ///      Slot accounting since V1: -9 (Phase 1 + Phase 2),
+    ///      -4 more for (_commissionBps, _lastCommissionRaiseEpoch,
+    ///      _commissionEpochBaseline, _commissionCheckpoints) = -13 total.
+    uint256[38] private __gap;
 
     // ── Initializer ──
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -444,6 +476,68 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
 
         wood.safeTransfer(msg.sender, amount);
         emit DelegationUnstakeClaimed(msg.sender, delegate, amount);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // V1.5 Phase 3 — DPoS commission configuration (Task 3.1)
+    // ──────────────────────────────────────────────────────────────
+
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Sets the caller's commission rate (0 – MAX_COMMISSION_BPS) that
+    ///      applies to their delegators' share of future guardian-fee and WOOD
+    ///      epoch rewards. Raises capped to `MAX_COMMISSION_INCREASE_PER_EPOCH`
+    ///      bps above the rate that held at the start of the current epoch —
+    ///      *cumulative*, so chaining multiple raises within the same epoch
+    ///      can't compound past the cap. Decreases are unbounded. Pushes a
+    ///      checkpoint so historical claims resolve the rate at their
+    ///      `settledAt`.
+    function setCommission(uint256 newBps) external {
+        if (newBps > MAX_COMMISSION_BPS) revert CommissionExceedsMax();
+
+        uint256 old = _commissionBps[msg.sender];
+        if (newBps == old) return;
+
+        if (newBps > old) {
+            uint256 curEpoch = currentEpoch();
+            (bool hasHistory,,) = _commissionCheckpoints[msg.sender].latestCheckpoint();
+            if (!hasHistory) {
+                // First-ever set: no rate limit — delegate is announcing their
+                // opening rate. Seed the baseline to `newBps` so any same-epoch
+                // raise is capped from this announced value.
+                _commissionEpochBaseline[msg.sender] = newBps;
+                _lastCommissionRaiseEpoch[msg.sender] = curEpoch;
+            } else {
+                if (_lastCommissionRaiseEpoch[msg.sender] != curEpoch) {
+                    // Entering a new raise-epoch: re-anchor baseline to the
+                    // rate as of the PREVIOUS epoch's final state (via
+                    // checkpoint lookup at epochStart - 1).
+                    uint256 epochStart = epochGenesis + curEpoch * EPOCH_DURATION;
+                    uint256 probe = epochStart == 0 ? 0 : epochStart - 1;
+                    _commissionEpochBaseline[msg.sender] =
+                        _commissionCheckpoints[msg.sender].upperLookupRecent(uint32(probe));
+                    _lastCommissionRaiseEpoch[msg.sender] = curEpoch;
+                }
+                uint256 baseline = _commissionEpochBaseline[msg.sender];
+                if (newBps > baseline + MAX_COMMISSION_INCREASE_PER_EPOCH) {
+                    revert CommissionRaiseExceedsLimit();
+                }
+            }
+        }
+
+        _commissionBps[msg.sender] = newBps;
+        _commissionCheckpoints[msg.sender].push(uint32(block.timestamp), uint224(newBps));
+
+        emit CommissionSet(msg.sender, old, newBps);
+    }
+
+    /// @inheritdoc IGuardianRegistry
+    function commissionOf(address delegate) external view returns (uint256) {
+        return _commissionBps[delegate];
+    }
+
+    /// @inheritdoc IGuardianRegistry
+    function commissionAt(address delegate, uint256 timestamp) external view returns (uint256) {
+        return _commissionCheckpoints[delegate].upperLookupRecent(uint32(timestamp));
     }
 
     // ──────────────────────────────────────────────────────────────

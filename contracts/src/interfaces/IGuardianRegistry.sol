@@ -48,6 +48,9 @@ interface IGuardianRegistry {
     error NoActiveDelegation();
     error NoUnstakeRequest();
     error UnstakeCooldownActive();
+    // V1.5 Phase 3 — commission
+    error CommissionExceedsMax();
+    error CommissionRaiseExceedsLimit();
     error InvalidAgentId();
     error ChangeAlreadyPending();
     error NoChangePending();
@@ -191,4 +194,11 @@ interface IGuardianRegistry {
     event DelegationUnstakeRequested(address indexed delegator, address indexed delegate, uint256 at);
     event DelegationUnstakeCancelled(address indexed delegator, address indexed delegate);
     event DelegationUnstakeClaimed(address indexed delegator, address indexed delegate, uint256 amount);
+
+    // ── V1.5 Phase 3: DPoS commission ──
+    function setCommission(uint256 newBps) external;
+    function commissionOf(address delegate) external view returns (uint256);
+    function commissionAt(address delegate, uint256 timestamp) external view returns (uint256);
+
+    event CommissionSet(address indexed delegate, uint256 oldBps, uint256 newBps);
 }
