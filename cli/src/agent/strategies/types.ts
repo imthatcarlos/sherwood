@@ -55,6 +55,15 @@ export interface StrategyContext {
     orderBookImbalance: number;
     largeTradesBias: number;
   };
+  /** Fincept: Blockchain.com BTC network stats. */
+  btcNetworkData?: {
+    hashRate: number;
+    difficulty: number;
+    mempoolSize: number;
+    minerRevenueBtc: number;
+    marketPriceUsd: number;
+    transactionCount: number;
+  };
   tokenSymbol?: string;       // resolved symbol (e.g. "ETH" for "ethereum")
   groupReturns?: Record<string, number>;  // cross-sectional: 7-day returns for all tokens in cycle
   /** Fincept: Polymarket/Manifold prediction market probabilities. */
