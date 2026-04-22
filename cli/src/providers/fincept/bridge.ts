@@ -6,20 +6,35 @@
  */
 
 import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
+/**
+ * Resolve the fincept scripts directory. Works both in source mode
+ * (cli/src/providers/fincept/ → ../../.. → cli/scripts/fincept) and
+ * bundled mode (cli/dist/ → .. → cli/scripts/fincept).
+ */
+function resolveScriptsDir(): string {
+  // Try source layout first: cli/src/providers/fincept/ → cli/scripts/fincept
+  const fromSource = join(__dirname, "..", "..", "..", "scripts", "fincept");
+  if (existsSync(fromSource)) return fromSource;
+  // Bundled layout: cli/dist/ → cli/scripts/fincept
+  const fromDist = join(__dirname, "..", "scripts", "fincept");
+  if (existsSync(fromDist)) return fromDist;
+  // Fallback: relative to cwd (typically repo root or cli/)
+  const fromCwd = join(process.cwd(), "scripts", "fincept");
+  if (existsSync(fromCwd)) return fromCwd;
+  const fromCwdCli = join(process.cwd(), "cli", "scripts", "fincept");
+  if (existsSync(fromCwdCli)) return fromCwdCli;
+  // Last resort
+  return fromSource;
+}
+
 /** Absolute path to the vendored fincept scripts directory. */
-export const FINCEPT_SCRIPTS_DIR = join(
-  __dirname,
-  "..",
-  "..",
-  "..",
-  "scripts",
-  "fincept",
-);
+export const FINCEPT_SCRIPTS_DIR = resolveScriptsDir();
 
 export interface BridgeResult<T = unknown> {
   ok: boolean;
