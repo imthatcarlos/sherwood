@@ -32,23 +32,21 @@ export interface ScoringWeights {
 // and reduce smartMoney since x402 Nansen is often unfunded in practice.
 // `onchain` slightly boosted — HL flow + fundingRate are the highest-firing
 // live categories. Sums to 1.00.
-// Post-audit weights (Apr 2026). Prior DEFAULT_WEIGHTS summed to 0.75 — all
-// scores dampened by 25%, making BUY thresholds unreachable. Fixed to 1.00.
-// Dead strategies removed (meanReversion, tvlMomentum, tokenUnlock,
-// twitterSentiment, smartMoney strategy). Redistributed to 4 active categories.
-// technical (5 signals) + onchain (3 signals) carry 70% — they're the highest-
-// firing, most directional. sentiment (sentimentContrarian) at 20% — fires on
-// F&G extremes only. smartMoney (Nansen) at 10% — x402/API dependent.
-// Sum = 1.00. Only 4 categories have active signals in production:
-// technical (5 strategies), onchain (3 strategies), sentiment (1), smartMoney (Nansen).
-// fundamental/event zeroed — all strategies that fed them are removed.
+// Post-Fincept weights (Apr 22 2026). All 6 categories now have live data:
+// - technical (6 signals): HL candles, TradingView, breakout, MTF, XS momentum, BTC network health
+// - onchain (4 signals): HL flow, funding rate, DEX flow, Glassnode (NVT/SOPR/active addr)
+// - sentiment (2 signals): sentimentContrarian (F&G), socialVolume (CryptoCompare news)
+// - fundamental (1 signal): scoreFundamental fed by Messari + DefiLlama TVL
+// - event (1 signal): predictionMarket (Polymarket/Manifold macro catalysts)
+// - smartMoney (1-2 signals): Nansen x402 (when funded)
+// Sum = 1.00. fundamental + event re-enabled at 15% + 10% respectively.
 export const DEFAULT_WEIGHTS: ScoringWeights = {
-  smartMoney: 0.10,
-  technical: 0.35,
+  smartMoney: 0.05,
+  technical: 0.25,
   sentiment: 0.20,
-  onchain: 0.35,
-  fundamental: 0.00,
-  event: 0.00,
+  onchain: 0.25,
+  fundamental: 0.15,
+  event: 0.10,
 };
 
 /**
@@ -72,12 +70,11 @@ export const WEIGHT_PROFILES: Record<string, ScoringWeights> = {
   // concentrates the freed-up weight into sentiment + onchain (the two
   // categories that produce directional opinions on majors). Technical and
   // smartMoney shrink because both are lagging or unfunded in practice.
-  majors:    { smartMoney: 0.15, technical: 0.10, sentiment: 0.40, onchain: 0.35, fundamental: 0.00, event: 0.00 },
-  // Altcoins: keep fundamental (TVL data exists) and event. Sentiment lifted
-  // here too but less aggressively — altcoins respond more to TVL/flow than
-  // majors, and the sentimentContrarian extremes-only fix means sentiment
-  // weight is dormant most of the time.
-  altcoin:   { smartMoney: 0.15, technical: 0.15, sentiment: 0.30, onchain: 0.20, fundamental: 0.10, event: 0.10 },
+  // Majors: Glassnode fires on BTC/ETH, Polymarket fires globally.
+  // Sentiment stays high (social + contrarian). Fundamental from Messari.
+  majors:    { smartMoney: 0.05, technical: 0.20, sentiment: 0.25, onchain: 0.25, fundamental: 0.15, event: 0.10 },
+  // Altcoins: DefiLlama TVL + Messari data more relevant. Glassnode less relevant (BTC/ETH only).
+  altcoin:   { smartMoney: 0.05, technical: 0.20, sentiment: 0.20, onchain: 0.15, fundamental: 0.25, event: 0.15 },
   // sentHeavy/techHeavy removed — unvalidated, added parameter complexity without evidence of benefit
 };
 
