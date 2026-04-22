@@ -34,17 +34,19 @@ export interface ScoringWeights {
 // live categories. Sums to 1.00.
 // Post-Fincept weights (Apr 22 2026). All 6 categories now have live data:
 // - technical (6 signals): HL candles, TradingView, breakout, MTF, XS momentum, BTC network health
-// - onchain (4 signals): HL flow, funding rate, DEX flow, Glassnode (NVT/SOPR/active addr)
+// - onchain (3 signals): HL flow, funding rate, DEX flow
 // - sentiment (2 signals): sentimentContrarian (F&G), socialVolume (CryptoCompare news)
 // - fundamental (1 signal): scoreFundamental fed by Messari + DefiLlama TVL
 // - event (1 signal): predictionMarket (Polymarket/Manifold macro catalysts)
 // - smartMoney (1-2 signals): Nansen x402 (when funded)
-// Sum = 1.00. fundamental + event re-enabled at 15% + 10% respectively.
+// Sum = 1.00. Glassnode removed (requires $999/mo Professional API plan).
+// Freed 5% from onchain redistributed to technical (BTC network health is the
+// remaining onchain-adjacent signal in the technical category).
 export const DEFAULT_WEIGHTS: ScoringWeights = {
   smartMoney: 0.05,
-  technical: 0.25,
+  technical: 0.30,
   sentiment: 0.20,
-  onchain: 0.25,
+  onchain: 0.20,
   fundamental: 0.15,
   event: 0.10,
 };
@@ -70,11 +72,11 @@ export const WEIGHT_PROFILES: Record<string, ScoringWeights> = {
   // concentrates the freed-up weight into sentiment + onchain (the two
   // categories that produce directional opinions on majors). Technical and
   // smartMoney shrink because both are lagging or unfunded in practice.
-  // Majors: Glassnode fires on BTC/ETH, Polymarket fires globally.
-  // Sentiment stays high (social + contrarian). Fundamental from Messari.
-  majors:    { smartMoney: 0.05, technical: 0.20, sentiment: 0.25, onchain: 0.25, fundamental: 0.15, event: 0.10 },
-  // Altcoins: DefiLlama TVL + Messari data more relevant. Glassnode less relevant (BTC/ETH only).
-  altcoin:   { smartMoney: 0.05, technical: 0.20, sentiment: 0.20, onchain: 0.15, fundamental: 0.25, event: 0.15 },
+  // Majors: Polymarket fires globally. Sentiment stays high (social + contrarian).
+  // Fundamental from Messari. Glassnode removed — technical gets the freed weight.
+  majors:    { smartMoney: 0.05, technical: 0.25, sentiment: 0.25, onchain: 0.20, fundamental: 0.15, event: 0.10 },
+  // Altcoins: DefiLlama TVL + Messari data more relevant. Onchain signals less impactful.
+  altcoin:   { smartMoney: 0.05, technical: 0.25, sentiment: 0.20, onchain: 0.10, fundamental: 0.25, event: 0.15 },
   // sentHeavy/techHeavy removed — unvalidated, added parameter complexity without evidence of benefit
 };
 
@@ -501,7 +503,6 @@ const SIGNAL_CATEGORY_MAP: Record<string, keyof ScoringWeights> = {
   fundingRate: "onchain",
   hyperliquidFlow: "onchain",
   sentimentContrarian: "sentiment",
-  glassnodeOnChain: "onchain",
   btcNetworkHealth: "technical",
   predictionMarket: "event",
   socialVolume: "sentiment",

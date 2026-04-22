@@ -12,7 +12,6 @@ import { HyperliquidFlowStrategy } from './hyperliquid-flow.js';
 import { MultiTimeframeStrategy } from './multi-timeframe.js';
 import { CrossSectionalMomentumStrategy } from './cross-sectional-momentum.js';
 import { TradingViewSignalStrategy } from './tradingview-signal.js';
-import { GlassnodeOnChainStrategy } from './glassnode-onchain.js';
 import { BtcNetworkHealthStrategy } from './btc-network-health.js';
 import { PredictionMarketStrategy } from './prediction-market.js';
 import { SocialVolumeStrategy } from './social-volume.js';
@@ -22,7 +21,7 @@ export { SentimentContrarianStrategy, BreakoutOnChainStrategy, FundingRateStrate
 export { DexFlowStrategy, HyperliquidFlowStrategy };
 export { MultiTimeframeStrategy, CrossSectionalMomentumStrategy };
 export { TradingViewSignalStrategy };
-export { GlassnodeOnChainStrategy, BtcNetworkHealthStrategy };
+export { BtcNetworkHealthStrategy };
 export { PredictionMarketStrategy, SocialVolumeStrategy };
 
 export const DEFAULT_STRATEGIES: Strategy[] = [
@@ -34,7 +33,6 @@ export const DEFAULT_STRATEGIES: Strategy[] = [
   new MultiTimeframeStrategy(),         // technical — multi-TF EMA alignment
   new CrossSectionalMomentumStrategy(), // technical — relative strength ranking
   new TradingViewSignalStrategy(),      // technical — TradingView MCP indicators
-  new GlassnodeOnChainStrategy(),       // onchain — Glassnode NVT/SOPR/active addresses
   new BtcNetworkHealthStrategy(),       // technical — BTC network health
   new PredictionMarketStrategy(),       // event — prediction market catalysts
   new SocialVolumeStrategy(),           // sentiment — social volume contrarian

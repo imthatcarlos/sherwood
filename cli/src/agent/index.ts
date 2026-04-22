@@ -13,7 +13,6 @@ import { getLatestSignals } from "./technical.js";
 import {
   scoreTechnical,
   scoreSentiment,
-  scoreOnChain,
   scoreFundamental,
   scoreEvent,
   computeTradeDecision,
@@ -27,7 +26,6 @@ import { FundingRateProvider } from "../providers/data/funding-rate.js";
 import { TokenUnlocksProvider } from "../providers/data/token-unlocks.js";
 import { TwitterSentimentProvider } from "../providers/data/twitter.js";
 import {
-  getGlassnodeMetrics,
   getMessariFundamentals,
   getBtcNetworkStats,
   getCryptoPredictions,
@@ -379,16 +377,14 @@ export class TradingAgent {
     // phase 1, or Nansen/Messari from x402).
 
     // Phase 2b: Fincept data (parallel, all fault-tolerant)
-    const [glassnodeResult, messariResult, btcNetResult, predictionResult, socialResult] =
+    const [messariResult, btcNetResult, predictionResult, socialResult] =
       await Promise.allSettled([
-        getGlassnodeMetrics(tokenId),
         getMessariFundamentals(tokenId),
         tokenId === 'bitcoin' ? getBtcNetworkStats() : Promise.resolve(null),
         getCryptoPredictions(),
         getSocialData(tokenId),
       ]);
 
-    const glassnodeData = glassnodeResult.status === 'fulfilled' ? glassnodeResult.value ?? undefined : undefined;
     const messariFundamentals = messariResult.status === 'fulfilled' ? messariResult.value ?? undefined : undefined;
     const btcNetworkData = btcNetResult.status === 'fulfilled' ? btcNetResult.value ?? undefined : undefined;
     const predictionData = predictionResult.status === 'fulfilled' && predictionResult.value?.length
@@ -409,14 +405,6 @@ export class TradingAgent {
       } else {
         signals.push(fundSignal);
       }
-    }
-
-    // Feed Glassnode into scoreOnChain if available
-    if (glassnodeData && !isNaN(glassnodeData.activeAddresses)) {
-      signals.push(scoreOnChain({
-        activeAddressesGrowth: glassnodeData.activeAddressesGrowth,
-        whaleAccumulating: glassnodeData.sopr < 1.0,
-      }));
     }
 
     // Phase 3: Parallel strategy data fetching (symbol, funding rate, unlocks)
@@ -492,7 +480,6 @@ export class TradingAgent {
         hyperliquidData, // from phase 3
         tokenSymbol, // from phase 3
         groupReturns: opts?.groupReturns, // cross-sectional momentum
-        glassnodeData,
         messariFundamentals,
         btcNetworkData,
         predictionData,

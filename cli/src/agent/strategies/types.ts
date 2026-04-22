@@ -44,14 +44,6 @@ export interface StrategyContext {
     upcomingUnlocks: Array<{ percentOfSupply: number; daysUntil: number; description: string }>;
     totalUpcomingPercent: number;
   };
-  /** Fincept: Glassnode on-chain metrics (BTC/ETH). */
-  glassnodeData?: {
-    activeAddresses: number;
-    activeAddressesGrowth: number;
-    nvtRatio: number;
-    sopr: number;
-    transactionCount: number;
-  };
   hyperliquidData?: {         // from Hyperliquid (free, native exchange data)
     fundingRate: number;
     openInterest: number;
