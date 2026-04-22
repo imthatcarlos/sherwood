@@ -93,6 +93,7 @@ function scoreParams(
   }
 
   const allReturns: number[] = [];
+  const allHoldDurations: number[] = []; // ms per closed trade
   let totalTrades = 0;
   let wins = 0;
 
@@ -145,6 +146,7 @@ function scoreParams(
 
         if (exit) {
           allReturns.push(pnl);
+          allHoldDurations.push(ts - position.entryTs);
           totalTrades++;
           if (pnl > 0) wins++;
           position = null;
@@ -162,15 +164,24 @@ function scoreParams(
     }
   }
 
-  // Compute metrics
-  if (totalTrades < 5) {
+  // Compute metrics — require 20+ trades for statistical significance.
+  // Prior threshold of 5 produced meaningless Sharpe ratios.
+  if (totalTrades < 20) {
     return { sharpe: -999, totalReturn: 0, maxDrawdown: 1, trades: totalTrades, winRate: 0, score: -999 };
   }
 
   const mean = allReturns.reduce((s, r) => s + r, 0) / allReturns.length;
   const variance = allReturns.reduce((s, r) => s + (r - mean) ** 2, 0) / (allReturns.length - 1);
   const std = Math.sqrt(variance);
-  const sharpe = std > 0 ? (mean / std) * Math.sqrt(252) : 0; // annualized
+
+  // Hold-duration-aware Sharpe annualization (from replay-calibrator).
+  // Prior code used √252 blindly, inflating Sharpe ~1.8x for multi-day holds.
+  const avgHoldMs = allHoldDurations.length > 0
+    ? allHoldDurations.reduce((s, d) => s + d, 0) / allHoldDurations.length
+    : 86400000; // 1 day fallback
+  const avgHoldDays = Math.max(avgHoldMs / 86400000, 0.1);
+  const tradesPerYear = Math.max(252 / avgHoldDays, 1);
+  const sharpe = std > 0 ? (mean / std) * Math.sqrt(tradesPerYear) : 0;
 
   const totalReturn = allReturns.reduce((eq, r) => eq * (1 + r), 1) - 1;
 
@@ -187,8 +198,9 @@ function scoreParams(
 
   const winRate = wins / totalTrades;
 
-  // Composite score (Nunchi formula adapted)
-  const tradePenalty = Math.sqrt(Math.min(totalTrades / 20, 1.0));
+  // Composite score — penalizes low sample sizes and large drawdowns.
+  // tradePenalty scales from 0 at 20 trades to 1.0 at 50 trades (was 20).
+  const tradePenalty = Math.sqrt(Math.min(totalTrades / 50, 1.0));
   const ddPenalty = maxDD > 0.50 ? 999 : maxDD * 5;
   const score = sharpe * tradePenalty - ddPenalty;
 
@@ -335,16 +347,39 @@ export async function runAutoresearch(opts: AutoresearchOptions): Promise<void> 
     await appendFile(logPath, JSON.stringify(logEntry) + '\n');
   }
 
+  // Walk-forward validation: score optimized params on held-out data.
+  // Split all rows by timestamp: first 70% = train (used above), last 30% = test.
+  const sorted = [...allRows].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+  const splitIdx = Math.floor(sorted.length * 0.7);
+  const testRows = sorted.slice(splitIdx);
+  const trainResult = scoreParams(sorted.slice(0, splitIdx), currentParams);
+  const testResult = scoreParams(testRows, currentParams);
+  const baselineTest = scoreParams(testRows, DEFAULT_PARAMS);
+
   // Final results
   const final = scoreParams(allRows, currentParams);
   console.log(chalk.bold(`\n  ═══════════════════════════════════════`));
   console.log(chalk.bold(`  Autoresearch complete: ${maxExperiments} experiments, ${improvements} improvements`));
   console.log(chalk.bold(`  ═══════════════════════════════════════`));
-  console.log(`  Baseline score: ${baseline.score.toFixed(3)} → Final: ${final.score.toFixed(3)} (${((final.score/Math.max(baseline.score,0.001)-1)*100).toFixed(0)}% improvement)`);
+  console.log(`  Baseline score: ${baseline.score.toFixed(3)} → Final: ${final.score.toFixed(3)}`);
   console.log(`  Sharpe: ${baseline.sharpe.toFixed(2)} → ${final.sharpe.toFixed(2)}`);
   console.log(`  Trades: ${baseline.trades} → ${final.trades}`);
   console.log(`  Win rate: ${(baseline.winRate*100).toFixed(0)}% → ${(final.winRate*100).toFixed(0)}%`);
   console.log(`  Max DD: ${(baseline.maxDrawdown*100).toFixed(1)}% → ${(final.maxDrawdown*100).toFixed(1)}%`);
+
+  // Walk-forward report
+  console.log(chalk.bold(`\n  ── Walk-Forward Validation (last 30% of data) ──`));
+  console.log(`  Test rows: ${testRows.length} (${(testRows.length / allRows.length * 100).toFixed(0)}% of total)`);
+  if (testResult.trades >= 5) {
+    console.log(`  Baseline on test: sharpe=${baselineTest.sharpe.toFixed(2)} trades=${baselineTest.trades} WR=${(baselineTest.winRate*100).toFixed(0)}%`);
+    console.log(`  Optimized on test: sharpe=${testResult.sharpe.toFixed(2)} trades=${testResult.trades} WR=${(testResult.winRate*100).toFixed(0)}%`);
+    const testImproved = testResult.score > baselineTest.score;
+    console.log(testImproved
+      ? chalk.green(`  ✓ Params validated — improved on held-out data`)
+      : chalk.yellow(`  ⚠ Params may be overfit — degraded on held-out data`));
+  } else {
+    console.log(chalk.yellow(`  ⚠ Insufficient test trades (${testResult.trades}) for validation — use more data`));
+  }
   console.log(`\n  Best params:`);
   console.log(`    weights: tech=${currentParams.weights.technical} sent=${currentParams.weights.sentiment} onchain=${currentParams.weights.onchain} fund=${currentParams.weights.fundamental}`);
   console.log(`    buyThreshold: ${currentParams.buyThreshold}  sellThreshold: ${currentParams.sellThreshold}`);

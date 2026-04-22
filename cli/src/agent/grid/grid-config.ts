@@ -119,7 +119,7 @@ export interface GridConfig {
 export const DEFAULT_GRID_CONFIG: GridConfig = {
   enabled: true,
   tokens: ['bitcoin', 'ethereum'],
-  allocationPct: 0.35,
+  allocationPct: 0.50,
   leverage: 3,
   levelsPerSide: 10,
   atrMultiplier: 2,

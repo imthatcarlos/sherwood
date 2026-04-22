@@ -151,7 +151,10 @@ export class TradeExecutor {
     // scored -0.10 to -0.15, winning longs scored 0.20-0.40+. Entries below
     // 0.18 absolute score have a much higher stop-out rate because they
     // represent weak signal consensus rather than genuine directional edge.
-    const MIN_CONVICTION_SCORE = 0.12;
+    // Minimum conviction — set below the lowest regime BUY threshold (ranging 0.17)
+    // to avoid a dead zone where scores pass the threshold but fail conviction.
+    // Prior value 0.12 created a [0.12, 0.17) dead zone.
+    const MIN_CONVICTION_SCORE = 0.08;
     if (Math.abs(decision.score) < MIN_CONVICTION_SCORE) {
       return {
         success: false,
@@ -190,11 +193,13 @@ export class TradeExecutor {
     // winners breathe and controlling loss on stopped trades. Prior 1.5x was
     // too tight — 64% of trades hit the stop, many of which reversed after.
     const ATR_STOP_MULTIPLIER = 3.5;
-    // Autoresearch finding: 4% stop outperformed 5% on our 11-day dataset
-    // (tighter than Nunchi's 5.5x ATR but our holding periods are shorter).
-    const STOP_FLOOR = 0.03;   // minimum 3%
+    // Trade log analysis (32 trades): 62.5% of exits were stops, many reversed
+    // after. Widened floor from 3% → 4% to give trades more room to breathe
+    // in crypto's noisy price action. ATR-based stops still dominate on
+    // higher-vol tokens where ATR × 3.5 > 4%.
+    const STOP_FLOOR = 0.04;   // minimum 4% (was 3% — too tight, noise-stopped)
     const STOP_CAP = 0.12;     // maximum 12% (tightened from 15%)
-    const FALLBACK_STOP = 0.04; // when no ATR available
+    const FALLBACK_STOP = 0.05; // when no ATR available (was 4%)
 
     const atrPct = (atr && currentPrice > 0 && !isNaN(atr))
       ? atr / currentPrice
@@ -216,9 +221,14 @@ export class TradeExecutor {
       (p) => p.tokenId === tokenId && (p.side ?? 'long') === direction,
     );
     const isPyramid = existingSameSide !== undefined;
-    const sizeMultiplier = isPyramid
+    // Short sizing reduction: trade log analysis showed 25% short WR vs 67%
+    // long WR. Halve short exposure until the regime gate + higher conviction
+    // thresholds improve short performance.
+    const SHORT_SIZE_MULTIPLIER = 0.5;
+    const directionMultiplier = isShort ? SHORT_SIZE_MULTIPLIER : 1.0;
+    const sizeMultiplier = (isPyramid
       ? 0.5 ** ((existingSameSide!.addCount ?? 0) + 1)
-      : 1.0;
+      : 1.0) * directionMultiplier;
 
     // Size the position using risk management. Conviction is fed in via the
     // risk budget — the sizer then clamps at maxSinglePosition, so a
@@ -347,13 +357,35 @@ export class TradeExecutor {
     }
 
     // --- Partial profit exits (50% at +3%) ---
+    // Reload state after each partial close to avoid iterating stale positions.
     const PARTIAL_PROFIT_TRIGGER = 0.03; // +3% unrealized gain
     const PARTIAL_FRACTION = 0.5;
 
-    const refreshedState = await this.portfolio.load();
-    for (const pos of refreshedState.positions) {
-      if (pos.partialTaken) continue; // already took partial
-      const price = currentPrices[pos.tokenId];
+    // First pass: identify candidates from a fresh load
+    const partialCandidates: string[] = [];
+    {
+      const refreshedState = await this.portfolio.load();
+      for (const pos of refreshedState.positions) {
+        if (pos.partialTaken) continue;
+        const price = currentPrices[pos.tokenId];
+        if (price === undefined) continue;
+        const isShort = pos.side === 'short';
+        const pnlPercent = isShort
+          ? (pos.entryPrice - price) / (pos.entryPrice || 1)
+          : (price - pos.entryPrice) / (pos.entryPrice || 1);
+        if (pnlPercent >= PARTIAL_PROFIT_TRIGGER) {
+          partialCandidates.push(pos.tokenId);
+        }
+      }
+    }
+
+    // Second pass: execute each partial close with a fresh state reload
+    for (const tokenId of partialCandidates) {
+      const freshState = await this.portfolio.load();
+      const pos = freshState.positions.find((p) => p.tokenId === tokenId);
+      if (!pos || pos.partialTaken) continue; // re-check after reload
+
+      const price = currentPrices[tokenId];
       if (price === undefined) continue;
 
       const isShort = pos.side === 'short';
@@ -364,7 +396,7 @@ export class TradeExecutor {
       if (pnlPercent >= PARTIAL_PROFIT_TRIGGER) {
         try {
           const partial = await this.portfolio.closePartial(
-            pos.tokenId, PARTIAL_FRACTION, price, `Partial profit at ${(pnlPercent * 100).toFixed(1)}%`,
+            tokenId, PARTIAL_FRACTION, price, `Partial profit at ${(pnlPercent * 100).toFixed(1)}%`,
           );
           results.push({
             position: { ...pos, currentPrice: price },

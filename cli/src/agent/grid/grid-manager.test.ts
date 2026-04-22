@@ -205,12 +205,12 @@ describe('Grid capital isolation', () => {
   it('allocation split matches config', () => {
     const total = 10000;
     const gridAlloc = total * DEFAULT_GRID_CONFIG.allocationPct;
-    expect(gridAlloc).toBe(3500);
+    expect(gridAlloc).toBe(5000);
 
     const btcAlloc = gridAlloc * DEFAULT_GRID_CONFIG.tokenSplit.bitcoin!;
     const ethAlloc = gridAlloc * DEFAULT_GRID_CONFIG.tokenSplit.ethereum!;
-    expect(btcAlloc).toBe(2100);
-    expect(ethAlloc).toBe(1400);
+    expect(btcAlloc).toBe(3000);
+    expect(ethAlloc).toBe(2000);
     expect(btcAlloc + ethAlloc).toBe(gridAlloc);
   });
 
@@ -222,7 +222,7 @@ describe('Grid capital isolation', () => {
   });
 
   it('pause threshold detects 20% drop', () => {
-    const totalAlloc = 3500;
+    const totalAlloc = 5000;
     const currentValue = totalAlloc * 0.78; // dropped 22%
     const dropPct = 1 - (currentValue / totalAlloc);
     expect(dropPct).toBeGreaterThanOrEqual(DEFAULT_GRID_CONFIG.pauseThresholdPct);

@@ -6,12 +6,15 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   applyVelocityGate,
+  applyRegimeGate,
   deriveVelocityFromCandles,
   resolveVelocity,
   DEFAULT_ENTRY_GATE_CONFIG,
   VELOCITY_GATE_BUY_MIN_PCT,
   VELOCITY_GATE_SELL_MAX_PCT,
+  SHORT_ALLOWED_REGIMES,
 } from "./entry-gates.js";
+import type { MarketRegime } from "./regime.js";
 import type { TokenAnalysis } from "./index.js";
 import type { Candle } from "./technical.js";
 
@@ -51,8 +54,8 @@ describe("applyVelocityGate", () => {
 
   it("downgrades BUY when velocity is mildly negative (just past threshold)", () => {
     const input = makeAnalysis("solana", "BUY", 0.33);
-    // -0.4% < -0.3% threshold
-    const result = applyVelocityGate(input, -0.004);
+    // -1.5% < -1.0% threshold
+    const result = applyVelocityGate(input, -0.015);
     expect(result.decision.action).toBe("HOLD");
     expect(result.preVelocity).toEqual({ action: "BUY", score: 0.33 });
     // Original score preserved on the (post-gate) decision too — only action mutated.
@@ -86,9 +89,9 @@ describe("applyVelocityGate", () => {
     expect(result.preVelocity?.action).toBe("BUY");
   });
 
-  it("downgrades BUY exactly at default threshold (-0.3%)", () => {
+  it("downgrades BUY exactly at default threshold (-1.0%)", () => {
     const input = makeAnalysis("aave", "BUY", 0.3);
-    const result = applyVelocityGate(input, -0.003);
+    const result = applyVelocityGate(input, -0.01);
     expect(result.decision.action).toBe("HOLD");
   });
 
@@ -109,7 +112,7 @@ describe("applyVelocityGate", () => {
 
   it("downgrades STRONG_SELL when velocity is positive", () => {
     const input = makeAnalysis("pepe", "STRONG_SELL", -0.75);
-    const result = applyVelocityGate(input, 0.004);
+    const result = applyVelocityGate(input, 0.015);
     expect(result.decision.action).toBe("HOLD");
     expect(result.preVelocity).toEqual({ action: "STRONG_SELL", score: -0.75 });
   });
@@ -131,9 +134,9 @@ describe("applyVelocityGate", () => {
     expect(result.decision.action).toBe("HOLD");
   });
 
-  it("downgrades SELL exactly at default threshold (+0.3%)", () => {
+  it("downgrades SELL exactly at default threshold (+1.0%)", () => {
     const input = makeAnalysis("polkadot", "SELL", -0.3);
-    const result = applyVelocityGate(input, 0.003);
+    const result = applyVelocityGate(input, 0.01);
     expect(result.decision.action).toBe("HOLD");
   });
 
@@ -270,8 +273,8 @@ describe("resolveVelocity", () => {
 
 describe("exported defaults", () => {
   it("are symmetric (BUY and SELL thresholds mirror each other)", () => {
-    expect(VELOCITY_GATE_BUY_MIN_PCT).toBe(-0.003);
-    expect(VELOCITY_GATE_SELL_MAX_PCT).toBe(0.003);
+    expect(VELOCITY_GATE_BUY_MIN_PCT).toBe(-0.01);
+    expect(VELOCITY_GATE_SELL_MAX_PCT).toBe(0.01);
     expect(VELOCITY_GATE_BUY_MIN_PCT).toBe(-VELOCITY_GATE_SELL_MAX_PCT);
   });
 
@@ -279,5 +282,119 @@ describe("exported defaults", () => {
     expect(DEFAULT_ENTRY_GATE_CONFIG.velocityGateEnabled).toBe(true);
     expect(DEFAULT_ENTRY_GATE_CONFIG.velocityGateBuyMinPct).toBe(VELOCITY_GATE_BUY_MIN_PCT);
     expect(DEFAULT_ENTRY_GATE_CONFIG.velocityGateSellMaxPct).toBe(VELOCITY_GATE_SELL_MAX_PCT);
+  });
+
+  it("DEFAULT_ENTRY_GATE_CONFIG has regime gate enabled", () => {
+    expect(DEFAULT_ENTRY_GATE_CONFIG.regimeGateEnabled).toBe(true);
+  });
+});
+
+describe("applyRegimeGate", () => {
+  it("blocks SELL in trending-up regime", () => {
+    const input = makeAnalysis("aave", "SELL", -0.35);
+    const result = applyRegimeGate(input, "trending-up");
+    expect(result.decision.action).toBe("HOLD");
+    expect(result.preRegime).toEqual({ action: "SELL", score: -0.35 });
+  });
+
+  it("blocks STRONG_SELL in trending-up regime", () => {
+    const input = makeAnalysis("fartcoin", "STRONG_SELL", -0.75);
+    const result = applyRegimeGate(input, "trending-up");
+    expect(result.decision.action).toBe("HOLD");
+    expect(result.preRegime).toEqual({ action: "STRONG_SELL", score: -0.75 });
+  });
+
+  it("blocks SELL in ranging regime", () => {
+    const input = makeAnalysis("ethena", "SELL", -0.30);
+    const result = applyRegimeGate(input, "ranging");
+    expect(result.decision.action).toBe("HOLD");
+    expect(result.preRegime).toEqual({ action: "SELL", score: -0.30 });
+  });
+
+  it("blocks SELL in low-volatility regime", () => {
+    const input = makeAnalysis("bitcoin", "SELL", -0.35);
+    const result = applyRegimeGate(input, "low-volatility");
+    expect(result.decision.action).toBe("HOLD");
+    expect(result.preRegime).toEqual({ action: "SELL", score: -0.35 });
+  });
+
+  it("allows SELL in trending-down regime", () => {
+    const input = makeAnalysis("ethereum", "SELL", -0.40);
+    const result = applyRegimeGate(input, "trending-down");
+    expect(result.decision.action).toBe("SELL");
+    expect(result.preRegime).toBeUndefined();
+  });
+
+  it("allows STRONG_SELL in trending-down regime", () => {
+    const input = makeAnalysis("solana", "STRONG_SELL", -0.70);
+    const result = applyRegimeGate(input, "trending-down");
+    expect(result.decision.action).toBe("STRONG_SELL");
+    expect(result.preRegime).toBeUndefined();
+  });
+
+  it("allows SELL in high-volatility regime", () => {
+    const input = makeAnalysis("aave", "SELL", -0.50);
+    const result = applyRegimeGate(input, "high-volatility");
+    expect(result.decision.action).toBe("SELL");
+    expect(result.preRegime).toBeUndefined();
+  });
+
+  it("never gates BUY signals regardless of regime", () => {
+    const regimes: MarketRegime[] = ["trending-up", "trending-down", "ranging", "high-volatility", "low-volatility"];
+    for (const regime of regimes) {
+      const input = makeAnalysis("bitcoin", "BUY", 0.35);
+      const result = applyRegimeGate(input, regime);
+      expect(result.decision.action).toBe("BUY");
+      expect(result.preRegime).toBeUndefined();
+    }
+  });
+
+  it("never gates HOLD signals", () => {
+    const input = makeAnalysis("bitcoin", "HOLD", 0.0);
+    const result = applyRegimeGate(input, "trending-up");
+    expect(result.decision.action).toBe("HOLD");
+    expect(result.preRegime).toBeUndefined();
+  });
+
+  it("skips gate when regime is undefined (no BTC data)", () => {
+    const input = makeAnalysis("ethereum", "SELL", -0.40);
+    const result = applyRegimeGate(input, undefined);
+    expect(result.decision.action).toBe("SELL");
+    expect(result.preRegime).toBeUndefined();
+  });
+
+  it("skips gate when regimeGateEnabled is false", () => {
+    const input = makeAnalysis("aave", "SELL", -0.35);
+    const result = applyRegimeGate(input, "trending-up", {
+      ...DEFAULT_ENTRY_GATE_CONFIG,
+      regimeGateEnabled: false,
+    });
+    expect(result.decision.action).toBe("SELL");
+    expect(result.preRegime).toBeUndefined();
+  });
+
+  it("invokes the logger on downgrade", () => {
+    const input = makeAnalysis("zcash", "SELL", -0.30);
+    const logger = vi.fn();
+    applyRegimeGate(input, "ranging", DEFAULT_ENTRY_GATE_CONFIG, logger);
+    expect(logger).toHaveBeenCalledOnce();
+    const msg = logger.mock.calls[0]![0]!;
+    expect(msg).toContain("DOWNGRADE");
+    expect(msg).toContain("zcash");
+    expect(msg).toContain("SELL");
+    expect(msg).toContain("ranging");
+  });
+
+  it("does not mutate the original result object", () => {
+    const input = makeAnalysis("aave", "SELL", -0.35);
+    applyRegimeGate(input, "trending-up");
+    expect(input.decision.action).toBe("SELL");
+    expect(input.preRegime).toBeUndefined();
+  });
+
+  it("SHORT_ALLOWED_REGIMES contains exactly trending-down and high-volatility", () => {
+    expect(SHORT_ALLOWED_REGIMES.has("trending-down")).toBe(true);
+    expect(SHORT_ALLOWED_REGIMES.has("high-volatility")).toBe(true);
+    expect(SHORT_ALLOWED_REGIMES.size).toBe(2);
   });
 });

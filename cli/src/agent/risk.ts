@@ -17,6 +17,14 @@ export interface PortfolioState {
   /** Token → timestamp of last stop-loss exit. Used to enforce cooldown
    *  before re-entry to prevent the stop-reentry-stop pattern. */
   stopCooldowns?: Record<string, number>;
+  /** Token → count of consecutive losses. Reset to 0 on a winning trade.
+   *  When count >= TOKEN_CONSEC_LOSS_LIMIT, a 24h cooldown is enforced
+   *  before re-entry to prevent serial-loser patterns (e.g. AAVE: 4 trades,
+   *  3 losses, -$144.75). */
+  tokenConsecLosses?: Record<string, number>;
+  /** Token → timestamp when the consecutive-loss cooldown was triggered.
+   *  Used alongside tokenConsecLosses to enforce a 24h ban after N losses. */
+  tokenLossCooldowns?: Record<string, number>;
   /** Orca-inspired: PnL-aware daily cap, see README / PR #223.
    *  Count of NEW position entries (not pyramid adds) opened since the
    *  last daily reset. Used together with getDynamicDailyCap() to throttle
@@ -123,9 +131,9 @@ export interface RiskConfig {
  */
 export const DEFAULT_RISK_CONFIG: RiskConfig = {
   maxPortfolioRisk: 0.15,
-  maxSinglePosition: 0.20,
-  maxCorrelatedExposure: 0.20,
-  maxConcurrentTrades: 5,
+  maxSinglePosition: 0.15,
+  maxCorrelatedExposure: 0.25,
+  maxConcurrentTrades: 8,
   hardStopPercent: 0.10,          // 10% hard stop (was 5% — wider to match 3.5x ATR stops)
   trailingStopAtr: 3.5,           // match executor ATR multiplier (was 1.5x — autoresearch: wider = better)
   trailingStopPct: 0.04,               // 4% fallback trail (was 2.5% — gives winners more room)
@@ -176,6 +184,11 @@ export const RECOMMENDED_TRAILING_CONFIG = {
 export const MAX_PYRAMID_ADDS = 2;
 export const PYRAMID_MIN_SPACING_MS = 4 * 60 * 60 * 1000; // 4 hours
 export const STOP_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours after a stop-loss
+
+/** Number of consecutive losses on a single token before enforcing a longer cooldown. */
+export const TOKEN_CONSEC_LOSS_LIMIT = 2;
+/** Cooldown duration after hitting the consecutive-loss limit (24 hours). */
+export const TOKEN_LOSS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 const EMPTY_PORTFOLIO: PortfolioState = {
   totalValue: 0,
@@ -330,6 +343,26 @@ export class RiskManager {
       if (elapsed < STOP_COOLDOWN_MS) {
         const remainHrs = ((STOP_COOLDOWN_MS - elapsed) / 3_600_000).toFixed(1);
         return { allowed: false, reason: `Stop cooldown active for ${token} (${remainHrs}h remaining)` };
+      }
+    }
+
+    // Check per-token consecutive loss cooldown — prevent serial-loser re-entry.
+    // After TOKEN_CONSEC_LOSS_LIMIT consecutive losses on a token, enforce a
+    // 24h ban. Prevents the AAVE pattern (4 trades, 3 losses, -$144.75).
+    const consecLosses = this.portfolio.tokenConsecLosses ?? {};
+    const lossCooldowns = this.portfolio.tokenLossCooldowns ?? {};
+    const tokenLosses = consecLosses[token] ?? 0;
+    if (tokenLosses >= TOKEN_CONSEC_LOSS_LIMIT) {
+      const lossCooldownStart = lossCooldowns[token];
+      if (lossCooldownStart !== undefined) {
+        const elapsed = Date.now() - lossCooldownStart;
+        if (elapsed < TOKEN_LOSS_COOLDOWN_MS) {
+          const remainHrs = ((TOKEN_LOSS_COOLDOWN_MS - elapsed) / 3_600_000).toFixed(1);
+          return {
+            allowed: false,
+            reason: `Token loss cooldown: ${token} has ${tokenLosses} consecutive losses (${remainHrs}h remaining of 24h ban)`,
+          };
+        }
       }
     }
 

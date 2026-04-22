@@ -159,10 +159,10 @@ export class GridManager {
 
     if (spacing <= 0) return { fills: 0, roundTrips: 0, pnlUsd: 0 };
 
+    // Step 1: Fill unfilled grid levels (buy when price drops, sell is just accounting)
     for (const level of grid.levels) {
       if (level.filled) continue;
 
-      // Buy level fills when price drops to or below the level
       if (level.side === 'buy' && currentPrice <= level.price) {
         level.filled = true;
         level.filledAt = now;
@@ -170,7 +170,6 @@ export class GridManager {
         grid.stats.totalFills++;
         grid.stats.todayFills++;
 
-        // Record open fill waiting for paired sell
         grid.openFills.push({
           token: grid.token,
           buyPrice: level.price,
@@ -187,7 +186,6 @@ export class GridManager {
         ));
       }
 
-      // Sell level fills when price rises to or above the level
       if (level.side === 'sell' && currentPrice >= level.price) {
         level.filled = true;
         level.filledAt = now;
@@ -195,30 +193,37 @@ export class GridManager {
         grid.stats.totalFills++;
         grid.stats.todayFills++;
 
-        // Try to close the oldest open fill for this token
-        const openFill = grid.openFills.find(f => !f.closed && f.token === grid.token);
-        if (openFill) {
-          const profit = (level.price - openFill.buyPrice) * openFill.quantity * this.config.leverage;
-          if (profit >= this.config.minProfitPerFillUsd) {
-            openFill.closed = true;
-            openFill.pnlUsd = profit;
-            openFill.closedAt = now;
-            pnlUsd += profit;
-            roundTrips++;
-            grid.stats.totalRoundTrips++;
-            grid.stats.totalPnlUsd += profit;
-            grid.stats.todayPnlUsd += profit;
-            grid.allocation += profit; // profits compound
-
-            console.error(chalk.green(
-              `  [grid] ROUND-TRIP ${grid.token}: buy $${openFill.buyPrice.toFixed(2)} → sell $${level.price.toFixed(2)} = +$${profit.toFixed(2)}`
-            ));
-          }
-        }
-
         console.error(chalk.dim(
-          `  [grid] SELL fill ${grid.token} @ $${level.price.toFixed(2)} qty=${level.quantity.toFixed(6)}`
+          `  [grid] SELL level ${grid.token} @ $${level.price.toFixed(2)} qty=${level.quantity.toFixed(6)}`
         ));
+      }
+    }
+
+    // Step 2: Close open fills whose targetSellPrice has been reached.
+    // This is decoupled from level fills — an open fill closes when
+    // currentPrice >= its specific target, regardless of grid levels.
+    // Bug fix: previously this only ran inside the sell-level loop, so
+    // once a sell level was marked filled it was skipped on future ticks,
+    // orphaning any open fill that wasn't matched at that exact moment.
+    for (const openFill of grid.openFills) {
+      if (openFill.closed) continue;
+      if (currentPrice >= openFill.targetSellPrice) {
+        const profit = (currentPrice - openFill.buyPrice) * openFill.quantity * this.config.leverage;
+        if (profit >= this.config.minProfitPerFillUsd) {
+          openFill.closed = true;
+          openFill.pnlUsd = profit;
+          openFill.closedAt = now;
+          pnlUsd += profit;
+          roundTrips++;
+          grid.stats.totalRoundTrips++;
+          grid.stats.totalPnlUsd += profit;
+          grid.stats.todayPnlUsd += profit;
+          grid.allocation += profit;
+
+          console.error(chalk.green(
+            `  [grid] ROUND-TRIP ${grid.token}: buy $${openFill.buyPrice.toFixed(2)} → sell $${currentPrice.toFixed(2)} = +$${profit.toFixed(2)}`
+          ));
+        }
       }
     }
 

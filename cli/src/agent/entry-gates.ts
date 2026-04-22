@@ -20,14 +20,25 @@
  */
 import type { Candle } from "./technical.js";
 import type { TokenAnalysis } from "./index.js";
+import type { MarketRegime } from "./regime.js";
 
 // ── Configurable constants (easy to calibrate) ──
 
-/** BUY rejected if 1h velocity is below this (fraction, not percent). */
-export const VELOCITY_GATE_BUY_MIN_PCT = -0.003;
+/** BUY rejected if 1h velocity is below this (fraction, not percent).
+ *  Relaxed from ±0.3% to ±1.0% — on 4h candles the velocity proxy covers
+ *  a 4h window, where ±0.3% is normal noise even in trending markets. */
+export const VELOCITY_GATE_BUY_MIN_PCT = -0.01;
 
 /** SELL rejected if 1h velocity is above this (fraction, not percent). */
-export const VELOCITY_GATE_SELL_MAX_PCT = 0.003;
+export const VELOCITY_GATE_SELL_MAX_PCT = 0.01;
+
+/** Regimes where short entries are allowed. Shorts are blocked in all other
+ *  regimes to prevent counter-trend fading — trade log analysis showed 25%
+ *  short WR in non-bearish regimes vs 67% long WR. */
+export const SHORT_ALLOWED_REGIMES: Set<MarketRegime> = new Set([
+  "trending-down",
+  "high-volatility",
+]);
 
 /** EntryGate configuration — exposed on AgentConfig for easy calibration. */
 export interface EntryGateConfig {
@@ -37,12 +48,16 @@ export interface EntryGateConfig {
   velocityGateBuyMinPct: number;
   /** SELL is rejected when 1h velocity is strictly greater than this. Default +0.003. */
   velocityGateSellMaxPct: number;
+  /** When true, SELL/STRONG_SELL signals are blocked in non-bearish regimes
+   *  (trending-up, ranging, low-volatility). Default true. */
+  regimeGateEnabled: boolean;
 }
 
 export const DEFAULT_ENTRY_GATE_CONFIG: EntryGateConfig = {
   velocityGateEnabled: true,
-  velocityGateBuyMinPct: VELOCITY_GATE_BUY_MIN_PCT,
-  velocityGateSellMaxPct: VELOCITY_GATE_SELL_MAX_PCT,
+  velocityGateBuyMinPct: VELOCITY_GATE_BUY_MIN_PCT,   // -1.0%
+  velocityGateSellMaxPct: VELOCITY_GATE_SELL_MAX_PCT,  // +1.0%
+  regimeGateEnabled: true,
 };
 
 /**
@@ -129,6 +144,51 @@ export function applyVelocityGate(
   return {
     ...result,
     preVelocity: { action: result.decision.action, score: result.decision.score },
+    decision: { ...result.decision, action: "HOLD" },
+  };
+}
+
+/**
+ * Post-scoring gate that blocks SELL/STRONG_SELL when the market regime does
+ * not support shorting. Trade log analysis (32 trades): shorts had 25% WR
+ * (-$194) while longs had 67% WR (+$279). Most short losses came from fading
+ * a recovery trend — the regime was ranging or trending-up, not bearish.
+ *
+ * Only allows shorts in:
+ *   - trending-down: confirmed bearish regime
+ *   - high-volatility: directional moves can go either way
+ *
+ * Blocks shorts in:
+ *   - trending-up: counter-trend fade, historically destructive
+ *   - ranging: choppy, no directional edge for shorts
+ *   - low-volatility: not enough movement to profit from shorts
+ *
+ * When regime is undefined (no BTC data), the gate skips — never reject blindly.
+ */
+export function applyRegimeGate(
+  result: TokenAnalysis,
+  regime: MarketRegime | undefined,
+  config: EntryGateConfig = DEFAULT_ENTRY_GATE_CONFIG,
+  logger: (msg: string) => void = () => {},
+): TokenAnalysis {
+  if (!config.regimeGateEnabled) return result;
+  if (regime === undefined) return result;
+
+  const action = result.decision.action;
+  const isSell = action === "SELL" || action === "STRONG_SELL";
+
+  if (!isSell) return result;
+
+  if (SHORT_ALLOWED_REGIMES.has(regime)) return result;
+
+  logger(
+    `  [regime] DOWNGRADE ${result.token}: ${action} blocked — regime "${regime}" ` +
+      `does not support shorts (allowed: ${[...SHORT_ALLOWED_REGIMES].join(", ")})`,
+  );
+
+  return {
+    ...result,
+    preRegime: { action: result.decision.action, score: result.decision.score },
     decision: { ...result.decision, action: "HOLD" },
   };
 }

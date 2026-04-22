@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { RiskManager, DEFAULT_RISK_CONFIG, RECOMMENDED_TRAILING_CONFIG, MAX_PYRAMID_ADDS, PYRAMID_MIN_SPACING_MS, STOP_COOLDOWN_MS, type Position, type RiskConfig } from "./risk.js";
+import { RiskManager, DEFAULT_RISK_CONFIG, RECOMMENDED_TRAILING_CONFIG, MAX_PYRAMID_ADDS, PYRAMID_MIN_SPACING_MS, STOP_COOLDOWN_MS, TOKEN_CONSEC_LOSS_LIMIT, TOKEN_LOSS_COOLDOWN_MS, type Position, type RiskConfig } from "./risk.js";
 
 // Helper to create a minimal Position for tests
 function makePosition(overrides: Partial<Position> = {}): Position {
@@ -181,26 +181,26 @@ describe("RiskManager", () => {
 
   describe("calculatePositionSize", () => {
     it("calculates correct quantity and size from risk formula", () => {
-      // riskPerTrade default = 0.02 (2%), maxSinglePosition = 0.20 (20%)
+      // riskPerTrade default = 0.02 (2%), maxSinglePosition = 0.15 (15%)
       // portfolioValue = 10000, riskUsd = 200
       // entry = 100, stop = 90, riskPerUnit = 10
       // quantity = 200 / 10 = 20, sizeUsd = 20 * 100 = 2000
-      // maxSinglePosition = 20% of 10000 = 2000, no cap hit
+      // maxSinglePosition = 15% of 10000 = 1500 => capped
       const result = rm.calculatePositionSize(100, 90, 10000);
-      expect(result.quantity).toBeCloseTo(20, 6);
-      expect(result.sizeUsd).toBeCloseTo(2000, 6);
-      expect(result.riskUsd).toBeCloseTo(200, 6);
+      expect(result.quantity).toBeCloseTo(15, 6);
+      expect(result.sizeUsd).toBeCloseTo(1500, 6);
+      expect(result.riskUsd).toBeCloseTo(150, 6);
     });
 
     it("caps position size at maxSinglePosition", () => {
       // entry = 100, stop = 99.5, riskPerUnit = 0.5
       // riskUsd = 10000 * 0.02 = 200, quantity = 200 / 0.5 = 400
-      // sizeUsd = 400 * 100 = 40000, but maxSinglePosition = 20% of 10000 = 2000
+      // sizeUsd = 400 * 100 = 40000, but maxSinglePosition = 15% of 10000 = 1500
       const result = rm.calculatePositionSize(100, 99.5, 10000);
-      expect(result.sizeUsd).toBeCloseTo(2000, 6);
-      expect(result.quantity).toBeCloseTo(20, 6);
-      // riskUsd should be recalculated: 20 * 0.5 = 10
-      expect(result.riskUsd).toBeCloseTo(10, 6);
+      expect(result.sizeUsd).toBeCloseTo(1500, 6);
+      expect(result.quantity).toBeCloseTo(15, 6);
+      // riskUsd should be recalculated: 15 * 0.5 = 7.5
+      expect(result.riskUsd).toBeCloseTo(7.5, 6);
     });
 
     it("returns zero for zero entry price", () => {
@@ -227,22 +227,22 @@ describe("RiskManager", () => {
       // override riskPerTrade to 5%
       // riskUsd = 10000 * 0.05 = 500, riskPerUnit = 10
       // quantity = 500 / 10 = 50, sizeUsd = 50 * 100 = 5000
-      // but maxSinglePosition = 20% of 10000 = 2000 => capped
+      // but maxSinglePosition = 15% of 10000 = 1500 => capped
       const result = rm.calculatePositionSize(100, 90, 10000, 0.05);
-      expect(result.sizeUsd).toBeCloseTo(2000, 6);
+      expect(result.sizeUsd).toBeCloseTo(1500, 6);
     });
 
     it("clamps to maxSinglePosition when conviction boosts risk past cap", () => {
       // Executor calls: calculatePositionSize(price, stop, pv, riskPerTrade * conviction).
       // With conviction = 2.0 (score ≥ 0.45), effective risk = 0.04 = 4% of pv.
-      // Sizer must clamp at maxSinglePosition (20% = 2000), not produce 30%+ sizes
+      // Sizer must clamp at maxSinglePosition (15% = 1500), not produce 30%+ sizes
       // that then get rejected by canOpenPosition. Regression test for the pre-fix
       // loop where the executor multiplied sizing.sizeUsd by conviction post-clamp.
       const baseRisk = rm.getRiskPerTrade();
       const conviction = 2.0;
       const result = rm.calculatePositionSize(100, 90, 10000, baseRisk * conviction);
-      expect(result.sizeUsd).toBeLessThanOrEqual(2000);
-      expect(result.sizeUsd).toBeCloseTo(2000, 6);
+      expect(result.sizeUsd).toBeLessThanOrEqual(1500);
+      expect(result.sizeUsd).toBeCloseTo(1500, 6);
     });
   });
 
@@ -998,6 +998,77 @@ describe("RiskManager", () => {
       // lock = 100 + (110-100)*0.50 = 105.
       expect(updated!.peakPrice).toBe(110);
       expect(updated!.stopLoss).toBe(105);
+    });
+  });
+
+  // ── Per-token consecutive loss cooldown ──
+
+  describe("token consecutive loss cooldown", () => {
+    it("blocks entry when token has >= TOKEN_CONSEC_LOSS_LIMIT consecutive losses", () => {
+      rm.updatePortfolio({
+        totalValue: 10000,
+        cash: 10000,
+        positions: [],
+        dailyPnl: 0,
+        weeklyPnl: 0,
+        monthlyPnl: 0,
+        tokenConsecLosses: { aave: 2 },
+        tokenLossCooldowns: { aave: Date.now() },
+      });
+      const result = rm.canOpenPosition("aave", 500);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain("consecutive losses");
+      expect(result.reason).toContain("aave");
+    });
+
+    it("allows entry when token has fewer than TOKEN_CONSEC_LOSS_LIMIT losses", () => {
+      rm.updatePortfolio({
+        totalValue: 10000,
+        cash: 10000,
+        positions: [],
+        dailyPnl: 0,
+        weeklyPnl: 0,
+        monthlyPnl: 0,
+        tokenConsecLosses: { aave: 1 },
+        tokenLossCooldowns: {},
+      });
+      const result = rm.canOpenPosition("aave", 500);
+      expect(result.allowed).toBe(true);
+    });
+
+    it("allows entry when 24h cooldown has expired", () => {
+      rm.updatePortfolio({
+        totalValue: 10000,
+        cash: 10000,
+        positions: [],
+        dailyPnl: 0,
+        weeklyPnl: 0,
+        monthlyPnl: 0,
+        tokenConsecLosses: { aave: 3 },
+        tokenLossCooldowns: { aave: Date.now() - TOKEN_LOSS_COOLDOWN_MS - 1000 },
+      });
+      const result = rm.canOpenPosition("aave", 500);
+      expect(result.allowed).toBe(true);
+    });
+
+    it("allows entry for a different token unaffected by cooldown", () => {
+      rm.updatePortfolio({
+        totalValue: 10000,
+        cash: 10000,
+        positions: [],
+        dailyPnl: 0,
+        weeklyPnl: 0,
+        monthlyPnl: 0,
+        tokenConsecLosses: { aave: 3 },
+        tokenLossCooldowns: { aave: Date.now() },
+      });
+      const result = rm.canOpenPosition("bitcoin", 500);
+      expect(result.allowed).toBe(true);
+    });
+
+    it("constants have expected values", () => {
+      expect(TOKEN_CONSEC_LOSS_LIMIT).toBe(2);
+      expect(TOKEN_LOSS_COOLDOWN_MS).toBe(24 * 60 * 60 * 1000);
     });
   });
 });

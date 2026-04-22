@@ -87,12 +87,26 @@ export class PortfolioTracker {
   private statePath: string;
   private historyPath: string;
   private state: PortfolioState;
+  /** In-process mutex — serializes load/modify/save sequences to prevent
+   *  overlapping cycles from double-closing positions or double-debiting cash. */
+  private _lock: Promise<void> = Promise.resolve();
 
   constructor() {
     const base = join(homedir(), '.sherwood', 'agent');
     this.statePath = join(base, 'portfolio.json');
     this.historyPath = join(base, 'trades.json');
     this.state = { ...DEFAULT_PORTFOLIO };
+  }
+
+  /** Acquire the in-process lock. Callers that perform load→modify→save
+   *  should wrap their sequence: `const release = await this.acquireLock();`
+   *  then `release()` in a finally block. */
+  private acquireLock(): Promise<() => void> {
+    let release: () => void;
+    const next = new Promise<void>((resolve) => { release = resolve; });
+    const prev = this._lock;
+    this._lock = next;
+    return prev.then(() => release!);
   }
 
   /**
@@ -243,6 +257,8 @@ export class PortfolioTracker {
     if (position.entryPrice <= 0) {
       throw new Error(`Invalid entry price: ${position.entryPrice}`);
     }
+    const release = await this.acquireLock();
+    try {
     await this.load();
 
     const fullPosition: Position = {
@@ -258,7 +274,12 @@ export class PortfolioTracker {
     };
 
     this.state.positions.push(fullPosition);
-    this.state.cash -= position.quantity * position.entryPrice;
+    // Shorts on perp venues only require margin, not full notional.
+    // Use 20% margin (5x effective leverage) for shorts to avoid
+    // artificially depleting cash at 10x the real rate.
+    const isShort = (position.side ?? 'long') === 'short';
+    const cashDebit = position.quantity * position.entryPrice * (isShort ? 0.2 : 1.0);
+    this.state.cash -= cashDebit;
     this.state.totalValue = this.state.cash + this.state.positions.reduce(
       (sum, p) => sum + p.quantity * p.currentPrice,
       0,
@@ -272,6 +293,7 @@ export class PortfolioTracker {
 
     await this.save(this.state);
     return fullPosition;
+    } finally { release(); }
   }
 
   /**
@@ -290,6 +312,8 @@ export class PortfolioTracker {
   ): Promise<Position> {
     if (addQuantity <= 0) throw new Error(`Invalid add quantity: ${addQuantity}`);
     if (addPrice <= 0) throw new Error(`Invalid add price: ${addPrice}`);
+    const release = await this.acquireLock();
+    try {
     await this.load();
 
     const idx = this.state.positions.findIndex((p) => p.tokenId === tokenId);
@@ -317,13 +341,9 @@ export class PortfolioTracker {
     };
 
     this.state.positions[idx] = updated;
-    // Paper-trading simplification: debit full notional on cash regardless
-    // of direction. For longs this is correct (you buy tokens). For shorts
-    // on a perp venue the correct model is margin (a fraction of notional),
-    // not full notional. This module does not yet model leverage / margin —
-    // when real perp accounting lands, branch on `side` here and in
-    // openPosition / closePosition together.
-    this.state.cash -= addPrice * addQuantity;
+    // Shorts on perp venues only require margin (20% = 5x leverage).
+    const isShortAdd = side === 'short';
+    this.state.cash -= addPrice * addQuantity * (isShortAdd ? 0.2 : 1.0);
     this.state.totalValue = this.state.cash + this.state.positions.reduce(
       (sum, p) => sum + p.quantity * p.currentPrice,
       0,
@@ -331,6 +351,7 @@ export class PortfolioTracker {
 
     await this.save(this.state);
     return updated;
+    } finally { release(); }
   }
 
   /** Close a position and record trade */
@@ -339,6 +360,8 @@ export class PortfolioTracker {
     exitPrice: number,
     reason: string,
   ): Promise<{ pnl: number; pnlPercent: number; duration: number }> {
+    const release = await this.acquireLock();
+    try {
     await this.load();
 
     const idx = this.state.positions.findIndex((p) => p.tokenId === tokenId);
@@ -375,9 +398,13 @@ export class PortfolioTracker {
 
     await this.appendTradeRecord(record);
 
-    // Remove position and update cash
+    // Remove position and update cash.
+    // Shorts return margin (20% of notional) + PnL; longs return full notional.
     this.state.positions.splice(idx, 1);
-    this.state.cash += pos.quantity * exitPrice;
+    const cashCredit = isShort
+      ? pos.quantity * pos.entryPrice * 0.2 + pnlUsd  // return margin + profit/loss
+      : pos.quantity * exitPrice;
+    this.state.cash += cashCredit;
     this.state.dailyPnl += pnlUsd;
     this.state.weeklyPnl += pnlUsd;
     this.state.monthlyPnl += pnlUsd;
@@ -392,9 +419,26 @@ export class PortfolioTracker {
       this.state.stopCooldowns[tokenId] = Date.now();
     }
 
+    // Track per-token consecutive losses for the serial-loser gate.
+    // A losing trade increments the counter; a winning trade resets it to 0.
+    // When the counter hits TOKEN_CONSEC_LOSS_LIMIT, record the cooldown timestamp.
+    if (!this.state.tokenConsecLosses) this.state.tokenConsecLosses = {};
+    if (!this.state.tokenLossCooldowns) this.state.tokenLossCooldowns = {};
+    if (pnlUsd < 0) {
+      this.state.tokenConsecLosses[tokenId] = (this.state.tokenConsecLosses[tokenId] ?? 0) + 1;
+      if (this.state.tokenConsecLosses[tokenId]! >= 2) {
+        this.state.tokenLossCooldowns[tokenId] = Date.now();
+      }
+    } else {
+      // Win or breakeven — reset consecutive loss counter
+      this.state.tokenConsecLosses[tokenId] = 0;
+      delete this.state.tokenLossCooldowns[tokenId];
+    }
+
     await this.save(this.state);
 
     return { pnl: pnlUsd, pnlPercent, duration };
+    } finally { release(); }
   }
 
   /**
@@ -410,6 +454,8 @@ export class PortfolioTracker {
     if (fraction <= 0 || fraction >= 1) {
       throw new Error(`Invalid fraction: ${fraction} (must be between 0 and 1 exclusive)`);
     }
+    const release = await this.acquireLock();
+    try {
     await this.load();
 
     const idx = this.state.positions.findIndex((p) => p.tokenId === tokenId);
@@ -446,7 +492,11 @@ export class PortfolioTracker {
     // Reduce position, mark partial taken
     pos.quantity -= quantityClosed;
     pos.partialTaken = true;
-    this.state.cash += exitPrice * quantityClosed;
+    // Shorts return margin fraction + PnL; longs return full notional.
+    const partialCashCredit = isShort
+      ? pos.entryPrice * quantityClosed * 0.2 + pnlUsd
+      : exitPrice * quantityClosed;
+    this.state.cash += partialCashCredit;
     this.state.dailyPnl += pnlUsd;
     this.state.weeklyPnl += pnlUsd;
     this.state.monthlyPnl += pnlUsd;
@@ -456,6 +506,7 @@ export class PortfolioTracker {
 
     await this.save(this.state);
     return { pnl: pnlUsd, pnlPercent, quantityClosed };
+    } finally { release(); }
   }
 
   /** Update current prices for all positions */
@@ -465,6 +516,13 @@ export class PortfolioTracker {
     for (const pos of this.state.positions) {
       const price = prices[pos.tokenId];
       if (price !== undefined) {
+        // Guard against NaN/Infinity — a bad price update would corrupt PnL
+        // calculations and make stops evaluate to false (NaN <= X is always false),
+        // permanently trapping positions.
+        if (!Number.isFinite(price) || price <= 0) {
+          console.error(`[portfolio] Skipping invalid price for ${pos.tokenId}: ${price}`);
+          continue;
+        }
         pos.currentPrice = price;
         const isShort = pos.side === 'short';
         pos.pnlUsd = isShort
