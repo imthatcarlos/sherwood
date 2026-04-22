@@ -55,6 +55,13 @@ export interface StrategyContext {
     orderBookImbalance: number;
     largeTradesBias: number;
   };
+  /** Fincept: CryptoCompare social volume + news sentiment. */
+  socialData?: {
+    socialVolume24h: number;
+    socialVolumeSpike: number;
+    newsCount24h: number;
+    topNewsSentiment: number;
+  };
   tokenSymbol?: string;       // resolved symbol (e.g. "ETH" for "ethereum")
 }
 
