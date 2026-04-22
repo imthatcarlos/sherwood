@@ -583,14 +583,132 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         emit ProposalGuardianPoolFunded(proposalId, asset, amount);
     }
 
-    /// @notice View: per-proposal guardian-fee pool.
-    function proposalGuardianPool(uint256 proposalId)
+    // View: `proposalGuardianPool` removed to reclaim bytecode. Consumers can
+    // subscribe to the governor's `GuardianFeeAccrued(proposalId, asset,
+    // recipient, amount, settledAt)` event (same data) or static-call
+    // `claimProposalReward` and parse the `ApproverRewardClaimed` event for
+    // the amount that would transfer.
+
+    // ──────────────────────────────────────────────────────────────
+    // V1.5 Phase 3 — Guardian-fee claim paths (Tasks 3.7 / 3.8 / 3.9)
+    // ──────────────────────────────────────────────────────────────
+
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Approve-side-only reward. Split by DPoS commission; remainder is
+    ///      stored in `_delegatorProposalPool[approver][proposalId]` for the
+    ///      approver's delegators to pull via `claimDelegatorProposalReward`.
+    ///      Commission rate is looked up at `settledAt` via
+    ///      `_commissionCheckpoints` (INV-V1.5-11).
+    ///      CEI is respected: `_approverClaimed[...] = true` is set before the
+    ///      external transfer, so reentry hits `AlreadyClaimed`. No
+    ///      `nonReentrant` needed; avoiding it saves ~40 bytes.
+    function claimProposalReward(uint256 proposalId) external {
+        ProposalRewardPool memory pool = _proposalGuardianPool[proposalId];
+        if (pool.amount == 0) revert NoPoolFunded();
+        if (_approverClaimed[proposalId][msg.sender]) revert AlreadyClaimed();
+
+        // Approve-side only. `_voteStake > 0` is guaranteed whenever
+        // `_votes == Approve` (voteOnProposal reverts on zero-weight voters),
+        // so the Approve check is sufficient.
+        if (_votes[proposalId][msg.sender] != GuardianVoteType.Approve) revert NotApprover();
+        uint256 w = _voteStake[proposalId][msg.sender];
+
+        Review storage r = _reviews[proposalId];
+        uint256 totalW = uint256(r.approveStakeWeight);
+        // totalW >= w by construction (w is one of the weights summed into it).
+        uint256 gross = (uint256(pool.amount) * w) / totalW;
+
+        uint256 rate = _commissionCheckpoints[msg.sender].upperLookupRecent(uint32(pool.settledAt));
+        uint256 commission = (gross * rate) / 10_000;
+        uint256 remainder = gross - commission;
+
+        // CEI: flag + pool-seed before external transfer.
+        _approverClaimed[proposalId][msg.sender] = true;
+        if (remainder > 0) {
+            _delegatorProposalPool[msg.sender][proposalId] = remainder;
+        }
+
+        if (commission > 0) {
+            _safeRewardTransfer(pool.asset, msg.sender, commission, proposalId);
+        }
+        emit ApproverRewardClaimed(proposalId, msg.sender, gross, commission, remainder);
+    }
+
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Pulls the delegator's pro-rata share of the delegate's remainder
+    ///      pool. Requires the delegate to have already called
+    ///      `claimProposalReward` (otherwise the pool is zero). Attribution
+    ///      timestamp is `settledAt`, so a delegator who unstaked mid-review
+    ///      gets 0 if their checkpoint at `settledAt` was already zero.
+    function claimDelegatorProposalReward(address delegate, uint256 proposalId) external {
+        if (_delegatorProposalClaimed[delegate][proposalId][msg.sender]) revert AlreadyClaimed();
+        uint256 pool = _delegatorProposalPool[delegate][proposalId];
+        if (pool == 0) revert DelegatePoolEmpty();
+
+        ProposalRewardPool memory p = _proposalGuardianPool[proposalId];
+        uint32 settledAt = uint32(p.settledAt);
+
+        uint256 my = _delegationCheckpoints[msg.sender][delegate].upperLookupRecent(settledAt);
+        uint256 totalDelegated = _delegatedInboundCheckpoints[delegate].upperLookupRecent(settledAt);
+        if (my == 0 || totalDelegated == 0) revert NoDelegationAtSettle();
+
+        uint256 share = (pool * my) / totalDelegated;
+
+        // CEI: flag before transfer.
+        _delegatorProposalClaimed[delegate][proposalId][msg.sender] = true;
+
+        if (share > 0) {
+            _safeRewardTransfer(p.asset, msg.sender, share, proposalId);
+        }
+        emit DelegatorProposalRewardClaimed(msg.sender, delegate, proposalId, share);
+    }
+
+    /// @inheritdoc IGuardianRegistry
+    /// @dev W-1 retry path. After the transfer-failure condition is lifted
+    ///      (e.g., USDC blacklist removed), anyone can flush the escrow to the
+    ///      recipient. Keyed by (proposalId, recipient, asset) so a malicious
+    ///      flush cannot redirect to an unrelated recipient — CEI pattern from
+    ///      PR #229 review cross-vault-drain fix.
+    function flushUnclaimedApproverFee(uint256 proposalId, address recipient, address asset) external {
+        bytes32 key = keccak256(abi.encode(proposalId, recipient, asset));
+        uint256 amount = _unclaimedApproverFees[key];
+        if (amount == 0) revert NoEscrowedAmount();
+
+        _unclaimedApproverFees[key] = 0;
+        IERC20(asset).safeTransfer(recipient, amount);
+        // Indexers observe the successful retry via the ERC20 Transfer event
+        // paired with `_unclaimedApproverFees` zeroing out — no dedicated flush
+        // event (reclaimed bytecode).
+    }
+
+    // V1.5: pending-reward views removed to reclaim bytecode. UIs can
+    // simulate via `eth_call(claimProposalReward)` / `eth_call(claimDelegator*)`
+    // which returns success/revert + consumed gas, or compute off-chain from
+    // `proposalGuardianPool` + `_voteStake` + `commissionAt` + checkpoint views.
+
+    /// @inheritdoc IGuardianRegistry
+    function unclaimedApproverFee(uint256 proposalId, address recipient, address asset)
         external
         view
-        returns (address asset, uint256 amount, uint64 settledAt)
+        returns (uint256)
     {
-        ProposalRewardPool memory p = _proposalGuardianPool[proposalId];
-        return (p.asset, p.amount, p.settledAt);
+        return _unclaimedApproverFees[keccak256(abi.encode(proposalId, recipient, asset))];
+    }
+
+    /// @dev Wrapped ERC20 transfer for guardian-fee claims. On failure (e.g.
+    ///      USDC blacklist), records the amount in `_unclaimedApproverFees`
+    ///      keyed by `(proposalId, recipient, asset)` + emits
+    ///      `ApproverFeeEscrowed`. Cross-proposal drain is impossible because
+    ///      the key includes `proposalId` (regression guard from PR #229 review).
+    function _safeRewardTransfer(address asset, address recipient, uint256 amount, uint256 proposalId) private {
+        bool ok;
+        try IERC20(asset).transfer(recipient, amount) returns (bool r) {
+            ok = r;
+        } catch {}
+        if (!ok) {
+            _unclaimedApproverFees[keccak256(abi.encode(proposalId, recipient, asset))] += amount;
+            emit ApproverFeeEscrowed(proposalId, recipient, asset, amount);
+        }
     }
 
     // ──────────────────────────────────────────────────────────────

@@ -45,9 +45,15 @@ interface IGuardianRegistry {
     error NoActiveDelegation();
     error NoUnstakeRequest();
     error UnstakeCooldownActive();
-    // V1.5 Phase 3 — commission
+    // V1.5 Phase 3 — commission + claim
     error CommissionExceedsMax();
     error CommissionRaiseExceedsLimit();
+    error NoPoolFunded();
+    error AlreadyClaimed();
+    error NotApprover();
+    error NoDelegationAtSettle();
+    error DelegatePoolEmpty();
+    error NoEscrowedAmount();
     error InvalidAgentId();
     error ChangeAlreadyPending();
     error NoChangePending();
@@ -206,5 +212,41 @@ interface IGuardianRegistry {
     ///         claim pro-rata. See spec §4.8.
     function fundProposalGuardianPool(uint256 proposalId, address asset, uint256 amount) external;
 
+    /// @notice Approver pulls their pro-rata share; DPoS commission is kept by
+    ///         the approver, remainder is stored for delegator claim.
+    function claimProposalReward(uint256 proposalId) external;
+
+    /// @notice Delegator pulls their share from delegate's remainder pool.
+    ///         Delegate must have claimed first (seeds the pool).
+    function claimDelegatorProposalReward(address delegate, uint256 proposalId) external;
+
+    /// @notice Pull previously-escrowed guardian-fee reward after the transfer-
+    ///         failure condition has been lifted. Keyed by (proposalId, recipient,
+    ///         asset) so cross-proposal drain is impossible.
+    function flushUnclaimedApproverFee(uint256 proposalId, address recipient, address asset) external;
+
+    function unclaimedApproverFee(uint256 proposalId, address recipient, address asset)
+        external
+        view
+        returns (uint256);
+
     event ProposalGuardianPoolFunded(uint256 indexed proposalId, address indexed asset, uint256 amount);
+    event ApproverRewardClaimed(
+        uint256 indexed proposalId,
+        address indexed approver,
+        uint256 gross,
+        uint256 commission,
+        uint256 remainder
+    );
+    event DelegatorProposalRewardClaimed(
+        address indexed delegator,
+        address indexed delegate,
+        uint256 indexed proposalId,
+        uint256 share
+    );
+    event ApproverFeeEscrowed(
+        uint256 indexed proposalId, address indexed recipient, address indexed asset, uint256 amount
+    );
+    // Flush is observable via ERC20 Transfer + unclaimedApproverFee = 0 — no
+    // dedicated event (saves bytecode).
 }
