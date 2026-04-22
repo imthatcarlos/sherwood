@@ -1019,14 +1019,32 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
 
         // V1.5: guardian fee — slice of settled PnL routed to the registry
         // (funds per-proposal approver-reward pool). See spec §4.8.
+        // W-1-resilient: if the recipient transfer or pool-funding fails
+        // (blacklist, misconfigured recipient, registry upgrade bug), emit
+        // a diagnostic event and skip the fee so settlement cannot brick.
+        // On transfer failure, the fee stays in the vault (LPs benefit).
+        // On fund-funding failure (post-transfer), the amount is in the
+        // registry but unpooled; ops can recover via the registry owner.
         if (_guardianFeeBps > 0) {
-            guardianFee = (profit * _guardianFeeBps) / 10000;
-            if (guardianFee > 0) {
-                address recipient = _guardianFeeRecipient;
-                if (recipient == address(0)) revert GuardianFeeRecipientNotSet();
-                ISyndicateVault(vault).transferPerformanceFee(asset, recipient, guardianFee);
-                IGuardianRegistry(recipient).fundProposalGuardianPool(proposalId, asset, guardianFee);
-                emit GuardianFeeAccrued(proposalId, asset, recipient, guardianFee, uint64(block.timestamp));
+            uint256 fee = (profit * _guardianFeeBps) / 10000;
+            address recipient = _guardianFeeRecipient;
+            if (fee > 0 && recipient != address(0)) {
+                try ISyndicateVault(vault).transferPerformanceFee(asset, recipient, fee) {
+                    try IGuardianRegistry(recipient).fundProposalGuardianPool(proposalId, asset, fee) {
+                        guardianFee = fee; // commit waterfall accounting
+                        emit GuardianFeeAccrued(proposalId, asset, recipient, fee, uint64(block.timestamp));
+                    } catch {
+                        // Asset is out of the vault; can't refund. Credit the
+                        // waterfall so fee isn't double-distributed to LPs,
+                        // and emit for ops recovery.
+                        guardianFee = fee;
+                        emit GuardianFeePoolFundingFailed(proposalId, asset, recipient, fee);
+                    }
+                } catch {
+                    // Transfer failed — fee stays in the vault, LPs benefit.
+                    // guardianFee remains 0 so the waterfall reflects reality.
+                    emit GuardianFeeDeliveryFailed(proposalId, asset, recipient, fee);
+                }
             }
         }
 

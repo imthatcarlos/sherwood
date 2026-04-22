@@ -269,8 +269,10 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @dev W-1 escrow for guardian-fee reward transfers that fail (e.g. USDC
     ///      blacklist). Keyed by `keccak256(proposalId, recipient, asset)` to
     ///      prevent cross-proposal drain (same pattern as governor's
-    ///      `_unclaimedFees`).
-    mapping(bytes32 => uint256) internal _unclaimedApproverFees;
+    ///      `_unclaimedFees`). Public to expose an auto-generated
+    ///      `unclaimedApproverFees(bytes32 key) returns (uint256)` view —
+    ///      cheaper than a wrapped 3-arg external view.
+    mapping(bytes32 => uint256) public unclaimedApproverFees;
 
     /// @dev Reserved storage for future upgrades.
     ///      Slot accounting since V1: -9 (Phase 1 + Phase 2),
@@ -594,22 +596,26 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     // ──────────────────────────────────────────────────────────────
 
     /// @inheritdoc IGuardianRegistry
-    /// @dev Approve-side-only reward. Split by DPoS commission; remainder is
-    ///      stored in `_delegatorProposalPool[approver][proposalId]` for the
-    ///      approver's delegators to pull via `claimDelegatorProposalReward`.
+    /// @dev Approve-side-only reward. The approver's gross share is split by
+    ///      source: the portion attributable to their OWN stake is paid
+    ///      directly to them in full; the portion attributable to their
+    ///      delegators is split by DPoS commission rate (commission paid to
+    ///      approver, remainder stored for delegators to claim). A solo
+    ///      approver with no delegators receives their full gross share
+    ///      regardless of commission rate (closes the "solo-approver-loses-
+    ///      remainder" bug from PR #242 review, finding C-1).
     ///      Commission rate is looked up at `settledAt` via
     ///      `_commissionCheckpoints` (INV-V1.5-11).
     ///      CEI is respected: `_approverClaimed[...] = true` is set before the
     ///      external transfer, so reentry hits `AlreadyClaimed`. No
-    ///      `nonReentrant` needed; avoiding it saves ~40 bytes.
-    function claimProposalReward(uint256 proposalId) external {
+    ///      `nonReentrant` needed.
+    function claimProposalReward(uint256 proposalId) external whenNotPaused {
         ProposalRewardPool memory pool = _proposalGuardianPool[proposalId];
         if (pool.amount == 0) revert NoPoolFunded();
         if (_approverClaimed[proposalId][msg.sender]) revert AlreadyClaimed();
 
         // Approve-side only. `_voteStake > 0` is guaranteed whenever
-        // `_votes == Approve` (voteOnProposal reverts on zero-weight voters),
-        // so the Approve check is sufficient.
+        // `_votes == Approve` (voteOnProposal reverts on zero-weight voters).
         if (_votes[proposalId][msg.sender] != GuardianVoteType.Approve) revert NotApprover();
         uint256 w = _voteStake[proposalId][msg.sender];
 
@@ -618,18 +624,27 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         // totalW >= w by construction (w is one of the weights summed into it).
         uint256 gross = (uint256(pool.amount) * w) / totalW;
 
+        // Split the approver's gross share between own-stake portion
+        // (fully to approver) and delegated-stake portion (commission split).
+        // Clamp ownW at w: voter could have topped up own-stake between
+        // openedAt and settledAt, and we need grossFromDelegated >= 0.
+        uint256 ownW = _stakeCheckpoints[msg.sender].upperLookupRecent(uint32(pool.settledAt));
+        if (ownW > w) ownW = w;
+        uint256 grossFromOwn = (gross * ownW) / w;
+        uint256 grossFromDelegated = gross - grossFromOwn;
+
         uint256 rate = _commissionCheckpoints[msg.sender].upperLookupRecent(uint32(pool.settledAt));
-        uint256 commission = (gross * rate) / 10_000;
-        uint256 remainder = gross - commission;
+        uint256 commission = (grossFromDelegated * rate) / 10_000;
+        uint256 approverPayout = grossFromOwn + commission;
+        uint256 remainder = grossFromDelegated - commission;
 
-        // CEI: flag + pool-seed before external transfer.
+        // CEI: flag + pool-seed before external transfer. Writing a zero
+        // remainder is cheaper than branching.
         _approverClaimed[proposalId][msg.sender] = true;
-        if (remainder > 0) {
-            _delegatorProposalPool[msg.sender][proposalId] = remainder;
-        }
+        _delegatorProposalPool[msg.sender][proposalId] = remainder;
 
-        if (commission > 0) {
-            _safeRewardTransfer(pool.asset, msg.sender, commission, proposalId);
+        if (approverPayout > 0) {
+            _safeRewardTransfer(pool.asset, msg.sender, approverPayout, proposalId);
         }
         emit ApproverRewardClaimed(proposalId, msg.sender, gross, commission, remainder);
     }
@@ -640,7 +655,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      `claimProposalReward` (otherwise the pool is zero). Attribution
     ///      timestamp is `settledAt`, so a delegator who unstaked mid-review
     ///      gets 0 if their checkpoint at `settledAt` was already zero.
-    function claimDelegatorProposalReward(address delegate, uint256 proposalId) external {
+    function claimDelegatorProposalReward(address delegate, uint256 proposalId) external whenNotPaused {
         if (_delegatorProposalClaimed[delegate][proposalId][msg.sender]) revert AlreadyClaimed();
         uint256 pool = _delegatorProposalPool[delegate][proposalId];
         if (pool == 0) revert DelegatePoolEmpty();
@@ -671,13 +686,13 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      PR #229 review cross-vault-drain fix.
     function flushUnclaimedApproverFee(uint256 proposalId, address recipient, address asset) external {
         bytes32 key = keccak256(abi.encode(proposalId, recipient, asset));
-        uint256 amount = _unclaimedApproverFees[key];
+        uint256 amount = unclaimedApproverFees[key];
         if (amount == 0) revert NoEscrowedAmount();
 
-        _unclaimedApproverFees[key] = 0;
+        unclaimedApproverFees[key] = 0;
         IERC20(asset).safeTransfer(recipient, amount);
         // Indexers observe the successful retry via the ERC20 Transfer event
-        // paired with `_unclaimedApproverFees` zeroing out — no dedicated flush
+        // paired with `unclaimedApproverFees` zeroing out — no dedicated flush
         // event (reclaimed bytecode).
     }
 
@@ -686,17 +701,15 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     // which returns success/revert + consumed gas, or compute off-chain from
     // `proposalGuardianPool` + `_voteStake` + `commissionAt` + checkpoint views.
 
-    /// @inheritdoc IGuardianRegistry
-    function unclaimedApproverFee(uint256 proposalId, address recipient, address asset)
-        external
-        view
-        returns (uint256)
-    {
-        return _unclaimedApproverFees[keccak256(abi.encode(proposalId, recipient, asset))];
-    }
+    // `unclaimedApproverFee` view removed to reclaim bytecode. The escrow
+    // state is observable via the `ApproverFeeEscrowed` event (emitted on
+    // every escrow write) and the slot can be read via `eth_getStorageAt`
+    // at `keccak256(abi.encode(proposalId, recipient, asset))`. The
+    // `flushUnclaimedApproverFee` call itself returns implicit information
+    // (reverts `NoEscrowedAmount` when empty).
 
     /// @dev Wrapped ERC20 transfer for guardian-fee claims. On failure (e.g.
-    ///      USDC blacklist), records the amount in `_unclaimedApproverFees`
+    ///      USDC blacklist), records the amount in `unclaimedApproverFees`
     ///      keyed by `(proposalId, recipient, asset)` + emits
     ///      `ApproverFeeEscrowed`. Cross-proposal drain is impossible because
     ///      the key includes `proposalId` (regression guard from PR #229 review).
@@ -706,7 +719,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
             ok = r;
         } catch {}
         if (!ok) {
-            _unclaimedApproverFees[keccak256(abi.encode(proposalId, recipient, asset))] += amount;
+            unclaimedApproverFees[keccak256(abi.encode(proposalId, recipient, asset))] += amount;
             emit ApproverFeeEscrowed(proposalId, recipient, asset, amount);
         }
     }

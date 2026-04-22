@@ -260,6 +260,22 @@ interface ISyndicateGovernor {
         uint64 settledAt
     );
 
+    /// @notice V1.5: W-1 regression guard. Emitted when the guardian-fee
+    ///         transfer from the vault to the recipient reverts (e.g.
+    ///         recipient blacklisted on USDC). The fee stays in the vault.
+    event GuardianFeeDeliveryFailed(
+        uint256 indexed proposalId, address indexed asset, address indexed recipient, uint256 amount
+    );
+
+    /// @notice V1.5: W-1 regression guard. Emitted when the transfer succeeds
+    ///         but the recipient's `fundProposalGuardianPool` call reverts
+    ///         (misconfigured recipient, registry upgrade bug). The asset is
+    ///         in the recipient's balance but no pool is stamped — ops can
+    ///         recover via the recipient contract's owner.
+    event GuardianFeePoolFundingFailed(
+        uint256 indexed proposalId, address indexed asset, address indexed recipient, uint256 amount
+    );
+
     // ── Functions ──
 
     function propose(

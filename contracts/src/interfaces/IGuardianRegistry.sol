@@ -225,10 +225,8 @@ interface IGuardianRegistry {
     ///         asset) so cross-proposal drain is impossible.
     function flushUnclaimedApproverFee(uint256 proposalId, address recipient, address asset) external;
 
-    function unclaimedApproverFee(uint256 proposalId, address recipient, address asset)
-        external
-        view
-        returns (uint256);
+    // unclaimedApproverFee view removed — escrow is observable via
+    // ApproverFeeEscrowed event + eth_getStorageAt at keccak256(pid, recipient, asset).
 
     event ProposalGuardianPoolFunded(uint256 indexed proposalId, address indexed asset, uint256 amount);
     event ApproverRewardClaimed(

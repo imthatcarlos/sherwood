@@ -110,6 +110,10 @@ contract GuardianRegistryProposalRewardTest is Test {
 
     // ── Single-approver claim path ──
 
+    /// @notice Solo approver with no delegators receives their FULL gross share
+    ///         regardless of commission rate (C-1 fix — see PR #242 review).
+    ///         Commission only applies to the delegated portion; with 0
+    ///         delegators, grossFromDelegated = 0 so commission = 0.
     function test_claim_singleApprover_noCommission_allToApprover() public {
         _runReview(approver, address(0), address(0));
         _fundPool();
@@ -117,11 +121,13 @@ contract GuardianRegistryProposalRewardTest is Test {
         uint256 before = usdc.balanceOf(approver);
         vm.prank(approver);
         registry.claimProposalReward(PID);
-        // Commission = 0 → nothing to approver; full FEE_AMOUNT goes to delegator pool.
-        assertEq(usdc.balanceOf(approver) - before, 0);
+        // Full FEE_AMOUNT — solo approver, no delegators.
+        assertEq(usdc.balanceOf(approver) - before, FEE_AMOUNT);
     }
 
-    function test_claim_withCommission_paysApproverCut() public {
+    /// @notice Solo approver with 20% commission still gets FULL gross share
+    ///         — commission rate is moot when grossFromDelegated = 0 (C-1 fix).
+    function test_claim_soloApprover_withCommission_getsFullShare() public {
         vm.prank(approver);
         registry.setCommission(2000); // 20%
         _runReview(approver, address(0), address(0));
@@ -130,13 +136,12 @@ contract GuardianRegistryProposalRewardTest is Test {
         uint256 before = usdc.balanceOf(approver);
         vm.prank(approver);
         registry.claimProposalReward(PID);
-        assertEq(usdc.balanceOf(approver) - before, 200e6, "20% of 1000 = 200");
+        assertEq(usdc.balanceOf(approver) - before, FEE_AMOUNT, "solo approver gets full share");
     }
 
     function test_claim_twoApprovers_equalWeight_halfEach() public {
-        // Both approvers set 0 commission for simpler accounting; each gets
-        // their pro-rata share of the fee but commission=0 means their cut = 0.
-        // The test is about weight attribution, not commission.
+        // Both approvers set 0 commission; solo (no delegators) → each gets
+        // their full 50% share = 500 USDC regardless of rate.
         vm.prank(approver);
         registry.setCommission(2000);
         vm.prank(approver2);
@@ -148,9 +153,10 @@ contract GuardianRegistryProposalRewardTest is Test {
         registry.claimProposalReward(PID);
         vm.prank(approver2);
         registry.claimProposalReward(PID);
-        // Each gets 20% of their 500 share = 100 USDC
-        assertEq(usdc.balanceOf(approver), 100e6);
-        assertEq(usdc.balanceOf(approver2), 100e6);
+        // Each: gross = 500, ownW=w → grossFromOwn=500, grossFromDelegated=0,
+        // commission=0, approverPayout=500.
+        assertEq(usdc.balanceOf(approver), 500e6);
+        assertEq(usdc.balanceOf(approver2), 500e6);
     }
 
     // ── Approver restriction ──
@@ -190,9 +196,23 @@ contract GuardianRegistryProposalRewardTest is Test {
 
     // ── Commission-at-settledAt (INV-V1.5-11) ──
 
+    /// @notice Commission rate applied is the rate at settledAt, not claim
+    ///         time (INV-V1.5-11). Needs a delegator to observe the
+    ///         commission semantics — a solo approver is insensitive to the
+    ///         rate (C-1 fix).
     function test_claim_commissionFrozenAtSettledAt() public {
+        // Delegator delegates 20k to approver (matches own-stake 1:1 for clean
+        // math: grossFromOwn = 500, grossFromDelegated = 500, 10% commission
+        // on delegated = 50 → approverPayout = 550).
         vm.prank(approver);
         registry.setCommission(1000); // 10%
+        wood.mint(delegator1, 20_000e18);
+        vm.prank(delegator1);
+        wood.approve(address(registry), type(uint256).max);
+        vm.prank(delegator1);
+        registry.delegateStake(approver, 20_000e18);
+        vm.warp(vm.getBlockTimestamp() + 1);
+
         _runReview(approver, address(0), address(0));
         _fundPool(); // stamps settledAt
 
@@ -203,35 +223,49 @@ contract GuardianRegistryProposalRewardTest is Test {
 
         vm.prank(approver);
         registry.claimProposalReward(PID);
-        assertEq(usdc.balanceOf(approver), 100e6, "10% rate frozen at settledAt");
+        // own 20k + delegated 20k = 40k vote weight.
+        // gross = 1000, grossFromOwn = 500, grossFromDelegated = 500.
+        // 10% rate frozen at settledAt: commission = 50, approverPayout = 550.
+        assertEq(usdc.balanceOf(approver), 550e6, "own 500 + 10% of delegated 500 = 550");
     }
 
     // ── Delegator claim ──
 
+    /// @notice Clean 20k own + 20k delegated (10k + 10k), 20% commission.
+    ///         C-1 fix: grossFromOwn = 500 (to approver), grossFromDelegated =
+    ///         500, commission = 100 (to approver), remainder = 400 split 50/50.
     function test_claimDelegator_splitsProRata() public {
-        // Delegate 400 + 600 = 1000; approver's vote weight = own 20k + 1k
-        // delegated = 21k. For the split, delegator pool = gross - commission.
         vm.prank(approver);
         registry.setCommission(2000);
+        wood.mint(delegator1, 10_000e18);
+        wood.mint(delegator2, 10_000e18);
         vm.prank(delegator1);
-        registry.delegateStake(approver, 400e18);
+        wood.approve(address(registry), type(uint256).max);
         vm.prank(delegator2);
-        registry.delegateStake(approver, 600e18);
+        wood.approve(address(registry), type(uint256).max);
+        vm.prank(delegator1);
+        registry.delegateStake(approver, 10_000e18);
+        vm.prank(delegator2);
+        registry.delegateStake(approver, 10_000e18);
         vm.warp(vm.getBlockTimestamp() + 1);
 
         _runReview(approver, address(0), address(0));
         _fundPool();
+
+        uint256 aBefore = usdc.balanceOf(approver);
         vm.prank(approver);
         registry.claimProposalReward(PID);
-        // Pool for delegators = 800 USDC (1000 - 200 commission).
+        // own 20k + delegated 20k = 40k. gross=1000, fromOwn=500, fromDeleg=500,
+        // commission=100, payout=600, remainder=400.
+        assertEq(usdc.balanceOf(approver) - aBefore, 600e6);
 
         vm.prank(delegator1);
         registry.claimDelegatorProposalReward(approver, PID);
-        assertEq(usdc.balanceOf(delegator1), 320e6, "400/1000 * 800 = 320");
+        assertEq(usdc.balanceOf(delegator1), 200e6, "50% * 400 = 200");
 
         vm.prank(delegator2);
         registry.claimDelegatorProposalReward(approver, PID);
-        assertEq(usdc.balanceOf(delegator2), 480e6, "600/1000 * 800 = 480");
+        assertEq(usdc.balanceOf(delegator2), 200e6, "50% * 400 = 200");
     }
 
     function test_claimDelegator_beforeApproverClaim_reverts() public {
@@ -269,6 +303,8 @@ contract GuardianRegistryProposalRewardTest is Test {
     // ── W-1 escrow ──
 
     function test_claim_blacklistedApprover_escrows() public {
+        // Solo approver, 20% commission (moot — no delegators). Full 1000 USDC
+        // escrowed when blacklisted.
         vm.prank(approver);
         registry.setCommission(2000);
         _runReview(approver, address(0), address(0));
@@ -276,11 +312,13 @@ contract GuardianRegistryProposalRewardTest is Test {
         usdc.setBlacklisted(approver, true);
 
         vm.expectEmit(true, true, true, true);
-        emit IGuardianRegistry.ApproverFeeEscrowed(PID, approver, address(usdc), 200e6);
+        emit IGuardianRegistry.ApproverFeeEscrowed(PID, approver, address(usdc), FEE_AMOUNT);
         vm.prank(approver);
         registry.claimProposalReward(PID);
 
-        assertEq(registry.unclaimedApproverFee(PID, approver, address(usdc)), 200e6);
+        assertEq(
+            registry.unclaimedApproverFees(keccak256(abi.encode(PID, approver, address(usdc)))), FEE_AMOUNT
+        );
     }
 
     function test_flushUnclaimedApproverFee_retriesAfterUnblacklist() public {
@@ -295,8 +333,8 @@ contract GuardianRegistryProposalRewardTest is Test {
         usdc.setBlacklisted(approver, false);
         uint256 before = usdc.balanceOf(approver);
         registry.flushUnclaimedApproverFee(PID, approver, address(usdc));
-        assertEq(usdc.balanceOf(approver) - before, 200e6);
-        assertEq(registry.unclaimedApproverFee(PID, approver, address(usdc)), 0);
+        assertEq(usdc.balanceOf(approver) - before, FEE_AMOUNT);
+        assertEq(registry.unclaimedApproverFees(keccak256(abi.encode(PID, approver, address(usdc)))), 0);
     }
 
     function test_flushUnclaimedApproverFee_noEscrow_reverts() public {
@@ -321,6 +359,8 @@ contract GuardianRegistryProposalRewardTest is Test {
         registry.flushUnclaimedApproverFee(9999, approver, address(usdc));
 
         // Original escrow still intact.
-        assertEq(registry.unclaimedApproverFee(PID, approver, address(usdc)), 200e6);
+        assertEq(
+            registry.unclaimedApproverFees(keccak256(abi.encode(PID, approver, address(usdc)))), FEE_AMOUNT
+        );
     }
 }
