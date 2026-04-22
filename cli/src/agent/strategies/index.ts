@@ -4,44 +4,40 @@
 
 import type { Signal } from '../scoring.js';
 import type { Strategy, StrategyContext, StrategyConfig } from './types.js';
-import { SmartMoneyStrategy } from './smart-money.js';
-import { TokenUnlockStrategy } from './token-unlock.js';
 import { SentimentContrarianStrategy } from './sentiment-contrarian.js';
 import { BreakoutOnChainStrategy } from './breakout-onchain.js';
-import { TvlMomentumStrategy } from './tvl-momentum.js';
 import { FundingRateStrategy } from './funding-rate.js';
 import { DexFlowStrategy } from './dex-flow.js';
-import { MeanReversionStrategy } from './mean-reversion.js';
-import { TwitterSentimentStrategy } from './twitter-sentiment.js';
 import { HyperliquidFlowStrategy } from './hyperliquid-flow.js';
 import { MultiTimeframeStrategy } from './multi-timeframe.js';
 import { CrossSectionalMomentumStrategy } from './cross-sectional-momentum.js';
 import { TradingViewSignalStrategy } from './tradingview-signal.js';
+import { GlassnodeOnChainStrategy } from './glassnode-onchain.js';
+import { BtcNetworkHealthStrategy } from './btc-network-health.js';
+import { PredictionMarketStrategy } from './prediction-market.js';
+import { SocialVolumeStrategy } from './social-volume.js';
 
 export type { Strategy, StrategyContext, StrategyConfig };
-export { SmartMoneyStrategy, TokenUnlockStrategy, SentimentContrarianStrategy };
-export { BreakoutOnChainStrategy, TvlMomentumStrategy, FundingRateStrategy };
-export { DexFlowStrategy, MeanReversionStrategy, TwitterSentimentStrategy, HyperliquidFlowStrategy };
+export { SentimentContrarianStrategy, BreakoutOnChainStrategy, FundingRateStrategy };
+export { DexFlowStrategy, HyperliquidFlowStrategy };
 export { MultiTimeframeStrategy, CrossSectionalMomentumStrategy };
 export { TradingViewSignalStrategy };
+export { GlassnodeOnChainStrategy, BtcNetworkHealthStrategy };
+export { PredictionMarketStrategy, SocialVolumeStrategy };
 
 export const DEFAULT_STRATEGIES: Strategy[] = [
-  // ── Active signals (fire rate >25% in production) ──
-  new SentimentContrarianStrategy(),  // 100% fire rate — F&G based
-  new BreakoutOnChainStrategy(),      // 95% fire rate
-  new FundingRateStrategy(),          // 52% fire rate — HL native
-  new DexFlowStrategy(),              // 18% fire rate
-  new HyperliquidFlowStrategy(),      // 57% fire rate
-  new MultiTimeframeStrategy(),       // 78% fire rate
-  new CrossSectionalMomentumStrategy(), // cross-sectional: ranks tokens vs group
-  new TradingViewSignalStrategy(),      // TradingView MCP — 26 indicators via local server
-
-  // ── Disabled: zero or near-zero fire rate in production ──
-  // SmartMoneyStrategy — replaced by Nansen HL perp-trades in index.ts
-  // TwitterSentimentStrategy — Twitter API returns 402
-  // TokenUnlockStrategy — 0% fire rate, no data source
-  // TvlMomentumStrategy — 0% fire rate for majors (no TVL on BTC/SOL)
-  // MeanReversionStrategy — 0% fire rate, BB conditions never met
+  new SentimentContrarianStrategy(),    // sentiment — F&G contrarian
+  new BreakoutOnChainStrategy(),        // technical — breakout + volume
+  new FundingRateStrategy(),            // onchain — HL funding rates
+  new DexFlowStrategy(),                // onchain — DEX activity
+  new HyperliquidFlowStrategy(),        // onchain — HL flow/OI/orderbook
+  new MultiTimeframeStrategy(),         // technical — multi-TF EMA alignment
+  new CrossSectionalMomentumStrategy(), // technical — relative strength ranking
+  new TradingViewSignalStrategy(),      // technical — TradingView MCP indicators
+  new GlassnodeOnChainStrategy(),       // onchain — Glassnode NVT/SOPR/active addresses
+  new BtcNetworkHealthStrategy(),       // technical — BTC network health
+  new PredictionMarketStrategy(),       // event — prediction market catalysts
+  new SocialVolumeStrategy(),           // sentiment — social volume contrarian
 ];
 
 /**

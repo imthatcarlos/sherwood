@@ -26,12 +26,19 @@ import { DexScreenerProvider } from "../providers/data/dexscreener.js";
 import { FundingRateProvider } from "../providers/data/funding-rate.js";
 import { TokenUnlocksProvider } from "../providers/data/token-unlocks.js";
 import { TwitterSentimentProvider } from "../providers/data/twitter.js";
+import {
+  getGlassnodeMetrics,
+  getMessariFundamentals,
+  getBtcNetworkStats,
+  getCryptoPredictions,
+  getSocialData,
+} from '../providers/fincept/index.js';
 import { logSignal } from "./signal-logger.js";
 import type { JudgeLogData } from "./signal-logger.js";
 import { judge, selectJudgeCandidates, DEFAULT_JUDGE_CONFIG } from "./judge.js";
 import type { JudgeConfig, JudgeVerdict, JudgeContext } from "./judge.js";
 import { SignalSmoother, FileSmootherStorage, DEFAULT_SMOOTHER_CONFIG } from "./signal-smoother.js";
-import { applyVelocityGate, resolveVelocity, DEFAULT_ENTRY_GATE_CONFIG } from "./entry-gates.js";
+import { applyVelocityGate, applyRegimeGate, resolveVelocity, DEFAULT_ENTRY_GATE_CONFIG } from "./entry-gates.js";
 import type { EntryGateConfig } from "./entry-gates.js";
 import { join as joinPath } from "node:path";
 import { homedir as getHomedir } from "node:os";
@@ -98,6 +105,8 @@ export interface TokenAnalysis {
   preJudge?: { action: string; score: number };
   /** Original action/score before velocity gate downgraded to HOLD. */
   preVelocity?: { action: string; score: number };
+  /** Original action/score before regime gate blocked a short in non-bearish regime. */
+  preRegime?: { action: string; score: number };
 }
 
 export class TradingAgent {
@@ -431,13 +440,53 @@ export class TradingAgent {
     // signals that actually fire. Only push when there's real data (TVL from
     // phase 1, or Nansen/Messari from x402).
 
+    // Phase 2b: Fincept data (parallel, all fault-tolerant)
+    const [glassnodeResult, messariResult, btcNetResult, predictionResult, socialResult] =
+      await Promise.allSettled([
+        getGlassnodeMetrics(tokenId),
+        getMessariFundamentals(tokenId),
+        tokenId === 'bitcoin' ? getBtcNetworkStats() : Promise.resolve(null),
+        getCryptoPredictions(),
+        getSocialData(tokenId),
+      ]);
+
+    const glassnodeData = glassnodeResult.status === 'fulfilled' ? glassnodeResult.value ?? undefined : undefined;
+    const messariFundamentals = messariResult.status === 'fulfilled' ? messariResult.value ?? undefined : undefined;
+    const btcNetworkData = btcNetResult.status === 'fulfilled' ? btcNetResult.value ?? undefined : undefined;
+    const predictionData = predictionResult.status === 'fulfilled' && predictionResult.value?.length
+      ? { markets: predictionResult.value }
+      : undefined;
+    const socialData = socialResult.status === 'fulfilled' ? socialResult.value ?? undefined : undefined;
+
+    // Feed Messari fundamentals into scoreFundamental if available
+    if (messariFundamentals && messariFundamentals.marketCap > 0) {
+      const mcapToTvl = tvl && tvl > 0 ? messariFundamentals.marketCap / tvl : undefined;
+      const existingFundIdx = signals.findIndex((s) => s.name === 'fundamental');
+      const fundSignal = scoreFundamental({
+        mcapToTvl,
+        revenueGrowth: messariFundamentals.revenueGrowth7d,
+      });
+      if (existingFundIdx >= 0) {
+        signals[existingFundIdx] = fundSignal;
+      } else {
+        signals.push(fundSignal);
+      }
+    }
+
+    // Feed Glassnode into scoreOnChain if available
+    if (glassnodeData && !isNaN(glassnodeData.activeAddresses)) {
+      signals.push(scoreOnChain({
+        activeAddressesGrowth: glassnodeData.activeAddressesGrowth,
+        whaleAccumulating: glassnodeData.sopr < 1.0,
+      }));
+    }
+
     // Phase 3: Parallel strategy data fetching (symbol, funding rate, unlocks)
     let marketData: any = undefined;
 
     try {
-      // Twitter sentiment fetch removed — API returns 402 (paid tier required)
-      // for most token queries and was spamming logs without producing usable
-      // signal. TwitterSentimentStrategy is also disabled in DEFAULT_STRATEGIES.
+      // Dead strategies removed in Apr 2026 audit (twitter, meanReversion,
+      // tvlMomentum, tokenUnlock, smartMoney strategy).
       const [symbolResult, fundingRateResult, unlockResult] = await Promise.allSettled([
         // Resolve token symbol + get market data for strategies
         this.coingecko.getCoinDetails(tokenId).then(async (coinDetails) => {
@@ -505,6 +554,11 @@ export class TradingAgent {
         hyperliquidData, // from phase 3
         tokenSymbol, // from phase 3
         groupReturns: opts?.groupReturns, // cross-sectional momentum
+        glassnodeData,
+        messariFundamentals,
+        btcNetworkData,
+        predictionData,
+        socialData,
       };
 
       let strategySignals = await runStrategies(stratCtx, this.config.strategyConfigs);
@@ -612,7 +666,14 @@ export class TradingAgent {
     // days=30 OHLC — tightest proxy available).
     const priceChg1h = (hyperliquidData as { priceChg1h?: number } | undefined)?.priceChg1h;
     const velocity = resolveVelocity(priceChg1h, candles);
-    const gatedResult = applyVelocityGate(result, velocity, gateConfig, (msg) =>
+    const velocityGated = applyVelocityGate(result, velocity, gateConfig, (msg) =>
+      console.error(chalk.yellow(msg)),
+    );
+
+    // Regime gate — block shorts in non-bearish regimes (trending-up, ranging,
+    // low-volatility). Trade log analysis: 25% short WR (-$194) vs 67% long WR
+    // (+$279). Most short losses were counter-trend fades.
+    const gatedResult = applyRegimeGate(velocityGated, regimeAnalysis?.regime, gateConfig, (msg) =>
       console.error(chalk.yellow(msg)),
     );
 

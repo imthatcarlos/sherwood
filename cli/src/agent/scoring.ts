@@ -32,18 +32,22 @@ export interface ScoringWeights {
 // and reduce smartMoney since x402 Nansen is often unfunded in practice.
 // `onchain` slightly boosted — HL flow + fundingRate are the highest-firing
 // live categories. Sums to 1.00.
-// Autoresearch-optimized weights (50 experiments on 13k production signal rows,
-// Sharpe 1.77 → 4.79, score +499%). Key findings: technical is the strongest
-// directional predictor (+0.30), onchain (HL flow/funding) was adding noise
-// at 0.20 — reduced to 0.15. Sentiment kept at 0.15 (contrarian signal only
-// fires on F&G extremes, shouldn't dominate). SmartMoney at 0.10 (x402 often
-// unfunded). Fundamental/event zeroed (0% fire rate in production).
+// Post-audit weights (Apr 2026). Prior DEFAULT_WEIGHTS summed to 0.75 — all
+// scores dampened by 25%, making BUY thresholds unreachable. Fixed to 1.00.
+// Dead strategies removed (meanReversion, tvlMomentum, tokenUnlock,
+// twitterSentiment, smartMoney strategy). Redistributed to 4 active categories.
+// technical (5 signals) + onchain (3 signals) carry 70% — they're the highest-
+// firing, most directional. sentiment (sentimentContrarian) at 20% — fires on
+// F&G extremes only. smartMoney (Nansen) at 10% — x402/API dependent.
+// Sum = 1.00. Only 4 categories have active signals in production:
+// technical (5 strategies), onchain (3 strategies), sentiment (1), smartMoney (Nansen).
+// fundamental/event zeroed — all strategies that fed them are removed.
 export const DEFAULT_WEIGHTS: ScoringWeights = {
   smartMoney: 0.10,
-  technical: 0.30,
-  sentiment: 0.15,
-  onchain: 0.15,
-  fundamental: 0.05,
+  technical: 0.35,
+  sentiment: 0.20,
+  onchain: 0.35,
+  fundamental: 0.00,
   event: 0.00,
 };
 
@@ -479,7 +483,7 @@ export function scoreEvent(data: {
 // ── Combine All Signals Into Trade Decision ──
 
 /** Lagging technical indicators whose weight is dampened during momentum moves. */
-const LAGGING_TECHNICAL_SIGNALS = new Set(['technical', 'meanReversion']);
+const LAGGING_TECHNICAL_SIGNALS = new Set(['technical']);
 
 /** Signal name → weight category mapping. */
 const SIGNAL_CATEGORY_MAP: Record<string, keyof ScoringWeights> = {
@@ -491,22 +495,19 @@ const SIGNAL_CATEGORY_MAP: Record<string, keyof ScoringWeights> = {
   smartMoney: "smartMoney",
   flowIntelligence: "smartMoney",  // shares smartMoney category — auto weight-split with perp signal
 
-  // Strategy signal mappings to categories
-  // momentum intentionally has no key in getStrategyAdjustments() — it keeps
-  // full weight during momentum overrides (not dampened like lagging indicators).
-  momentum: "technical",
+  // Strategy signal mappings to categories (only active strategies)
   breakoutOnChain: "technical",
-  meanReversion: "technical",
   multiTimeframe: "technical",
-  dexFlow: "onchain",
-  fundingRate: "onchain",          // FIX 2: was "fundamental" — wasted on majors (0.00 weight)
-  tvlMomentum: "fundamental",
-  sentimentContrarian: "sentiment",
-  twitterSentiment: "sentiment",
-  tokenUnlock: "event",
-  hyperliquidFlow: "onchain",
   crossSectionalMomentum: "technical",
   tradingviewSignal: "technical",
+  dexFlow: "onchain",
+  fundingRate: "onchain",
+  hyperliquidFlow: "onchain",
+  sentimentContrarian: "sentiment",
+  glassnodeOnChain: "onchain",
+  btcNetworkHealth: "technical",
+  predictionMarket: "event",
+  socialVolume: "sentiment",
 };
 
 /** Categories that rely on x402 paid data (Nansen, Messari). */
@@ -628,21 +629,21 @@ export function computeTradeDecision(
   if (Math.abs(score) > 0.01) {
     const scoreSign = Math.sign(score);
     // Compute net direction per active category.
-    // NOTE: uses raw signal.value (not dampened). This means a dampened
-    // technical signal at -0.30 still votes "bearish" in convergence even
-    // though its weighted contribution is halved. This is intentional:
-    // dampening reduces a lagging signal's INFLUENCE on the score, but
-    // its DIRECTIONAL OPINION still counts for convergence. If we used
-    // dampened values, a 50% weight cut would make a -0.30 signal appear
-    // as -0.15, potentially flipping the category to "neutral" and
-    // artificially inflating the convergence count.
+    // Use dampened values for lagging technical signals so they don't
+    // inflate convergence count when voting against the momentum direction.
     const categoryNetDirection = new Map<string, number>();
     for (const signal of signals) {
       const category = SIGNAL_CATEGORY_MAP[signal.name];
       if (!category || excludedCategories.has(category)) continue;
       if (signal._weightOverride !== undefined) continue;
+      let voteValue = signal.value;
+      // Lagging signals during trending regimes: use dampened value for vote
+      if (regime && (regime === 'trending-up' || regime === 'trending-down')
+          && LAGGING_TECHNICAL_SIGNALS.has(signal.name)) {
+        voteValue *= 0.5;
+      }
       const current = categoryNetDirection.get(category) ?? 0;
-      categoryNetDirection.set(category, current + signal.value);
+      categoryNetDirection.set(category, current + voteValue);
     }
     // Count categories that agree with the aggregate direction
     let agreeing = 0;
