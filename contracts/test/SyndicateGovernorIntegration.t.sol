@@ -46,7 +46,6 @@ contract SyndicateGovernorIntegrationTest is Test {
     uint256 constant MAX_PERF_FEE_BPS = 3000;
     uint256 constant MAX_STRATEGY_DURATION = 30 days;
     uint256 constant COOLDOWN_PERIOD = 1 days;
-    uint256 constant PARAM_CHANGE_DELAY = 1 days;
 
     function setUp() public {
         usdc = new ERC20Mock("USD Coin", "USDC", 6);
@@ -92,9 +91,10 @@ contract SyndicateGovernorIntegrationTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: MAX_STRATEGY_DURATION,
-                    parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 200,
-                    protocolFeeRecipient: owner
+                    protocolFeeRecipient: owner,
+                    guardianFeeBps: 0,
+                    guardianFeeRecipient: address(0)
                 }),
                 address(guardianRegistry)
             )

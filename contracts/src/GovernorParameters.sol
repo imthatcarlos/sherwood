@@ -6,14 +6,21 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 
 /**
  * @title GovernorParameters
- * @notice Abstract contract managing governance parameter setters, validation,
- *         and timelock-based parameter changes. Extracted from SyndicateGovernor
- *         to reduce contract size and improve separation of concerns.
+ * @notice Abstract contract managing governance parameter setters and bounds
+ *         validation. Extracted from SyndicateGovernor to keep separation of
+ *         concerns and relieve bytecode pressure.
  *
- *   - All parameter setters queue changes with a delay
- *   - Owner must call finalizeParameterChange() after the delay elapses
- *   - Owner can cancel pending changes at any time
- *   - Parameters are validated at both queue and finalize time
+ *         Setters are **owner-instant** (no on-chain timelock). The owner is
+ *         expected to be a multisig with its own delay/approval workflow
+ *         (e.g., Gnosis Safe + Zodiac Delay module). Enforcing a timelock
+ *         on-chain in addition to the multisig's is redundant — the multisig
+ *         is the governance unit, and a compromised multisig already
+ *         dominates whatever on-chain delay exists.
+ *
+ *         All setters validate bounds at call time, apply immediately, and
+ *         emit a uniform `ParameterChangeFinalized(paramKey, old, new)` event
+ *         so indexers can subscribe to a single topic regardless of which
+ *         parameter changed.
  */
 abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
     // ── Safety bounds (hardcoded) ──
@@ -29,7 +36,8 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
     uint256 public constant ABSOLUTE_MAX_STRATEGY_DURATION = 30 days;
     uint256 public constant MIN_COOLDOWN_PERIOD = 1 hours;
     uint256 public constant MAX_COOLDOWN_PERIOD = 30 days;
-    uint256 public constant MAX_PROTOCOL_FEE_BPS = 1000; // 10% cap on protocol fee
+    uint256 public constant MAX_PROTOCOL_FEE_BPS = 1000; // 10%
+    uint256 public constant MAX_GUARDIAN_FEE_BPS = 500; // 5%
 
     // ── Collaborative proposal constants ──
 
@@ -38,17 +46,7 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
     uint256 public constant MAX_COLLABORATION_WINDOW = 7 days;
     uint256 public constant ABSOLUTE_MAX_CO_PROPOSERS = 10;
 
-    // ── Timelock bounds ──
-
-    uint256 public constant MIN_PARAM_CHANGE_DELAY = 6 hours;
-    uint256 public constant MAX_PARAM_CHANGE_DELAY = 7 days;
-    /// @notice G-M5: a queued parameter change must be finalized within this
-    ///         window of `effectiveAt`, otherwise `finalizeParameterChange`
-    ///         reverts `ChangeStale()`. Prevents stale queues from reactivating
-    ///         long after the motivating context has passed.
-    uint256 public constant MAX_PARAM_STALENESS = 30 days;
-
-    // ── Parameter keys ──
+    // ── Parameter keys (event topic discriminators) ──
 
     bytes32 public constant PARAM_VOTING_PERIOD = keccak256("votingPeriod");
     bytes32 public constant PARAM_EXECUTION_WINDOW = keccak256("executionWindow");
@@ -62,221 +60,158 @@ abstract contract GovernorParameters is ISyndicateGovernor, OwnableUpgradeable {
     bytes32 public constant PARAM_PROTOCOL_FEE_BPS = keccak256("protocolFeeBps");
     bytes32 public constant PARAM_PROTOCOL_FEE_RECIPIENT = keccak256("protocolFeeRecipient");
     bytes32 public constant PARAM_FACTORY = keccak256("factory");
+    bytes32 public constant PARAM_GUARDIAN_FEE_BPS = keccak256("guardianFeeBps");
+    bytes32 public constant PARAM_GUARDIAN_FEE_RECIPIENT = keccak256("guardianFeeRecipient");
 
     // ── Virtual accessors (implemented by SyndicateGovernor) ──
 
     function _getParams() internal view virtual returns (GovernorParams storage);
-    function _getParameterChangeDelay() internal view virtual returns (uint256);
-    function _getPendingChanges() internal view virtual returns (mapping(bytes32 => PendingChange) storage);
     function _getProtocolFeeRecipient() internal view virtual returns (address);
+    function _setProtocolFeeRecipient(address newRecipient) internal virtual;
+    function _getProtocolFeeBps() internal view virtual returns (uint256);
+    function _setProtocolFeeBps(uint256 newValue) internal virtual;
+    function _getFactory() internal view virtual returns (address);
+    function _setFactory(address newFactory) internal virtual;
+    function _getGuardianFeeBps() internal view virtual returns (uint256);
+    function _setGuardianFeeBps(uint256 newValue) internal virtual;
+    function _getGuardianFeeRecipient() internal view virtual returns (address);
+    function _setGuardianFeeRecipient(address newRecipient) internal virtual;
 
-    // ── Parameter setters (queue-based) ──
-    //
-    // Queue-time validation has been dropped in favor of single-source-of-truth
-    // finalize-time validation in `_applyChange`. Rationale:
-    //   - Cross-parameter invariants (min vs max strategy duration, bps > 0 ⇒
-    //     recipient != 0) must be re-checked at finalize anyway, against live
-    //     state.
-    //   - Duplicating the simple-range checks costs ~50 bytes per setter at
-    //     runtime and only buys a slightly-earlier owner error message.
-    //   - The owner can always `cancelParameterChange(paramKey)` if they
-    //     notice the invalid value before the delay elapses.
+    // ── Parameter setters (owner-instant) ──
 
     /// @inheritdoc ISyndicateGovernor
-    function setVotingPeriod(uint256 newVotingPeriod) external onlyOwner {
-        _queueChange(PARAM_VOTING_PERIOD, newVotingPeriod);
+    function setVotingPeriod(uint256 newValue) external onlyOwner {
+        _validateVotingPeriod(newValue);
+        GovernorParams storage p = _getParams();
+        uint256 old = p.votingPeriod;
+        p.votingPeriod = newValue;
+        emit ParameterChangeFinalized(PARAM_VOTING_PERIOD, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setExecutionWindow(uint256 newExecutionWindow) external onlyOwner {
-        _queueChange(PARAM_EXECUTION_WINDOW, newExecutionWindow);
+    function setExecutionWindow(uint256 newValue) external onlyOwner {
+        _validateExecutionWindow(newValue);
+        GovernorParams storage p = _getParams();
+        uint256 old = p.executionWindow;
+        p.executionWindow = newValue;
+        emit ParameterChangeFinalized(PARAM_EXECUTION_WINDOW, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setVetoThresholdBps(uint256 newVetoThresholdBps) external onlyOwner {
-        _queueChange(PARAM_VETO_THRESHOLD_BPS, newVetoThresholdBps);
+    function setVetoThresholdBps(uint256 newValue) external onlyOwner {
+        _validateVetoThresholdBps(newValue);
+        GovernorParams storage p = _getParams();
+        uint256 old = p.vetoThresholdBps;
+        p.vetoThresholdBps = newValue;
+        emit ParameterChangeFinalized(PARAM_VETO_THRESHOLD_BPS, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setMaxPerformanceFeeBps(uint256 newMaxPerformanceFeeBps) external onlyOwner {
-        _queueChange(PARAM_MAX_PERF_FEE, newMaxPerformanceFeeBps);
+    function setMaxPerformanceFeeBps(uint256 newValue) external onlyOwner {
+        _validateMaxPerformanceFeeBps(newValue);
+        GovernorParams storage p = _getParams();
+        uint256 old = p.maxPerformanceFeeBps;
+        p.maxPerformanceFeeBps = newValue;
+        emit ParameterChangeFinalized(PARAM_MAX_PERF_FEE, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setMinStrategyDuration(uint256 newMinStrategyDuration) external onlyOwner {
-        _queueChange(PARAM_MIN_STRATEGY_DURATION, newMinStrategyDuration);
+    function setMinStrategyDuration(uint256 newValue) external onlyOwner {
+        GovernorParams storage p = _getParams();
+        if (newValue < ABSOLUTE_MIN_STRATEGY_DURATION || newValue > p.maxStrategyDuration) {
+            revert InvalidStrategyDurationBounds();
+        }
+        uint256 old = p.minStrategyDuration;
+        p.minStrategyDuration = newValue;
+        emit ParameterChangeFinalized(PARAM_MIN_STRATEGY_DURATION, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setMaxStrategyDuration(uint256 newMaxStrategyDuration) external onlyOwner {
-        _queueChange(PARAM_MAX_STRATEGY_DURATION, newMaxStrategyDuration);
+    function setMaxStrategyDuration(uint256 newValue) external onlyOwner {
+        GovernorParams storage p = _getParams();
+        if (newValue > ABSOLUTE_MAX_STRATEGY_DURATION || newValue < p.minStrategyDuration) {
+            revert InvalidStrategyDurationBounds();
+        }
+        uint256 old = p.maxStrategyDuration;
+        p.maxStrategyDuration = newValue;
+        emit ParameterChangeFinalized(PARAM_MAX_STRATEGY_DURATION, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setCooldownPeriod(uint256 newCooldownPeriod) external onlyOwner {
-        _queueChange(PARAM_COOLDOWN, newCooldownPeriod);
+    function setCooldownPeriod(uint256 newValue) external onlyOwner {
+        _validateCooldownPeriod(newValue);
+        GovernorParams storage p = _getParams();
+        uint256 old = p.cooldownPeriod;
+        p.cooldownPeriod = newValue;
+        emit ParameterChangeFinalized(PARAM_COOLDOWN, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setCollaborationWindow(uint256 newCollaborationWindow) external onlyOwner {
-        _queueChange(PARAM_COLLAB_WINDOW, newCollaborationWindow);
+    function setCollaborationWindow(uint256 newValue) external onlyOwner {
+        if (newValue < MIN_COLLABORATION_WINDOW || newValue > MAX_COLLABORATION_WINDOW) {
+            revert InvalidCollaborationWindow();
+        }
+        GovernorParams storage p = _getParams();
+        uint256 old = p.collaborationWindow;
+        p.collaborationWindow = newValue;
+        emit ParameterChangeFinalized(PARAM_COLLAB_WINDOW, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setMaxCoProposers(uint256 newMaxCoProposers) external onlyOwner {
-        _queueChange(PARAM_MAX_CO_PROPOSERS, newMaxCoProposers);
+    function setMaxCoProposers(uint256 newValue) external onlyOwner {
+        if (newValue == 0 || newValue > ABSOLUTE_MAX_CO_PROPOSERS) revert InvalidMaxCoProposers();
+        GovernorParams storage p = _getParams();
+        uint256 old = p.maxCoProposers;
+        p.maxCoProposers = newValue;
+        emit ParameterChangeFinalized(PARAM_MAX_CO_PROPOSERS, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function setProtocolFeeBps(uint256 newProtocolFeeBps) external onlyOwner {
-        _queueChange(PARAM_PROTOCOL_FEE_BPS, newProtocolFeeBps);
+    function setProtocolFeeBps(uint256 newValue) external onlyOwner {
+        if (newValue > MAX_PROTOCOL_FEE_BPS) revert InvalidProtocolFeeBps();
+        if (newValue > 0 && _getProtocolFeeRecipient() == address(0)) revert InvalidProtocolFeeRecipient();
+        uint256 old = _getProtocolFeeBps();
+        _setProtocolFeeBps(newValue);
+        emit ParameterChangeFinalized(PARAM_PROTOCOL_FEE_BPS, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
     function setProtocolFeeRecipient(address newRecipient) external onlyOwner {
         if (newRecipient == address(0)) revert InvalidProtocolFeeRecipient();
-        _queueChange(PARAM_PROTOCOL_FEE_RECIPIENT, uint256(uint160(newRecipient)));
+        uint256 old = uint256(uint160(_getProtocolFeeRecipient()));
+        _setProtocolFeeRecipient(newRecipient);
+        emit ParameterChangeFinalized(PARAM_PROTOCOL_FEE_RECIPIENT, old, uint256(uint160(newRecipient)));
     }
 
     /// @inheritdoc ISyndicateGovernor
-    /// @dev G-M4: factory rotation is now timelocked. Shares the same
-    ///      queue/finalize/cancel lifecycle as protocolFeeRecipient (address-
-    ///      as-uint160 encoding). Initial wiring at deploy time uses the same
-    ///      path; operators must plan for the `parameterChangeDelay` wait.
     function setFactory(address newFactory) external onlyOwner {
         if (newFactory == address(0)) revert ZeroAddress();
-        _queueChange(PARAM_FACTORY, uint256(uint160(newFactory)));
-    }
-
-    // ── Timelock functions ──
-
-    /// @inheritdoc ISyndicateGovernor
-    function finalizeParameterChange(bytes32 paramKey) external onlyOwner {
-        mapping(bytes32 => PendingChange) storage pending = _getPendingChanges();
-        PendingChange storage change = pending[paramKey];
-        if (!change.exists) revert NoChangePending();
-        if (block.timestamp < change.effectiveAt) revert ChangeNotReady();
-        // G-M5: reject stale queues. Owner must re-queue if more than
-        // MAX_PARAM_STALENESS has elapsed since `effectiveAt`.
-        if (block.timestamp > change.effectiveAt + MAX_PARAM_STALENESS) revert ChangeStale();
-
-        // Re-validate + apply in a single ladder (merged to save bytecode).
-        _applyChange(paramKey, change.newValue);
-
-        delete pending[paramKey];
+        uint256 old = uint256(uint160(_getFactory()));
+        _setFactory(newFactory);
+        emit ParameterChangeFinalized(PARAM_FACTORY, old, uint256(uint160(newFactory)));
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function cancelParameterChange(bytes32 paramKey) external onlyOwner {
-        mapping(bytes32 => PendingChange) storage pending = _getPendingChanges();
-        if (!pending[paramKey].exists) revert NoChangePending();
-        delete pending[paramKey];
-        emit ParameterChangeCancelled(paramKey);
+    function setGuardianFeeBps(uint256 newValue) external onlyOwner {
+        if (newValue > MAX_GUARDIAN_FEE_BPS) revert InvalidGuardianFeeBps();
+        if (newValue > 0 && _getGuardianFeeRecipient() == address(0)) revert GuardianFeeRecipientNotSet();
+        uint256 old = _getGuardianFeeBps();
+        _setGuardianFeeBps(newValue);
+        emit ParameterChangeFinalized(PARAM_GUARDIAN_FEE_BPS, old, newValue);
     }
 
     /// @inheritdoc ISyndicateGovernor
-    function getPendingChange(bytes32 paramKey) external view returns (PendingChange memory) {
-        return _getPendingChanges()[paramKey];
+    function setGuardianFeeRecipient(address newRecipient) external onlyOwner {
+        if (newRecipient == address(0)) revert GuardianFeeRecipientNotSet();
+        uint256 old = uint256(uint160(_getGuardianFeeRecipient()));
+        _setGuardianFeeRecipient(newRecipient);
+        emit ParameterChangeFinalized(PARAM_GUARDIAN_FEE_RECIPIENT, old, uint256(uint160(newRecipient)));
     }
 
     /// @inheritdoc ISyndicateGovernor
     function getGovernorParams() external view returns (GovernorParams memory) {
         return _getParams();
     }
-
-    // ── Internal helpers ──
-
-    function _queueChange(bytes32 paramKey, uint256 newValue) internal {
-        mapping(bytes32 => PendingChange) storage pending = _getPendingChanges();
-        if (pending[paramKey].exists) revert ChangeAlreadyPending();
-
-        uint256 delay = _getParameterChangeDelay();
-        uint256 effectiveAt = block.timestamp + delay;
-
-        pending[paramKey] = PendingChange({newValue: newValue, effectiveAt: effectiveAt, exists: true});
-
-        emit ParameterChangeQueued(paramKey, newValue, effectiveAt);
-    }
-
-    /// @dev Re-validates and applies the change in a single ladder. Merged with
-    ///      the former `_validateForFinalize` to remove a redundant dispatch
-    ///      pass and reclaim runtime bytecode. All cross-param bounds (min vs
-    ///      max strategy duration, protocolFeeBps-requires-recipient) are
-    ///      re-checked here against live state.
-    function _applyChange(bytes32 paramKey, uint256 newValue) internal {
-        GovernorParams storage params = _getParams();
-        uint256 old;
-
-        if (paramKey == PARAM_VOTING_PERIOD) {
-            _validateVotingPeriod(newValue);
-            old = params.votingPeriod;
-            params.votingPeriod = newValue;
-        } else if (paramKey == PARAM_EXECUTION_WINDOW) {
-            _validateExecutionWindow(newValue);
-            old = params.executionWindow;
-            params.executionWindow = newValue;
-        } else if (paramKey == PARAM_VETO_THRESHOLD_BPS) {
-            _validateVetoThresholdBps(newValue);
-            old = params.vetoThresholdBps;
-            params.vetoThresholdBps = newValue;
-        } else if (paramKey == PARAM_MAX_PERF_FEE) {
-            _validateMaxPerformanceFeeBps(newValue);
-            old = params.maxPerformanceFeeBps;
-            params.maxPerformanceFeeBps = newValue;
-        } else if (paramKey == PARAM_MIN_STRATEGY_DURATION) {
-            if (newValue < ABSOLUTE_MIN_STRATEGY_DURATION || newValue > params.maxStrategyDuration) {
-                revert InvalidStrategyDurationBounds();
-            }
-            old = params.minStrategyDuration;
-            params.minStrategyDuration = newValue;
-        } else if (paramKey == PARAM_MAX_STRATEGY_DURATION) {
-            if (newValue > ABSOLUTE_MAX_STRATEGY_DURATION || newValue < params.minStrategyDuration) {
-                revert InvalidStrategyDurationBounds();
-            }
-            old = params.maxStrategyDuration;
-            params.maxStrategyDuration = newValue;
-        } else if (paramKey == PARAM_COOLDOWN) {
-            _validateCooldownPeriod(newValue);
-            old = params.cooldownPeriod;
-            params.cooldownPeriod = newValue;
-        } else if (paramKey == PARAM_COLLAB_WINDOW) {
-            if (newValue < MIN_COLLABORATION_WINDOW || newValue > MAX_COLLABORATION_WINDOW) {
-                revert InvalidCollaborationWindow();
-            }
-            old = params.collaborationWindow;
-            params.collaborationWindow = newValue;
-        } else if (paramKey == PARAM_MAX_CO_PROPOSERS) {
-            if (newValue == 0 || newValue > ABSOLUTE_MAX_CO_PROPOSERS) revert InvalidMaxCoProposers();
-            old = params.maxCoProposers;
-            params.maxCoProposers = newValue;
-        } else if (paramKey == PARAM_PROTOCOL_FEE_BPS) {
-            if (newValue > MAX_PROTOCOL_FEE_BPS) revert InvalidProtocolFeeBps();
-            if (newValue > 0 && _getProtocolFeeRecipient() == address(0)) revert InvalidProtocolFeeRecipient();
-            old = _applyProtocolFeeBpsChange(newValue);
-        } else if (paramKey == PARAM_PROTOCOL_FEE_RECIPIENT) {
-            address newAddr = address(uint160(newValue));
-            if (newAddr == address(0)) revert InvalidProtocolFeeRecipient();
-            old = _applyAddressParam(paramKey, newAddr);
-        } else if (paramKey == PARAM_FACTORY) {
-            address newAddr = address(uint160(newValue));
-            if (newAddr == address(0)) revert ZeroAddress();
-            old = _applyAddressParam(paramKey, newAddr);
-        } else {
-            revert InvalidParameterKey();
-        }
-
-        emit ParameterChangeFinalized(paramKey, old, newValue);
-    }
-
-    /// @dev Apply protocol fee change — implemented by SyndicateGovernor
-    function _applyProtocolFeeBpsChange(uint256 newValue) internal virtual returns (uint256 old);
-
-    /// @dev Apply an address-keyed parameter change — implemented by
-    ///      SyndicateGovernor. Unified for `PARAM_PROTOCOL_FEE_RECIPIENT` and
-    ///      `PARAM_FACTORY` to keep the dispatcher small. Returns the old
-    ///      address packed as `uint256(uint160(...))` for the uniform
-    ///      `ParameterChangeFinalized` event.
-    function _applyAddressParam(bytes32 paramKey, address newAddr) internal virtual returns (uint256 old);
 
     // ── Validation helpers ──
 

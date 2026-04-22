@@ -41,7 +41,6 @@ contract FeeBlacklistResilienceTest is Test {
     uint256 constant VETO_THRESHOLD_BPS = 4000;
     uint256 constant MAX_PERF_FEE_BPS = 3000;
     uint256 constant COOLDOWN_PERIOD = 1 days;
-    uint256 constant PARAM_CHANGE_DELAY = 1 days;
 
     function setUp() public {
         usdc = new BlacklistingERC20Mock("USD Coin", "USDC", 6);
@@ -87,9 +86,10 @@ contract FeeBlacklistResilienceTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: 30 days,
-                    parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 200,
-                    protocolFeeRecipient: protocolRecipient
+                    protocolFeeRecipient: protocolRecipient,
+                    guardianFeeBps: 0,
+                    guardianFeeRecipient: address(0)
                 }),
                 address(guardianRegistry)
             )

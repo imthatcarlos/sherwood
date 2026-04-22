@@ -69,7 +69,6 @@ contract ProtocolInvariantsTest is StdInvariant, Test {
     uint256 constant MAX_CO_PROPOSERS = 5;
     uint256 constant MIN_STRATEGY_DURATION = 1 hours;
     uint256 constant MAX_STRATEGY_DURATION = 30 days;
-    uint256 constant PARAM_CHANGE_DELAY = 6 hours;
     uint256 constant INITIAL_PROTOCOL_FEE_BPS = 100;
 
     // Registry init params
@@ -127,9 +126,10 @@ contract ProtocolInvariantsTest is StdInvariant, Test {
                 maxCoProposers: MAX_CO_PROPOSERS,
                 minStrategyDuration: MIN_STRATEGY_DURATION,
                 maxStrategyDuration: MAX_STRATEGY_DURATION,
-                parameterChangeDelay: PARAM_CHANGE_DELAY,
                 protocolFeeBps: INITIAL_PROTOCOL_FEE_BPS,
-                protocolFeeRecipient: initialFeeRecipient
+                protocolFeeRecipient: initialFeeRecipient,
+                guardianFeeBps: 0,
+                guardianFeeRecipient: address(0)
             });
             governor = SyndicateGovernor(
                 address(
@@ -171,24 +171,24 @@ contract ProtocolInvariantsTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](17);
+        // V1.5: finalizeParameterChange / cancelParameterChange removed from
+        // governor (setters apply immediately). Selectors resized 17 -> 15.
+        bytes4[] memory selectors = new bytes4[](15);
         selectors[0] = ProtocolHandler.queueProtocolFeeBps.selector;
         selectors[1] = ProtocolHandler.queueProtocolFeeRecipient.selector;
-        selectors[2] = ProtocolHandler.finalizeParameterChange.selector;
-        selectors[3] = ProtocolHandler.cancelParameterChange.selector;
-        selectors[4] = ProtocolHandler.pauseRegistry.selector;
-        selectors[5] = ProtocolHandler.unpauseRegistry.selector;
-        selectors[6] = ProtocolHandler.tryFlushBurn.selector;
-        selectors[7] = ProtocolHandler.tryRecordEpochBudget.selector;
-        selectors[8] = ProtocolHandler.tryVoteOnProposal.selector;
-        selectors[9] = ProtocolHandler.tryOpenReview.selector;
-        selectors[10] = ProtocolHandler.tryResolveReview.selector;
-        selectors[11] = ProtocolHandler.tryResolveEmergencyReview.selector;
-        selectors[12] = ProtocolHandler.stake.selector;
-        selectors[13] = ProtocolHandler.requestUnstake.selector;
-        selectors[14] = ProtocolHandler.cancelUnstake.selector;
-        selectors[15] = ProtocolHandler.claimUnstake.selector;
-        selectors[16] = ProtocolHandler.warp.selector;
+        selectors[2] = ProtocolHandler.pauseRegistry.selector;
+        selectors[3] = ProtocolHandler.unpauseRegistry.selector;
+        selectors[4] = ProtocolHandler.tryFlushBurn.selector;
+        selectors[5] = ProtocolHandler.tryRecordEpochBudget.selector;
+        selectors[6] = ProtocolHandler.tryVoteOnProposal.selector;
+        selectors[7] = ProtocolHandler.tryOpenReview.selector;
+        selectors[8] = ProtocolHandler.tryResolveReview.selector;
+        selectors[9] = ProtocolHandler.tryResolveEmergencyReview.selector;
+        selectors[10] = ProtocolHandler.stake.selector;
+        selectors[11] = ProtocolHandler.requestUnstake.selector;
+        selectors[12] = ProtocolHandler.cancelUnstake.selector;
+        selectors[13] = ProtocolHandler.claimUnstake.selector;
+        selectors[14] = ProtocolHandler.warp.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 

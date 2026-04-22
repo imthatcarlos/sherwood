@@ -140,20 +140,17 @@ contract DeploySherwood is ScriptBase {
         console.log("FactoryProxy:", d.factoryProxy);
         require(d.factoryProxy == predictedFactoryProxy, "factory addr mismatch");
 
-        // 6. Queue factory registration on governor. G-M4: setFactory is
-        //    timelocked via the GovernorParameters dispatcher. The deployer
-        //    must run `FinalizeParams.s.sol` with the PARAM_FACTORY key after
-        //    `parameterChangeDelay` has elapsed to complete the wiring.
-        //
-        //    Deploy-day freeze: during the [deploy, finalize] window (min 6h
-        //    up to 7d, depending on the configured delay), `governor.factory()`
-        //    returns address(0), so `SyndicateFactory.createSyndicate` will
-        //    revert at `SyndicateGovernor.addVault`'s `msg.sender == factory`
-        //    check. Do NOT accept user syndicate creations until finalize.
+        // 6. Register factory on governor. V1.5: setFactory applies
+        //    immediately (owner-multisig governs via its own delay).
         SyndicateGovernor(d.governorProxy).setFactory(d.factoryProxy);
-        console.log("Governor.setFactory queued -- finalize after parameterChangeDelay");
+        console.log("Governor.setFactory applied");
 
-        // 7. Seed slash appeal reserve + epoch 0 rewards (best-effort; skipped
+        // 7. Wire guardian fee recipient to the GuardianRegistry. V1.5: setter
+        //    applies immediately.
+        SyndicateGovernor(d.governorProxy).setGuardianFeeRecipient(d.registryProxy);
+        console.log("Governor.setGuardianFeeRecipient applied");
+
+        // 8. Seed slash appeal reserve + epoch 0 rewards (best-effort; skipped
         //    on zero amounts so testnets don't need a WOOD balance).
         _seedRegistry(d.deployer, d.registryProxy, cfg);
 
@@ -203,9 +200,10 @@ contract DeploySherwood is ScriptBase {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: cfg.maxStrategyDays * 1 days,
-                    parameterChangeDelay: 3 days,
                     protocolFeeBps: cfg.protocolFeeBps,
-                    protocolFeeRecipient: deployer
+                    protocolFeeRecipient: deployer,
+                    guardianFeeBps: 0,
+                    guardianFeeRecipient: address(0)
                 }),
                 registryProxy
             )
@@ -323,12 +321,9 @@ contract DeploySherwood is ScriptBase {
         _checkUint("gov.maxStrategyDuration", p.maxStrategyDuration, maxDays * 1 days);
         _checkUint("gov.protocolFeeBps", governor.protocolFeeBps(), 200);
         _checkAddr("gov.protocolFeeRecipient", governor.protocolFeeRecipient(), deployer);
-        // G-M4: gov.factory is queued in step 6 and finalized out-of-band after
-        //       parameterChangeDelay. Validate the queued pending change
-        //       instead of the live value.
-        ISyndicateGovernor.PendingChange memory pendingFactory = governor.getPendingChange(governor.PARAM_FACTORY());
-        require(pendingFactory.exists, "gov.factory: queued change missing");
-        _checkAddr("gov.factory (pending)", address(uint160(pendingFactory.newValue)), factoryAddr);
+        // V1.5: timelock removed — factory is set directly in step 6. Validate
+        // the live value.
+        _checkAddr("gov.factory", governor.factory(), factoryAddr);
     }
 
     function _validateFactory(

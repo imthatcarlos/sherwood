@@ -95,17 +95,23 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     /// @notice Proposal ID -> settlement (closing) calls
     mapping(uint256 => BatchExecutorLib.Call[]) private _settlementCalls;
 
-    /// @notice Delay (seconds) before queued parameter changes take effect
-    uint256 private _parameterChangeDelay;
-
-    /// @notice Parameter key -> pending change
-    mapping(bytes32 => PendingChange) private _pendingChanges;
+    // V1.5: _parameterChangeDelay + _pendingChanges removed (timelock
+    // eliminated in favor of owner-multisig delay).
 
     /// @notice Protocol fee in basis points (taken from profit before agent/management fees)
     uint256 private _protocolFeeBps;
 
     /// @notice Recipient of protocol fees
     address private _protocolFeeRecipient;
+
+    /// @notice V1.5: guardian fee in bps (taken from profit after protocol fee,
+    ///         before agent/management fees). Routed to `_guardianFeeRecipient`
+    ///         (typically GuardianRegistry) which pools + exposes claim flow.
+    uint256 private _guardianFeeBps;
+
+    /// @notice V1.5: guardian fee recipient (registry in V1.5; generic so a
+    ///         future distributor swap is a single-param change).
+    address private _guardianFeeRecipient;
 
     /// @notice Guardian registry. Set in `initialize`; required (non-zero).
     address internal _guardianRegistry;
@@ -165,11 +171,10 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             revert InvalidCollaborationWindow();
         }
         if (p.maxCoProposers == 0 || p.maxCoProposers > ABSOLUTE_MAX_CO_PROPOSERS) revert InvalidMaxCoProposers();
-        if (p.parameterChangeDelay < MIN_PARAM_CHANGE_DELAY || p.parameterChangeDelay > MAX_PARAM_CHANGE_DELAY) {
-            revert InvalidParameterChangeDelay();
-        }
         if (p.protocolFeeBps > MAX_PROTOCOL_FEE_BPS) revert InvalidProtocolFeeBps();
         if (p.protocolFeeBps > 0 && p.protocolFeeRecipient == address(0)) revert InvalidProtocolFeeRecipient();
+        if (p.guardianFeeBps > MAX_GUARDIAN_FEE_BPS) revert InvalidGuardianFeeBps();
+        if (p.guardianFeeBps > 0 && p.guardianFeeRecipient == address(0)) revert GuardianFeeRecipientNotSet();
 
         __Ownable_init(p.owner);
 
@@ -190,9 +195,10 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             minStrategyDuration: p.minStrategyDuration,
             maxStrategyDuration: p.maxStrategyDuration
         });
-        _parameterChangeDelay = p.parameterChangeDelay;
         _protocolFeeBps = p.protocolFeeBps;
         _protocolFeeRecipient = p.protocolFeeRecipient;
+        _guardianFeeBps = p.guardianFeeBps;
+        _guardianFeeRecipient = p.guardianFeeRecipient;
         _guardianRegistry = guardianRegistry_;
         _reentrancyStatus = _NOT_ENTERED;
     }
@@ -209,16 +215,44 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         return _params;
     }
 
-    function _getParameterChangeDelay() internal view override returns (uint256) {
-        return _parameterChangeDelay;
-    }
-
-    function _getPendingChanges() internal view override returns (mapping(bytes32 => PendingChange) storage) {
-        return _pendingChanges;
-    }
-
     function _getProtocolFeeRecipient() internal view override returns (address) {
         return _protocolFeeRecipient;
+    }
+
+    function _setProtocolFeeRecipient(address newRecipient) internal override {
+        _protocolFeeRecipient = newRecipient;
+    }
+
+    function _getProtocolFeeBps() internal view override returns (uint256) {
+        return _protocolFeeBps;
+    }
+
+    function _setProtocolFeeBps(uint256 newValue) internal override {
+        _protocolFeeBps = newValue;
+    }
+
+    function _getFactory() internal view override returns (address) {
+        return factory;
+    }
+
+    function _setFactory(address newFactory) internal override {
+        factory = newFactory;
+    }
+
+    function _getGuardianFeeBps() internal view override returns (uint256) {
+        return _guardianFeeBps;
+    }
+
+    function _setGuardianFeeBps(uint256 newValue) internal override {
+        _guardianFeeBps = newValue;
+    }
+
+    function _getGuardianFeeRecipient() internal view override returns (address) {
+        return _guardianFeeRecipient;
+    }
+
+    function _setGuardianFeeRecipient(address newRecipient) internal override {
+        _guardianFeeRecipient = newRecipient;
     }
 
     // ── GovernorEmergency virtual accessor overrides ──
@@ -682,6 +716,16 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     }
 
     /// @inheritdoc ISyndicateGovernor
+    function guardianFeeBps() external view returns (uint256) {
+        return _guardianFeeBps;
+    }
+
+    /// @inheritdoc ISyndicateGovernor
+    function guardianFeeRecipient() external view returns (address) {
+        return _guardianFeeRecipient;
+    }
+
+    /// @inheritdoc ISyndicateGovernor
     function guardianRegistry() external view returns (address) {
         return _guardianRegistry;
     }
@@ -704,32 +748,9 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         address vault;
     }
 
-    function _applyProtocolFeeBpsChange(uint256 newValue) internal override returns (uint256 old) {
-        // I-3: defence-in-depth — the same check runs in `_applyChange` (the
-        // dispatcher in GovernorParameters that `_validateForFinalize` was
-        // merged into) a moment earlier, but re-asserting here closes any
-        // future path that bypasses the dispatcher (e.g. a new setter wired
-        // directly to this virtual). bps > 0 must always imply a non-zero
-        // recipient.
-        if (newValue > 0 && _protocolFeeRecipient == address(0)) revert InvalidProtocolFeeRecipient();
-        old = _protocolFeeBps;
-        _protocolFeeBps = newValue;
-    }
-
-    /// @dev Unified address-parameter applier. Bytecode-optimized: one virtual
-    ///      dispatch serves both `protocolFeeRecipient` (G-C5) and `factory`
-    ///      (G-M4). The old-value packing mirrors `_applyChange`'s uniform
-    ///      `ParameterChangeFinalized(key, old, new)` event.
-    function _applyAddressParam(bytes32 paramKey, address newAddr) internal override returns (uint256 old) {
-        if (paramKey == PARAM_PROTOCOL_FEE_RECIPIENT) {
-            old = uint256(uint160(_protocolFeeRecipient));
-            _protocolFeeRecipient = newAddr;
-        } else {
-            // PARAM_FACTORY — key already validated by the dispatcher ladder.
-            old = uint256(uint160(factory));
-            factory = newAddr;
-        }
-    }
+    // V1.5: _applyProtocolFeeBpsChange + _applyAddressParam removed.
+    // GovernorParameters setters now write directly via _set* virtuals
+    // (see overrides above).
 
     // ==================== INTERNAL ====================
 
@@ -982,12 +1003,12 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         uint256 profit
     ) internal returns (uint256 agentFee, uint256 totalFee) {
         uint256 protocolFee = 0;
+        uint256 guardianFee = 0;
 
         // Protocol fee taken first from gross profit.
         // I-3: `bps > 0 ⇒ recipient != 0` is enforced at every write site
-        // (initialize + _applyProtocolFeeBpsChange + GovernorParameters._applyChange);
-        // previously this branch silently skipped the fee if a future path
-        // violated the invariant. We now assert instead so the bug is loud.
+        // (initialize + setProtocolFeeBps); re-asserting here closes any path
+        // that could bypass the bounds dispatcher.
         if (_protocolFeeBps > 0) {
             protocolFee = (profit * _protocolFeeBps) / 10000;
             if (protocolFee > 0) {
@@ -996,7 +1017,20 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             }
         }
 
-        uint256 netProfit = profit - protocolFee;
+        // V1.5: guardian fee — slice of settled PnL routed to the registry
+        // (funds per-proposal approver-reward pool). See spec §4.8.
+        if (_guardianFeeBps > 0) {
+            guardianFee = (profit * _guardianFeeBps) / 10000;
+            if (guardianFee > 0) {
+                address recipient = _guardianFeeRecipient;
+                if (recipient == address(0)) revert GuardianFeeRecipientNotSet();
+                ISyndicateVault(vault).transferPerformanceFee(asset, recipient, guardianFee);
+                IGuardianRegistry(recipient).fundProposalGuardianPool(proposalId, asset, guardianFee);
+                emit GuardianFeeAccrued(proposalId, asset, recipient, guardianFee, uint64(block.timestamp));
+            }
+        }
+
+        uint256 netProfit = profit - protocolFee - guardianFee;
 
         // Agent performance fee from net profit
         agentFee = (netProfit * perfFeeBps) / 10000;
@@ -1011,7 +1045,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             _payFee(vault, asset, OwnableUpgradeable(vault).owner(), mgmtFee);
         }
 
-        totalFee = protocolFee + agentFee + mgmtFee;
+        totalFee = protocolFee + guardianFee + agentFee + mgmtFee;
     }
 
     /// @dev Distribute agent fee to co-proposers (if any) and lead proposer. Extracted to avoid stack-too-deep.

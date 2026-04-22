@@ -247,11 +247,36 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      by `setCommission` itself to derive the per-epoch raise baseline.
     mapping(address => Checkpoints.Trace224) internal _commissionCheckpoints;
 
+    // ── V1.5 Phase 3: per-proposal guardian-fee pool (Tasks 3.6-3.9) ──
+
+    struct ProposalRewardPool {
+        address asset;
+        uint128 amount;
+        uint64 settledAt;
+    }
+
+    /// @dev Funded by governor in `_distributeFees` when guardianFeeBps > 0.
+    mapping(uint256 => ProposalRewardPool) internal _proposalGuardianPool;
+
+    /// @dev Claim flags for approvers (set in `claimProposalReward`).
+    mapping(uint256 => mapping(address => bool)) internal _approverClaimed;
+
+    /// @dev Remainder (approver's net-of-commission pool) stored after the
+    ///      approver claims, to be pulled by their delegators pro-rata.
+    mapping(address => mapping(uint256 => uint256)) internal _delegatorProposalPool;
+    mapping(address => mapping(uint256 => mapping(address => bool))) internal _delegatorProposalClaimed;
+
+    /// @dev W-1 escrow for guardian-fee reward transfers that fail (e.g. USDC
+    ///      blacklist). Keyed by `keccak256(proposalId, recipient, asset)` to
+    ///      prevent cross-proposal drain (same pattern as governor's
+    ///      `_unclaimedFees`).
+    mapping(bytes32 => uint256) internal _unclaimedApproverFees;
+
     /// @dev Reserved storage for future upgrades.
     ///      Slot accounting since V1: -9 (Phase 1 + Phase 2),
-    ///      -4 more for (_commissionBps, _lastCommissionRaiseEpoch,
-    ///      _commissionEpochBaseline, _commissionCheckpoints) = -13 total.
-    uint256[38] private __gap;
+    ///      -4 (commission), -5 (guardian-fee pool + claim flags + escrow)
+    ///      = -18 total.
+    uint256[33] private __gap;
 
     // ── Initializer ──
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -536,6 +561,36 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @inheritdoc IGuardianRegistry
     function commissionAt(address delegate, uint256 timestamp) external view returns (uint256) {
         return _commissionCheckpoints[delegate].upperLookupRecent(uint32(timestamp));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // V1.5 Phase 3 — Guardian-fee pool funding (Task 3.6)
+    // ──────────────────────────────────────────────────────────────
+
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Called by governor from `_distributeFees` after transferring the
+    ///      guardian-fee slice to this contract. Stamps the pool so approvers
+    ///      + delegators can pull via `claimProposalReward` /
+    ///      `claimDelegatorProposalReward` (Tasks 3.7 / 3.8).
+    function fundProposalGuardianPool(uint256 proposalId, address asset, uint256 amount) external {
+        if (msg.sender != governor) revert NotGovernor();
+        if (amount == 0) return;
+        _proposalGuardianPool[proposalId] = ProposalRewardPool({
+            asset: asset,
+            amount: uint128(amount),
+            settledAt: uint64(block.timestamp)
+        });
+        emit ProposalGuardianPoolFunded(proposalId, asset, amount);
+    }
+
+    /// @notice View: per-proposal guardian-fee pool.
+    function proposalGuardianPool(uint256 proposalId)
+        external
+        view
+        returns (address asset, uint256 amount, uint64 settledAt)
+    {
+        ProposalRewardPool memory p = _proposalGuardianPool[proposalId];
+        return (p.asset, p.amount, p.settledAt);
     }
 
     // ──────────────────────────────────────────────────────────────

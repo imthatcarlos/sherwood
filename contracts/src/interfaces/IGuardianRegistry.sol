@@ -198,4 +198,13 @@ interface IGuardianRegistry {
     function commissionAt(address delegate, uint256 timestamp) external view returns (uint256);
 
     event CommissionSet(address indexed delegate, uint256 oldBps, uint256 newBps);
+
+    // ── V1.5 Phase 3: on-chain guardian-fee pool (vault assets) ──
+    /// @notice Called by governor in `_distributeFees` after transferring the
+    ///         guardian-fee slice to the registry. Stamps the pool with
+    ///         `(asset, amount, settledAt)` so approvers + delegators can
+    ///         claim pro-rata. See spec §4.8.
+    function fundProposalGuardianPool(uint256 proposalId, address asset, uint256 amount) external;
+
+    event ProposalGuardianPoolFunded(uint256 indexed proposalId, address indexed asset, uint256 amount);
 }

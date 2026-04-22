@@ -77,9 +77,10 @@ contract OwnerStakeAtCreationTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: 30 days,
-                    parameterChangeDelay: 1 days,
                     protocolFeeBps: 0,
-                    protocolFeeRecipient: address(0)
+                    protocolFeeRecipient: address(0),
+                    guardianFeeBps: 0,
+                    guardianFeeRecipient: address(0)
                 }),
                 predictedRegistryProxy
             )
@@ -124,12 +125,9 @@ contract OwnerStakeAtCreationTest is Test {
         require(address(factory) == predictedFactoryProxy, "factory address prediction mismatch");
 
         // Hand the governor's addVault gate to the factory.
-        // G-M4: setFactory is timelocked. Queue → warp → finalize.
-        vm.startPrank(owner);
+        // V1.5: setFactory applies immediately.
+        vm.prank(owner);
         governor.setFactory(address(factory));
-        vm.warp(block.timestamp + 1 days + 1);
-        governor.finalizeParameterChange(governor.PARAM_FACTORY());
-        vm.stopPrank();
 
         // Fund creator with WOOD so they can prepare owner stake.
         wood.mint(creator, 100_000e18);

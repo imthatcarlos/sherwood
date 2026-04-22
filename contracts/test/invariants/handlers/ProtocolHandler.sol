@@ -60,7 +60,7 @@ contract ProtocolHandler is Test {
 
     // Pending-change seen counters — debug aids; wired up as public views the
     // invariant contract can print via `targetContract` summary.
-    uint256 public finalizeSuccesses;
+    // V1.5: `finalizeSuccesses` removed — governor setters apply immediately.
     uint256 public queueSuccesses;
 
     constructor(
@@ -122,47 +122,9 @@ contract ProtocolHandler is Test {
         } catch {}
     }
 
-    /// @dev Finalize a queued parameter change after its delay elapses.
-    function finalizeParameterChange(uint256 keySeed) external {
-        bytes32[11] memory keys = [
-            governor.PARAM_VOTING_PERIOD(),
-            governor.PARAM_EXECUTION_WINDOW(),
-            governor.PARAM_VETO_THRESHOLD_BPS(),
-            governor.PARAM_MAX_PERF_FEE(),
-            governor.PARAM_MIN_STRATEGY_DURATION(),
-            governor.PARAM_MAX_STRATEGY_DURATION(),
-            governor.PARAM_COOLDOWN(),
-            governor.PARAM_COLLAB_WINDOW(),
-            governor.PARAM_MAX_CO_PROPOSERS(),
-            governor.PARAM_PROTOCOL_FEE_BPS(),
-            governor.PARAM_PROTOCOL_FEE_RECIPIENT()
-        ];
-        bytes32 key = keys[bound(keySeed, 0, keys.length - 1)];
-        vm.prank(governorOwner);
-        try governor.finalizeParameterChange(key) {
-            finalizeSuccesses += 1;
-        } catch {}
-    }
-
-    /// @dev Cancel a queued parameter change.
-    function cancelParameterChange(uint256 keySeed) external {
-        bytes32[11] memory keys = [
-            governor.PARAM_VOTING_PERIOD(),
-            governor.PARAM_EXECUTION_WINDOW(),
-            governor.PARAM_VETO_THRESHOLD_BPS(),
-            governor.PARAM_MAX_PERF_FEE(),
-            governor.PARAM_MIN_STRATEGY_DURATION(),
-            governor.PARAM_MAX_STRATEGY_DURATION(),
-            governor.PARAM_COOLDOWN(),
-            governor.PARAM_COLLAB_WINDOW(),
-            governor.PARAM_MAX_CO_PROPOSERS(),
-            governor.PARAM_PROTOCOL_FEE_BPS(),
-            governor.PARAM_PROTOCOL_FEE_RECIPIENT()
-        ];
-        bytes32 key = keys[bound(keySeed, 0, keys.length - 1)];
-        vm.prank(governorOwner);
-        try governor.cancelParameterChange(key) {} catch {}
-    }
+    // V1.5: finalizeParameterChange / cancelParameterChange removed from governor.
+    // Setters apply immediately; invariant surfaces now only include queue-style
+    // entrypoints that directly mutate state on the governor.
 
     // ──────────────────────────────────────────────────────────────
     // Registry pause surface — drives INV-46

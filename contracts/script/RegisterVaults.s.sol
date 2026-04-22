@@ -34,24 +34,12 @@ contract RegisterVaults is ScriptBase {
 
         vm.startBroadcast();
 
-        // 1. Queue or finalize factory registration. G-M4: setFactory is now
-        //    timelocked via the governor parameter dispatcher. On first run
-        //    this queues the change; re-run after `parameterChangeDelay` to
-        //    hit the finalize branch and actually wire the factory.
-        bytes32 paramKey = governor.PARAM_FACTORY();
-        if (governor.factory() == factoryAddr) {
-            console.log("factory already wired; skipping queue");
+        // V1.5: timelock removed. setFactory applies immediately.
+        if (governor.factory() != factoryAddr) {
+            governor.setFactory(factoryAddr);
+            console.log("setFactory applied");
         } else {
-            ISyndicateGovernor.PendingChange memory pending = governor.getPendingChange(paramKey);
-            if (!pending.exists) {
-                governor.setFactory(factoryAddr);
-                console.log("setFactory queued; re-run after parameterChangeDelay to finalize");
-                vm.stopBroadcast();
-                return;
-            }
-            require(block.timestamp >= pending.effectiveAt, "parameterChangeDelay not elapsed");
-            governor.finalizeParameterChange(paramKey);
-            console.log("setFactory finalized");
+            console.log("factory already wired");
         }
 
         // 2. Register existing vaults

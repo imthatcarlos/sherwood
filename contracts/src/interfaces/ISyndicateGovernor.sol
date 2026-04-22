@@ -37,9 +37,10 @@ interface ISyndicateGovernor {
         uint256 maxCoProposers;
         uint256 minStrategyDuration;
         uint256 maxStrategyDuration;
-        uint256 parameterChangeDelay;
         uint256 protocolFeeBps;
         address protocolFeeRecipient;
+        uint256 guardianFeeBps;
+        address guardianFeeRecipient;
     }
 
     struct GovernorParams {
@@ -81,11 +82,7 @@ interface ISyndicateGovernor {
         uint256 splitBps;
     }
 
-    struct PendingChange {
-        uint256 newValue;
-        uint256 effectiveAt;
-        bool exists;
-    }
+    // V1.5: timelock removed. Owner-multisig governs via its own delay.
 
     // ── Errors ──
 
@@ -177,17 +174,9 @@ interface ISyndicateGovernor {
     /// @dev Prevents silent routing of zero-rounded shares to the lead.
     error CoProposerShareUnderflow();
 
-    // ── Timelock errors ──
-    error ChangeAlreadyPending();
-    error NoChangePending();
-    error ChangeNotReady();
-    error InvalidParameterChangeDelay();
-    error InvalidParameterKey();
-    /// @notice G-M5: Revert when a queued parameter change is finalized more
-    ///         than MAX_PARAM_STALENESS after its `effectiveAt`. Prevents
-    ///         owner-ignored stale queues from reactivating long after the
-    ///         context that motivated the change has passed.
-    error ChangeStale();
+    // V1.5 new parameter errors
+    error InvalidGuardianFeeBps();
+    error GuardianFeeRecipientNotSet();
 
     // ── Events ──
 
@@ -257,10 +246,19 @@ interface ISyndicateGovernor {
     event CollaborationTransitionedToPending(uint256 indexed proposalId);
     event CollaborationDeadlineExpired(uint256 indexed proposalId);
 
-    // ── Timelock events ──
-    event ParameterChangeQueued(bytes32 indexed paramKey, uint256 newValue, uint256 effectiveAt);
+    // ── Parameter change event (V1.5: owner-instant, no queue/cancel) ──
     event ParameterChangeFinalized(bytes32 indexed paramKey, uint256 oldValue, uint256 newValue);
-    event ParameterChangeCancelled(bytes32 indexed paramKey);
+
+    /// @notice V1.5: emitted in `_distributeFees` when `guardianFeeBps > 0`.
+    ///         Guardian fee is carved from gross PnL and transferred to
+    ///         `recipient` (GuardianRegistry in V1.5).
+    event GuardianFeeAccrued(
+        uint256 indexed proposalId,
+        address indexed asset,
+        address indexed recipient,
+        uint256 amount,
+        uint64 settledAt
+    );
 
     // ── Functions ──
 
@@ -324,8 +322,13 @@ interface ISyndicateGovernor {
 
     // ── Timelock functions ──
 
-    function finalizeParameterChange(bytes32 paramKey) external;
-    function cancelParameterChange(bytes32 paramKey) external;
+    // V1.5: finalizeParameterChange / cancelParameterChange removed. Setters
+    // apply immediately (owner-multisig governs via its own delay).
+
+    function setGuardianFeeBps(uint256 newValue) external;
+    function setGuardianFeeRecipient(address newRecipient) external;
+    function guardianFeeBps() external view returns (uint256);
+    function guardianFeeRecipient() external view returns (address);
 
     // ── Views ──
 
@@ -353,7 +356,7 @@ interface ISyndicateGovernor {
     function getCapitalSnapshot(uint256 proposalId) external view returns (uint256);
     function isRegisteredVault(address vault) external view returns (bool);
     function getCoProposers(uint256 proposalId) external view returns (CoProposer[] memory);
-    function getPendingChange(bytes32 paramKey) external view returns (PendingChange memory);
+    // V1.5: getPendingChange removed (no queue).
     function protocolFeeBps() external view returns (uint256);
     function protocolFeeRecipient() external view returns (address);
 

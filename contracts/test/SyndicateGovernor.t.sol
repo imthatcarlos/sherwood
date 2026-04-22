@@ -35,7 +35,6 @@ contract SyndicateGovernorTest is Test {
     uint256 constant MAX_PERF_FEE_BPS = 3000;
     uint256 constant MAX_STRATEGY_DURATION = 30 days;
     uint256 constant COOLDOWN_PERIOD = 1 days;
-    uint256 constant PARAM_CHANGE_DELAY = 1 days;
 
     ERC20Mock public targetToken;
 
@@ -81,9 +80,10 @@ contract SyndicateGovernorTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: MAX_STRATEGY_DURATION,
-                    parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 200,
-                    protocolFeeRecipient: owner
+                    protocolFeeRecipient: owner,
+                    guardianFeeBps: 0,
+                    guardianFeeRecipient: address(0)
                 }),
                 address(guardianRegistry)
             )
@@ -658,28 +658,17 @@ contract SyndicateGovernorTest is Test {
 
     // ==================== PARAMETER SETTERS (TIMELOCK) ====================
 
-    function test_setVotingPeriod_queuesChange() public {
+    function test_setVotingPeriod_appliesImmediately() public {
         vm.prank(owner);
         governor.setVotingPeriod(2 days);
-        assertEq(governor.getGovernorParams().votingPeriod, VOTING_PERIOD);
-        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
-        bytes32 key = governor.PARAM_VOTING_PERIOD();
-        vm.prank(owner);
-        governor.finalizeParameterChange(key);
         assertEq(governor.getGovernorParams().votingPeriod, 2 days);
     }
 
     function test_setVotingPeriod_tooLow_reverts() public {
-        // Queue-time validation was dropped to reclaim governor bytecode (see
-        // GovernorParameters header). Range bounds are re-checked at finalize
-        // time. The owner's escape hatch is `cancelParameterChange`.
-        vm.startPrank(owner);
-        governor.setVotingPeriod(30 minutes);
-        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
-        bytes32 key = governor.PARAM_VOTING_PERIOD();
+        // V1.5: setters apply immediately and bounds are validated at call time.
+        vm.prank(owner);
         vm.expectRevert(ISyndicateGovernor.InvalidVotingPeriod.selector);
-        governor.finalizeParameterChange(key);
-        vm.stopPrank();
+        governor.setVotingPeriod(30 minutes);
     }
 
     function test_setters_notOwner_reverts() public {
@@ -728,13 +717,10 @@ contract SyndicateGovernorTest is Test {
         // benign contract address.
         address newVault = address(executorLib);
         address factoryAddr = makeAddr("factory");
-        // G-M4: setFactory is now timelocked through the GovernorParameters
-        // dispatcher. Queue → warp → finalize.
-        vm.startPrank(owner);
+        // V1.5: setFactory now applies immediately (owner-multisig governs via
+        // its own delay).
+        vm.prank(owner);
         governor.setFactory(factoryAddr);
-        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
-        governor.finalizeParameterChange(governor.PARAM_FACTORY());
-        vm.stopPrank();
         vm.prank(factoryAddr);
         governor.addVault(newVault);
         assertTrue(governor.isRegisteredVault(newVault));
@@ -822,9 +808,6 @@ contract SyndicateGovernorTest is Test {
         // Stretch cooldown to make it safely exceed voting window for this test.
         vm.prank(owner);
         governor.setCooldownPeriod(5 days);
-        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
-        vm.prank(owner);
-        governor.finalizeParameterChange(keccak256("cooldownPeriod"));
 
         // Propose 2 + drive to Approved. Uses `_createApprovedProposal` which
         // warps past voting period but NOT past the 5-day cooldown.
@@ -835,37 +818,6 @@ contract SyndicateGovernorTest is Test {
         assertLt(block.timestamp, settledAt + 5 days, "pre-cooldown sanity");
         vm.expectRevert(ISyndicateGovernor.CooldownNotElapsed.selector);
         governor.executeProposal(proposalId2);
-    }
-
-    // ==================== CANCEL PARAMETER CHANGE ====================
-
-    function test_cancelParameterChange() public {
-        bytes32 key = governor.PARAM_VOTING_PERIOD();
-        vm.prank(owner);
-        governor.setVotingPeriod(2 days);
-        // Verify the change is pending
-        ISyndicateGovernor.PendingChange memory pending = governor.getPendingChange(key);
-        assertTrue(pending.exists);
-        // Cancel it
-        vm.prank(owner);
-        governor.cancelParameterChange(key);
-        // Verify cancelled — finalizing should revert
-        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
-        vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.NoChangePending.selector);
-        governor.finalizeParameterChange(key);
-        // Original value unchanged
-        assertEq(governor.getGovernorParams().votingPeriod, VOTING_PERIOD);
-    }
-
-    function test_prematureFinalization_reverts() public {
-        bytes32 key = governor.PARAM_VOTING_PERIOD();
-        vm.prank(owner);
-        governor.setVotingPeriod(2 days);
-        // Immediately try to finalize — delay not elapsed
-        vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.ChangeNotReady.selector);
-        governor.finalizeParameterChange(key);
     }
 
     // ==================== DEPOSIT LOCK DURING ACTIVE PROPOSAL ====================
@@ -938,26 +890,20 @@ contract SyndicateGovernorTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: MAX_STRATEGY_DURATION,
-                    parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
-                    protocolFeeRecipient: address(0)
+                    protocolFeeRecipient: address(0),
+                    guardianFeeBps: 0,
+                    guardianFeeRecipient: address(0)
                 }),
                 address(guardianRegistry)
             )
         );
         SyndicateGovernor gov2 = SyndicateGovernor(address(new ERC1967Proxy(address(govImpl2), govInit2)));
 
-        // Try to finalize fee > 0 without a recipient — must revert. Queue-time
-        // validation was dropped to reclaim governor bytecode; the invariant
-        // (bps > 0 ⇒ recipient != 0) is re-checked at finalize time in
-        // `_applyChange` / `_applyProtocolFeeBpsChange`.
-        bytes32 bpsKey = gov2.PARAM_PROTOCOL_FEE_BPS();
-        vm.startPrank(owner);
-        gov2.setProtocolFeeBps(200);
-        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
+        // V1.5: setter applies immediately; bps > 0 with no recipient reverts at call time.
+        vm.prank(owner);
         vm.expectRevert(ISyndicateGovernor.InvalidProtocolFeeRecipient.selector);
-        gov2.finalizeParameterChange(bpsKey);
-        vm.stopPrank();
+        gov2.setProtocolFeeBps(200);
     }
 
     function test_setProtocolFeeBps_zeroWithNoRecipient_succeeds() public {
@@ -977,9 +923,10 @@ contract SyndicateGovernorTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: MAX_STRATEGY_DURATION,
-                    parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
-                    protocolFeeRecipient: address(0)
+                    protocolFeeRecipient: address(0),
+                    guardianFeeBps: 0,
+                    guardianFeeRecipient: address(0)
                 }),
                 address(guardianRegistry)
             )
@@ -989,26 +936,6 @@ contract SyndicateGovernorTest is Test {
         // Setting fee to 0 with no recipient should succeed (no-op)
         vm.prank(owner);
         gov2.setProtocolFeeBps(0);
-    }
-
-    function test_finalizeProtocolFeeBps_toctou_reverts() public {
-        // Verify _validateForFinalize re-checks recipient at finalize time (defense in depth).
-        // Queue a valid fee bps change (recipient is set), then use vm.store to clear
-        // the recipient — simulating a state change between queue and finalize.
-        vm.startPrank(owner);
-        governor.setProtocolFeeBps(500);
-        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + 1);
-
-        // Clear _protocolFeeRecipient via vm.store to simulate state change between queue and finalize
-        assertNotEq(governor.protocolFeeRecipient(), address(0));
-        vm.store(address(governor), bytes32(uint256(0x1b)), bytes32(0));
-        assertEq(governor.protocolFeeRecipient(), address(0));
-
-        // Finalize should revert — _validateForFinalize catches recipient is now address(0)
-        bytes32 paramKey = governor.PARAM_PROTOCOL_FEE_BPS();
-        vm.expectRevert(ISyndicateGovernor.InvalidProtocolFeeRecipient.selector);
-        governor.finalizeParameterChange(paramKey);
-        vm.stopPrank();
     }
 
     // ==================== RESCUE ERC721 LOCK ====================

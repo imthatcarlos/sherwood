@@ -71,9 +71,10 @@ contract ExecuteByBoundaryTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: 30 days,
-                    parameterChangeDelay: 1 days,
                     protocolFeeBps: 0,
-                    protocolFeeRecipient: address(0)
+                    protocolFeeRecipient: address(0),
+                    guardianFeeBps: 0,
+                    guardianFeeRecipient: address(0)
                 }),
                 address(guardianRegistry)
             )
