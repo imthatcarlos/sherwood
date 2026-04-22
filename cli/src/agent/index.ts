@@ -33,6 +33,7 @@ import {
   getCryptoPredictions,
   getSocialData,
   getCryptoCompareCandles,
+  getProtocolTvl,
 } from '../providers/fincept/index.js';
 import { logSignal } from "./signal-logger.js";
 import type { JudgeLogData } from "./signal-logger.js";
@@ -170,12 +171,10 @@ export class TradingAgent {
       // 2. Fetch Fear & Greed
       this.sentiment.getFearAndGreed(),
 
-      // 3. Fetch TVL data (if DeFi protocol)
-      this.defillama.getProtocolTvl(tokenId).then(async (tvlValue) => {
+      // 3. Fetch TVL data (if DeFi protocol) — Fincept DefiLlama wrapper
+      getProtocolTvl(tokenId).then((tvlValue) => {
         if (typeof tvlValue === "number" && tvlValue > 0) {
-          const priceData = await this.coingecko.getPrice([tokenId], ["usd"]);
-          const mcap = priceData?.[tokenId]?.usd_market_cap;
-          return { tvl: tvlValue, mcapToTvl: mcap && tvlValue > 0 ? mcap / tvlValue : undefined };
+          return { tvl: tvlValue, mcapToTvl: undefined }; // mcapToTvl computed in Phase 2b via Messari
         }
         return null;
       }),
@@ -260,40 +259,11 @@ export class TradingAgent {
       hyperliquidData = hyperliquidResult.value;
     }
 
-    // Process TVL results — use Hyperliquid price if available instead of calling CoinGecko
+    // Process TVL results — mcapToTvl is now computed in Phase 2b via Messari
     if (tvlResult.status === 'fulfilled' && tvlResult.value) {
-      const { tvl: tvlValue } = tvlResult.value;
-      tvl = tvlValue;
-
-      // Calculate mcapToTvl ratio using Hyperliquid price if available
-      let mcapToTvl: number | undefined;
-      if (hyperliquidData?.markPrice) {
-        // Use Hyperliquid mark price instead of CoinGecko
-        try {
-          const coinDetails = await this.coingecko.getCoinDetails(tokenId);
-          const circSupply = coinDetails?.market_data?.circulating_supply;
-          if (circSupply) {
-            const mcap = hyperliquidData.markPrice * circSupply;
-            mcapToTvl = tvlValue > 0 ? mcap / tvlValue : undefined;
-          }
-        } catch {
-          // Fall back to original CoinGecko approach if coin details fail
-          const priceData = await this.coingecko.getPrice([tokenId], ["usd"]);
-          const mcap = priceData?.[tokenId]?.usd_market_cap;
-          mcapToTvl = mcap && tvlValue > 0 ? mcap / tvlValue : undefined;
-        }
-      } else {
-        // Fall back to CoinGecko price
-        const priceData = await this.coingecko.getPrice([tokenId], ["usd"]);
-        const mcap = priceData?.[tokenId]?.usd_market_cap;
-        mcapToTvl = mcap && tvlValue > 0 ? mcap / tvlValue : undefined;
-      }
-
-      signals.push(scoreFundamental({ mcapToTvl }));
-    } else {
-      // Not all tokens have TVL data, that's fine
-      signals.push(scoreFundamental({}));
+      tvl = tvlResult.value.tvl;
     }
+    // scoreFundamental is called in Phase 2b after Messari data is available
 
     // Shared research data — captured in phase 2, reused in phase 3 strategies
     let nansenData: any = undefined;
