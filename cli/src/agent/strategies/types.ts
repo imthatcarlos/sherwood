@@ -80,6 +80,13 @@ export interface StrategyContext {
     revenueGrowth7d: number;
     developerActivity: number;
   };
+  /** Fincept: CryptoCompare social volume + news sentiment. */
+  socialData?: {
+    socialVolume24h: number;
+    socialVolumeSpike: number;
+    newsCount24h: number;
+    topNewsSentiment: number;
+  };
   tokenSymbol?: string;       // resolved symbol (e.g. "ETH" for "ethereum")
   groupReturns?: Record<string, number>;  // cross-sectional: 7-day returns for all tokens in cycle
   /** Fincept: Polymarket/Manifold prediction market probabilities. */
