@@ -41,6 +41,13 @@ interface IGuardianRegistry {
     error ProtocolPaused();
     error NotPausedOrDeadmanNotElapsed();
     error RefundCapExceeded();
+    // V1.5 delegation
+    error CannotSelfDelegate();
+    error InvalidDelegate();
+    error AmountZero();
+    error NoActiveDelegation();
+    error NoUnstakeRequest();
+    error UnstakeCooldownActive();
     error InvalidAgentId();
     error ChangeAlreadyPending();
     error NoChangePending();
@@ -159,4 +166,29 @@ interface IGuardianRegistry {
     function pendingEpochReward(address guardian, uint256 epochId) external view returns (uint256);
     function governor() external view returns (address);
     function factory() external view returns (address);
+
+    // ── V1.5: delegation ──
+    function delegateStake(address delegate, uint256 amount) external;
+    function requestUnstakeDelegation(address delegate) external;
+    function cancelUnstakeDelegation(address delegate) external;
+    function claimUnstakeDelegation(address delegate) external;
+
+    function delegationOf(address delegator, address delegate) external view returns (uint256);
+    function delegatedInbound(address delegate) external view returns (uint256);
+    function totalDelegatedStake() external view returns (uint256);
+
+    function getPastStake(address guardian, uint256 timestamp) external view returns (uint256);
+    function getPastTotalStake(uint256 timestamp) external view returns (uint256);
+    function getPastDelegated(address delegate, uint256 timestamp) external view returns (uint256);
+    function getPastDelegationTo(address delegator, address delegate, uint256 timestamp)
+        external
+        view
+        returns (uint256);
+    function getPastVoteWeight(address delegate, uint256 timestamp) external view returns (uint256);
+    function getPastTotalDelegated(uint256 timestamp) external view returns (uint256);
+
+    event DelegationIncreased(address indexed delegator, address indexed delegate, uint256 amount);
+    event DelegationUnstakeRequested(address indexed delegator, address indexed delegate, uint256 at);
+    event DelegationUnstakeCancelled(address indexed delegator, address indexed delegate);
+    event DelegationUnstakeClaimed(address indexed delegator, address indexed delegate, uint256 amount);
 }

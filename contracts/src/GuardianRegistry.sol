@@ -102,6 +102,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         uint128 approveStakeWeight;
         uint128 blockStakeWeight;
         uint64 openedAt; // V1.5: timestamp for checkpoint lookup of vote weight
+        uint128 totalDelegatedAtOpen; // V1.5: delegation half of the quorum denom
     }
 
     mapping(uint256 => Review) internal _reviews;
@@ -121,6 +122,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         bool blocked;
         uint8 nonce; // bumped on open/cancel so prior block votes go stale
         uint64 openedAt; // V1.5: timestamp for checkpoint lookup of vote weight
+        uint128 totalDelegatedAtOpen; // V1.5: delegation half of the quorum denom
     }
 
     mapping(uint256 => EmergencyReview) internal _emergencyReviews;
@@ -188,11 +190,38 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     ///      but indexed by timestamp for historical quorum-denominator lookups.
     Checkpoints.Trace224 internal _totalStakeCheckpoint;
 
-    /// @dev Reserved storage for future upgrades. Shrink by the slot count
-    ///      used above when adding a new storage slot.
-    ///      Slot accounting: -2 for _stakeCheckpoints (mapping root) and
-    ///      _totalStakeCheckpoint (Trace224 inline).
-    uint256[49] private __gap;
+    // ── V1.5 delegation (Task 2.1) ──
+    /// @dev Per-(delegator, delegate) locked balance. WOOD moves from the
+    ///      delegator's wallet into the registry on `delegateStake`.
+    mapping(address delegator => mapping(address delegate => uint256)) internal _delegations;
+
+    /// @dev Per-(delegator, delegate) historical balance. At vote / reward
+    ///      attribution we look up `_delegationCheckpoints[delegator][delegate]
+    ///      .upperLookupRecent(reviewOpenedAt)` to split the delegate's
+    ///      voting pool among their delegators.
+    mapping(address delegator => mapping(address delegate => Checkpoints.Trace224)) internal _delegationCheckpoints;
+
+    /// @dev Per-(delegator, delegate) unstake-request timestamp; 0 = no request.
+    mapping(address delegator => mapping(address delegate => uint64)) internal _unstakeDelegationRequestedAt;
+
+    /// @dev Per-delegate inbound delegation sum (current).
+    mapping(address delegate => uint256) internal _delegatedInbound;
+
+    /// @dev Per-delegate inbound delegation history for `getPastDelegated`.
+    mapping(address delegate => Checkpoints.Trace224) internal _delegatedInboundCheckpoints;
+
+    /// @dev Global sum of all delegations (for quorum denominator at review open).
+    uint256 public totalDelegatedStake;
+
+    /// @dev Global delegation total history for `getPastTotalDelegated`.
+    Checkpoints.Trace224 internal _totalDelegatedCheckpoint;
+
+    /// @dev Reserved storage for future upgrades.
+    ///      Slot accounting since V1: -2 for (_stakeCheckpoints, _totalStakeCheckpoint),
+    ///      -5 more for (_delegations, _delegationCheckpoints,
+    ///      _unstakeDelegationRequestedAt, _delegatedInbound, _delegatedInboundCheckpoints),
+    ///      -2 more for (totalDelegatedStake, _totalDelegatedCheckpoint) = -9 total.
+    uint256[42] private __gap;
 
     // ── Initializer ──
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -335,6 +364,90 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @dev After `coolDownPeriod` from `unstakeRequestedAt`, releases WOOD and
     ///      deregisters the guardian entirely (struct deleted — agentId can differ on
     ///      a subsequent re-stake).
+    // ──────────────────────────────────────────────────────────────
+    // V1.5 — Stake-pool delegation (Phase 2)
+    // ──────────────────────────────────────────────────────────────
+
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Permissive delegation — any address can be a delegate. To be
+    ///      active-guardian-eligible, the delegate still needs their OWN
+    ///      stake >= minGuardianStake (delegation adds to vote weight but
+    ///      does not bypass activation). Delegating to self is disallowed to
+    ///      keep own-stake and delegated pools strictly disjoint.
+    ///
+    ///      Custody moves into the registry; balance tracked per-(delegator,
+    ///      delegate) pair with a Trace224 checkpoint for historical
+    ///      attribution. If the delegator had a pending unstake request for
+    ///      this delegate, re-delegating implicitly cancels it.
+    function delegateStake(address delegate, uint256 amount) external nonReentrant {
+        if (delegate == msg.sender) revert CannotSelfDelegate();
+        if (delegate == address(0)) revert InvalidDelegate();
+        if (amount == 0) revert AmountZero();
+
+        // Re-delegation implicitly cancels any in-flight unstake request.
+        _unstakeDelegationRequestedAt[msg.sender][delegate] = 0;
+
+        wood.safeTransferFrom(msg.sender, address(this), amount);
+
+        uint256 newBalance = _delegations[msg.sender][delegate] + amount;
+        _delegations[msg.sender][delegate] = newBalance;
+        _delegatedInbound[delegate] += amount;
+        totalDelegatedStake += amount;
+
+        _delegationCheckpoints[msg.sender][delegate].push(uint32(block.timestamp), uint224(newBalance));
+        _delegatedInboundCheckpoints[delegate]
+            .push(uint32(block.timestamp), uint224(_delegatedInbound[delegate]));
+        _totalDelegatedCheckpoint.push(uint32(block.timestamp), uint224(totalDelegatedStake));
+
+        emit DelegationIncreased(msg.sender, delegate, amount);
+    }
+
+    /// @inheritdoc IGuardianRegistry
+    /// @dev Starts the 7-day unstake-delegation cooldown. The delegation slot
+    ///      stays non-zero in `_delegations` (delegate's vote weight at any
+    ///      already-opened review that referenced the delegator's weight at
+    ///      `r.openedAt` is frozen via the Trace224 checkpoint, so requesting
+    ///      unstake now does not retroactively change anything).
+    function requestUnstakeDelegation(address delegate) external {
+        if (_delegations[msg.sender][delegate] == 0) revert NoActiveDelegation();
+        if (_unstakeDelegationRequestedAt[msg.sender][delegate] != 0) revert UnstakeAlreadyRequested();
+        _unstakeDelegationRequestedAt[msg.sender][delegate] = uint64(block.timestamp);
+        emit DelegationUnstakeRequested(msg.sender, delegate, block.timestamp);
+    }
+
+    /// @inheritdoc IGuardianRegistry
+    function cancelUnstakeDelegation(address delegate) external {
+        if (_unstakeDelegationRequestedAt[msg.sender][delegate] == 0) revert NoUnstakeRequest();
+        _unstakeDelegationRequestedAt[msg.sender][delegate] = 0;
+        emit DelegationUnstakeCancelled(msg.sender, delegate);
+    }
+
+    /// @inheritdoc IGuardianRegistry
+    /// @dev After `coolDownPeriod`, zeros the delegation slot, decrements the
+    ///      delegate's inbound totals and global total, pushes zero checkpoints
+    ///      for the delegator + inbound histories, and refunds WOOD.
+    function claimUnstakeDelegation(address delegate) external nonReentrant {
+        uint64 requestedAt = _unstakeDelegationRequestedAt[msg.sender][delegate];
+        if (requestedAt == 0) revert NoUnstakeRequest();
+        if (block.timestamp < uint256(requestedAt) + coolDownPeriod) revert UnstakeCooldownActive();
+
+        uint256 amount = _delegations[msg.sender][delegate];
+        _delegations[msg.sender][delegate] = 0;
+        _unstakeDelegationRequestedAt[msg.sender][delegate] = 0;
+        _delegatedInbound[delegate] -= amount;
+        totalDelegatedStake -= amount;
+
+        _delegationCheckpoints[msg.sender][delegate].push(uint32(block.timestamp), 0);
+        _delegatedInboundCheckpoints[delegate]
+            .push(uint32(block.timestamp), uint224(_delegatedInbound[delegate]));
+        _totalDelegatedCheckpoint.push(uint32(block.timestamp), uint224(totalDelegatedStake));
+
+        wood.safeTransfer(msg.sender, amount);
+        emit DelegationUnstakeClaimed(msg.sender, delegate, amount);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+
     function claimUnstakeGuardian() external nonReentrant {
         Guardian storage g = _guardians[msg.sender];
         if (g.unstakeRequestedAt == 0) revert UnstakeNotRequested();
@@ -378,9 +491,11 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         if (existing == support) revert NoVoteChange();
 
         if (existing == GuardianVoteType.None) {
-            // First vote — snapshot the voter's stake AT `r.openedAt` (not live).
-            uint128 weight = uint128(_stakeCheckpoints[msg.sender].upperLookupRecent(uint32(r.openedAt)));
-            if (weight == 0) revert NotActiveGuardian(); // no active stake at open time
+            // First vote — snapshot own + delegated weight AT `r.openedAt`.
+            uint256 own = _stakeCheckpoints[msg.sender].upperLookupRecent(uint32(r.openedAt));
+            if (own == 0) revert NotActiveGuardian(); // no active own stake at open time
+            uint256 delegated = _delegatedInboundCheckpoints[msg.sender].upperLookupRecent(uint32(r.openedAt));
+            uint128 weight = uint128(own + delegated);
             _voteStake[proposalId][msg.sender] = weight;
 
             if (support == GuardianVoteType.Approve) {
@@ -606,6 +721,7 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         er.callsHash = callsHash;
         er.reviewEnd = newReviewEnd;
         er.totalStakeAtOpen = uint128(totalGuardianStake);
+        er.totalDelegatedAtOpen = uint128(totalDelegatedStake); // V1.5
         er.blockStakeWeight = 0;
         er.resolved = false;
         er.blocked = false;
@@ -655,14 +771,17 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         if (ve == 0 || block.timestamp < ve) revert ReviewNotOpen();
 
         uint128 totalAtOpen = uint128(totalGuardianStake);
+        uint128 delegatedAtOpen = uint128(totalDelegatedStake); // V1.5
+        uint256 combinedAtOpen = uint256(totalAtOpen) + uint256(delegatedAtOpen);
         r.opened = true;
         r.totalStakeAtOpen = totalAtOpen;
+        r.totalDelegatedAtOpen = delegatedAtOpen;
         r.openedAt = uint64(block.timestamp); // V1.5: freeze vote-weight timestamp
-        if (totalAtOpen < MIN_COHORT_STAKE_AT_OPEN) {
+        if (combinedAtOpen < MIN_COHORT_STAKE_AT_OPEN) {
             r.cohortTooSmall = true;
-            emit CohortTooSmallToReview(proposalId, totalAtOpen);
+            emit CohortTooSmallToReview(proposalId, uint128(combinedAtOpen));
         } else {
-            emit ReviewOpened(proposalId, totalAtOpen);
+            emit ReviewOpened(proposalId, uint128(combinedAtOpen));
         }
     }
 
@@ -694,7 +813,9 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
             return false;
         }
 
-        bool blocked_ = (uint256(r.blockStakeWeight) * 10_000 >= blockQuorumBps * uint256(r.totalStakeAtOpen));
+        // V1.5: denominator is own stake + delegated stake at review open.
+        uint256 denom = uint256(r.totalStakeAtOpen) + uint256(r.totalDelegatedAtOpen);
+        bool blocked_ = (uint256(r.blockStakeWeight) * 10_000 >= blockQuorumBps * denom);
 
         // CEI: commit state BEFORE any external transfer.
         r.resolved = true;
@@ -811,13 +932,15 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         EmergencyReview storage er = _emergencyReviews[proposalId];
         if (er.reviewEnd == 0 || block.timestamp < er.reviewEnd) revert ReviewNotReadyForResolve();
         if (er.resolved) return er.blocked; // idempotent
-        if (er.totalStakeAtOpen == 0) {
+        // V1.5: denominator is own + delegated at emergency review open.
+        uint256 denomE = uint256(er.totalStakeAtOpen) + uint256(er.totalDelegatedAtOpen);
+        if (denomE == 0) {
             er.resolved = true;
             emit EmergencyReviewResolved(proposalId, false, 0);
             return false;
         }
 
-        bool blocked_ = (uint256(er.blockStakeWeight) * 10_000 >= blockQuorumBps * uint256(er.totalStakeAtOpen));
+        bool blocked_ = (uint256(er.blockStakeWeight) * 10_000 >= blockQuorumBps * denomE);
 
         // CEI: commit state BEFORE external transfer.
         er.resolved = true;
@@ -846,8 +969,10 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         uint8 nonce = er.nonce;
         if (_emergencyBlockVotes[proposalId][nonce][msg.sender]) revert AlreadyVoted();
 
-        uint128 weight = uint128(_stakeCheckpoints[msg.sender].upperLookupRecent(uint32(er.openedAt)));
-        if (weight == 0) revert NotActiveGuardian(); // no stake at review-open time
+        uint256 ownE = _stakeCheckpoints[msg.sender].upperLookupRecent(uint32(er.openedAt));
+        if (ownE == 0) revert NotActiveGuardian(); // no own stake at review-open time
+        uint256 delegatedE = _delegatedInboundCheckpoints[msg.sender].upperLookupRecent(uint32(er.openedAt));
+        uint128 weight = uint128(ownE + delegatedE);
         _emergencyBlockVotes[proposalId][nonce][msg.sender] = true;
         _emergencyVoteStake[proposalId][nonce][msg.sender] = weight;
         er.blockStakeWeight += weight;
@@ -1140,6 +1265,43 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @notice Historical total active stake (quorum denominator) at `timestamp`.
     function getPastTotalStake(uint256 timestamp) external view returns (uint256) {
         return _totalStakeCheckpoint.upperLookupRecent(uint32(timestamp));
+    }
+
+    /// @notice Historical per-(delegator, delegate) delegation balance at `timestamp`.
+    function getPastDelegationTo(address delegator, address delegate, uint256 timestamp)
+        external
+        view
+        returns (uint256)
+    {
+        return _delegationCheckpoints[delegator][delegate].upperLookupRecent(uint32(timestamp));
+    }
+
+    /// @notice Historical inbound delegation total for `delegate` at `timestamp`.
+    function getPastDelegated(address delegate, uint256 timestamp) external view returns (uint256) {
+        return _delegatedInboundCheckpoints[delegate].upperLookupRecent(uint32(timestamp));
+    }
+
+    /// @notice Historical global delegation total at `timestamp` (delegation
+    ///         half of the quorum denominator).
+    function getPastTotalDelegated(uint256 timestamp) external view returns (uint256) {
+        return _totalDelegatedCheckpoint.upperLookupRecent(uint32(timestamp));
+    }
+
+    /// @notice Combined historical vote weight = own stake + delegated inbound
+    ///         at `timestamp`. Used by vote sites for numerator; review opens
+    ///         snapshot (getPastTotalStake + getPastTotalDelegated) for denom.
+    function getPastVoteWeight(address delegate, uint256 timestamp) external view returns (uint256) {
+        uint256 own = _stakeCheckpoints[delegate].upperLookupRecent(uint32(timestamp));
+        uint256 delegated = _delegatedInboundCheckpoints[delegate].upperLookupRecent(uint32(timestamp));
+        return own + delegated;
+    }
+
+    function delegationOf(address delegator, address delegate) external view returns (uint256) {
+        return _delegations[delegator][delegate];
+    }
+
+    function delegatedInbound(address delegate) external view returns (uint256) {
+        return _delegatedInbound[delegate];
     }
 
     function ownerStake(address v) external view returns (uint256) {
