@@ -55,6 +55,14 @@ export interface StrategyContext {
     orderBookImbalance: number;
     largeTradesBias: number;
   };
+  /** Fincept: Messari fundamentals (supply, revenue, developer activity). */
+  messariFundamentals?: {
+    marketCap: number;
+    supply: { circulating: number; max: number; percentCirculating: number };
+    revenueUsd24h: number;
+    revenueGrowth7d: number;
+    developerActivity: number;
+  };
   tokenSymbol?: string;       // resolved symbol (e.g. "ETH" for "ethereum")
 }
 
