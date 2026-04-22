@@ -64,6 +64,8 @@ export interface SummaryInput {
   portfolio: PortfolioState;
   /** Most recent closed trades (last 3, for exit callouts). */
   recentTrades: TradeRecord[];
+  /** All closed trades — used to compute total realized PnL. */
+  allTrades: TradeRecord[];
   /** Cumulative grid stats from grid-portfolio.json (optional — omitted if grid disabled). */
   gridStats?: GridSummaryStats;
 }
@@ -123,12 +125,21 @@ export function formatSummary(input: SummaryInput): string {
   lines.push("");
   lines.push(`\uD83D\uDCCA Regime: ${regime.charAt(0).toUpperCase() + regime.slice(1)}`);
 
-  // Portfolio
-  const totalPct = fmtPct(cycle.totalPnlPct ?? 0);
-  const totalUsd = fmtUsd(cycle.totalPnlUsd ?? 0);
+  // Portfolio — show realized vs unrealized separately so the headline
+  // number doesn't mislead. The old format showed totalPnlPct which mixes
+  // mark-to-market unrealized swings with actual closed-trade P&L.
+  const realizedPnl = input.allTrades.reduce((sum, t) => sum + t.pnlUsd, 0);
+  const unrealized = cycle.unrealizedPnl;
+  const initVal = portfolio.initialValue ?? 10_000;
+  const realizedPct = initVal > 0 ? realizedPnl / initVal : 0;
+  const cashPct = initVal > 0 ? (portfolio.cash / initVal) * 100 : 0;
+  const positionValue = cycle.portfolioValue - portfolio.cash;
+
   lines.push("");
-  lines.push(`\uD83D\uDCB0 $${cycle.portfolioValue.toFixed(2)} (${totalPct})`);
-  lines.push(`   Today: ${fmtUsd(cycle.dailyRealizedPnl)} realized | ${fmtUsd(cycle.unrealizedPnl)} open`);
+  lines.push(`\uD83D\uDCB0 $${cycle.portfolioValue.toFixed(2)}`);
+  lines.push(`   Realized: ${fmtUsd(realizedPnl)} (${fmtPct(realizedPct)}) from ${input.allTrades.length} trades`);
+  lines.push(`   Open P&L: ${fmtUsd(unrealized)} | Cash: $${portfolio.cash.toFixed(0)} | Positions: $${positionValue.toFixed(0)}`);
+  lines.push(`   Today: ${fmtUsd(cycle.dailyRealizedPnl)} realized | ${fmtUsd(unrealized)} open`);
 
   // Grid stats — always show cumulative if grid is active
   const gf = cycle.gridFills ?? 0;
@@ -222,6 +233,6 @@ export async function printSummary(): Promise<void> {
     // Grid not initialized — omit from summary
   }
 
-  const msg = formatSummary({ cycle, portfolio, recentTrades: trades.slice(-5), gridStats });
+  const msg = formatSummary({ cycle, portfolio, recentTrades: trades.slice(-5), allTrades: trades, gridStats });
   process.stdout.write(msg + "\n");
 }
