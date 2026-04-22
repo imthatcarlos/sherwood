@@ -118,15 +118,15 @@ export interface GridConfig {
 
 export const DEFAULT_GRID_CONFIG: GridConfig = {
   enabled: true,
-  tokens: ['bitcoin', 'ethereum'],
+  tokens: ['bitcoin', 'ethereum', 'solana'],
   allocationPct: 0.50,
-  leverage: 3,
-  levelsPerSide: 10,
+  leverage: 4,                                  // was 3 — +33% profit per RT
+  levelsPerSide: 15,                            // was 10 — tighter spacing, more fills per swing
   atrMultiplier: 2,
   atrPeriod: 14,
-  rebalanceDriftPct: 0.70,
-  fullRebuildIntervalMs: 12 * 60 * 60 * 1000, // 12h
-  tokenSplit: { bitcoin: 0.60, ethereum: 0.40 },
+  rebalanceDriftPct: 0.55,                      // was 0.70 — rebalance sooner, keep levels near price
+  fullRebuildIntervalMs: 12 * 60 * 60 * 1000,   // 12h
+  tokenSplit: { bitcoin: 0.45, ethereum: 0.30, solana: 0.25 },
   minProfitPerFillUsd: 0.50,
   pauseThresholdPct: 0.20,
 };
