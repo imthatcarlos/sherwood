@@ -125,25 +125,31 @@ export function formatSummary(input: SummaryInput): string {
   lines.push("");
   lines.push(`\uD83D\uDCCA Regime: ${regime.charAt(0).toUpperCase() + regime.slice(1)}`);
 
-  // Portfolio — show realized vs unrealized separately so the headline
-  // number doesn't mislead. The old format showed totalPnlPct which mixes
-  // mark-to-market unrealized swings with actual closed-trade P&L.
+  // Portfolio — headline includes grid allocation so the total reflects
+  // ALL capital, not just the directional portfolio.
   const realizedPnl = input.allTrades.reduce((sum, t) => sum + t.pnlUsd, 0);
   const unrealized = cycle.unrealizedPnl;
   const initVal = portfolio.initialValue ?? 10_000;
-  const realizedPct = initVal > 0 ? realizedPnl / initVal : 0;
-  const cashPct = initVal > 0 ? (portfolio.cash / initVal) * 100 : 0;
   const positionValue = cycle.portfolioValue - portfolio.cash;
 
-  lines.push("");
-  lines.push(`\uD83D\uDCB0 $${cycle.portfolioValue.toFixed(2)}`);
-  lines.push(`   Total Realized: ${fmtUsd(realizedPnl)} (${fmtPct(realizedPct)}) from ${input.allTrades.length} trades`);
-  lines.push(`   Open P&L: ${fmtUsd(unrealized)} | Cash: $${portfolio.cash.toFixed(0)} | Positions: $${positionValue.toFixed(0)}`);
-  lines.push(`   Today: ${fmtUsd(cycle.dailyRealizedPnl)} realized | ${fmtUsd(unrealized)} open`);
-
-  // Grid stats — always show cumulative if grid is active
+  // Grid stats
   const gf = cycle.gridFills ?? 0;
   const gs = input.gridStats;
+  const gridAlloc = gs && !gs.paused ? gs.allocation : 0;
+  const gridPnl = gs && !gs.paused ? gs.totalPnlUsd : 0;
+
+  // Headline: directional portfolio + grid allocation = total capital
+  const totalCapital = cycle.portfolioValue + gridAlloc;
+  const totalRealizedAll = realizedPnl + gridPnl;
+  const totalPnlPct = initVal > 0 ? (totalCapital - initVal) / initVal : 0;
+
+  lines.push("");
+  lines.push(`\uD83D\uDCB0 $${totalCapital.toFixed(2)} (${fmtPct(totalPnlPct)})`);
+  lines.push(`   Realized: ${fmtUsd(totalRealizedAll)} from ${input.allTrades.length} trades + grid`);
+  lines.push(`   Directional: $${portfolio.cash.toFixed(0)} cash | $${positionValue.toFixed(0)} positions | ${fmtUsd(unrealized)} open`);
+  lines.push(`   Today: ${fmtUsd(cycle.dailyRealizedPnl)} realized | ${fmtUsd(unrealized)} open`);
+
+  // Grid line
   if (gs && !gs.paused) {
     const todayStr = gs.todayFills > 0
       ? `${gs.todayFills} fills ${fmtUsd(gs.todayPnlUsd)} today`
