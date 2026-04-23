@@ -274,11 +274,12 @@ export class PortfolioTracker {
     };
 
     this.state.positions.push(fullPosition);
-    // Shorts on perp venues only require margin, not full notional.
-    // Use 20% margin (5x effective leverage) for shorts to avoid
-    // artificially depleting cash at 10x the real rate.
-    const isShort = (position.side ?? 'long') === 'short';
-    const cashDebit = position.quantity * position.entryPrice * (isShort ? 0.2 : 1.0);
+    // Both longs and shorts on perp venues only require margin, not full notional.
+    // With 3x directional leverage, a $3,500 notional position only locks $1,167
+    // margin (33%). Prior code debited full notional for longs, depleting cash 3x
+    // faster than reality and blocking subsequent trades.
+    const MARGIN_FRACTION = 0.33; // ~3x leverage margin requirement
+    const cashDebit = position.quantity * position.entryPrice * MARGIN_FRACTION;
     this.state.cash -= cashDebit;
     this.state.totalValue = this.state.cash + this.state.positions.reduce(
       (sum, p) => sum + p.quantity * p.currentPrice,
@@ -341,9 +342,9 @@ export class PortfolioTracker {
     };
 
     this.state.positions[idx] = updated;
-    // Shorts on perp venues only require margin (20% = 5x leverage).
-    const isShortAdd = side === 'short';
-    this.state.cash -= addPrice * addQuantity * (isShortAdd ? 0.2 : 1.0);
+    // Both longs and shorts use margin-based cash debit (33% = 3x leverage).
+    const MARGIN_FRACTION = 0.33;
+    this.state.cash -= addPrice * addQuantity * MARGIN_FRACTION;
     this.state.totalValue = this.state.cash + this.state.positions.reduce(
       (sum, p) => sum + p.quantity * p.currentPrice,
       0,
@@ -399,11 +400,10 @@ export class PortfolioTracker {
     await this.appendTradeRecord(record);
 
     // Remove position and update cash.
-    // Shorts return margin (20% of notional) + PnL; longs return full notional.
+    // Both longs and shorts return margin (33% of notional) + PnL.
     this.state.positions.splice(idx, 1);
-    const cashCredit = isShort
-      ? pos.quantity * pos.entryPrice * 0.2 + pnlUsd  // return margin + profit/loss
-      : pos.quantity * exitPrice;
+    const MARGIN_FRACTION = 0.33;
+    const cashCredit = pos.quantity * pos.entryPrice * MARGIN_FRACTION + pnlUsd;
     this.state.cash += cashCredit;
     this.state.dailyPnl += pnlUsd;
     this.state.weeklyPnl += pnlUsd;
@@ -492,10 +492,9 @@ export class PortfolioTracker {
     // Reduce position, mark partial taken
     pos.quantity -= quantityClosed;
     pos.partialTaken = true;
-    // Shorts return margin fraction + PnL; longs return full notional.
-    const partialCashCredit = isShort
-      ? pos.entryPrice * quantityClosed * 0.2 + pnlUsd
-      : exitPrice * quantityClosed;
+    // Return margin fraction (33%) + PnL for both longs and shorts.
+    const MARGIN_FRACTION = 0.33;
+    const partialCashCredit = pos.entryPrice * quantityClosed * MARGIN_FRACTION + pnlUsd;
     this.state.cash += partialCashCredit;
     this.state.dailyPnl += pnlUsd;
     this.state.weeklyPnl += pnlUsd;

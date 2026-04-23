@@ -554,22 +554,16 @@ export class TradingAgent {
     try {
       let btcCandles: Candle[] = candles || [];
 
-      // If analyzing a non-BTC token, fetch BTC candles for regime analysis
-      if (tokenId !== "bitcoin" && (!candles || candles.length < 100)) {
-        const btcOhlc = await this.coingecko.getOHLC("bitcoin", 200);
-        if (btcOhlc && btcOhlc.length > 100) {
-          btcCandles = btcOhlc.map((c: number[]) => ({
-            timestamp: c[0]!,
-            open: c[1]!,
-            high: c[2]!,
-            low: c[3]!,
-            close: c[4] ?? c[3]!,
-            volume: 0, // Volume not needed for regime detection
-          }));
+      // If analyzing a non-BTC token, fetch BTC candles for regime analysis.
+      // Use Hyperliquid (free, no rate limits) instead of CoinGecko (429s, 400s).
+      if (tokenId !== "bitcoin" && (!candles || candles.length < 60)) {
+        const hlBtcCandles = await this.hyperliquid.getCandles("bitcoin", "4h", 30 * 24 * 60 * 60 * 1000);
+        if (hlBtcCandles && hlBtcCandles.length > 60) {
+          btcCandles = hlBtcCandles;
         }
       }
 
-      if (btcCandles.length > 100) {
+      if (btcCandles.length > 60) {
         regimeAnalysis = await this.regimeDetector.detect(btcCandles);
       }
     } catch (err) {
