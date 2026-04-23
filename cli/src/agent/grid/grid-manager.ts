@@ -70,10 +70,28 @@ export class GridManager {
    *
    * Returns a summary for the cycle log.
    */
-  async tick(prices: Record<string, number>): Promise<GridTickResult> {
+  async tick(prices: Record<string, number>, regime?: string): Promise<GridTickResult> {
     const state = await this.portfolio.load();
     if (!state || state.paused || !this.config.enabled) {
       return { fills: 0, roundTrips: 0, pnlUsd: 0, paused: state?.paused ?? false };
+    }
+
+    // Regime-aware grid control: pause new fills during strong directional moves.
+    // Grid profits from mean reversion — trending markets sweep all levels in one
+    // direction, creating underwater positions. High-volatility regimes are also
+    // dangerous (wide swings can blow past the grid range).
+    //
+    // Behavior by regime:
+    //   ranging / low-volatility → full grid active (best conditions)
+    //   trending-up / trending-down → skip new BUY/SELL fills, only process
+    //     existing open fills (let round trips complete, don't open new ones)
+    //   high-volatility → pause entirely (too dangerous)
+    //   unknown → treat as ranging (no data = don't block)
+    const gridFriendlyRegime = !regime || regime === 'ranging' || regime === 'low-volatility' || regime === 'unknown';
+    const trendingRegime = regime === 'trending-up' || regime === 'trending-down';
+    if (regime === 'high-volatility') {
+      console.error(chalk.dim(`  [grid] Paused: high-volatility regime — too risky for grid`));
+      return { fills: 0, roundTrips: 0, pnlUsd: 0, paused: false };
     }
 
     // Reset daily counters at UTC boundary
@@ -92,8 +110,9 @@ export class GridManager {
         await this.buildGrid(grid, price);
       }
 
-      // Simulate fills
-      const { fills, roundTrips, pnlUsd } = this.simulateFills(grid, price);
+      // Simulate fills — in trending regime, only close existing fills (complete RTs),
+      // don't open new positions that will get swept by the trend.
+      const { fills, roundTrips, pnlUsd } = this.simulateFills(grid, price, trendingRegime);
       totalFills += fills;
       totalRoundTrips += roundTrips;
       totalPnl += pnlUsd;
@@ -174,6 +193,7 @@ export class GridManager {
   private simulateFills(
     grid: GridTokenState,
     currentPrice: number,
+    skipNewFills: boolean = false,
   ): { fills: number; roundTrips: number; pnlUsd: number } {
     let fills = 0;
     let roundTrips = 0;
@@ -186,8 +206,10 @@ export class GridManager {
     if (spacing <= 0) return { fills: 0, roundTrips: 0, pnlUsd: 0 };
 
     // Step 1: Fill unfilled grid levels (buy when price drops, sell is just accounting)
+    // In trending regime (skipNewFills=true), don't open new positions — only let
+    // Step 2 close existing fills to complete round trips.
     for (const level of grid.levels) {
-      if (level.filled) continue;
+      if (level.filled || skipNewFills) continue;
 
       if (level.side === 'buy' && currentPrice <= level.price) {
         level.filled = true;

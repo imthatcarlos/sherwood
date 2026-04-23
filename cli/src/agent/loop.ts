@@ -78,6 +78,8 @@ export class AgentLoop {
   private hlForGrid: HyperliquidProvider;
   /** Whether grid has been initialized this session. */
   private gridInitialized = false;
+  /** Last detected regime — carried across cycles for grid decisions. */
+  private lastRegime: string | undefined;
   /** Last portfolio state loaded by runCycle(). Exposed to the judge via
    *  agent.setPortfolioStateGetter() so portfolio-veto branches can fire. */
   private lastPortfolioState: PortfolioState | undefined;
@@ -304,7 +306,8 @@ export class AgentLoop {
             gridPrices[token] = hlData.markPrice;
           }
         }
-        gridResult = await this.gridManager.tick(gridPrices);
+        // Pass last known regime so grid can pause during trending/high-vol
+        gridResult = await this.gridManager.tick(gridPrices, this.lastRegime);
       } catch (err) {
         errors.push(`Grid tick failed: ${(err as Error).message}`);
       }
@@ -338,7 +341,10 @@ export class AgentLoop {
 
     for (const result of results) {
       const { action, score } = result.decision;
-      signals.push({ token: result.token, score, action, regime: result.regime?.regime });
+      const regime = result.regime?.regime;
+      signals.push({ token: result.token, score, action, regime });
+      // Update last known regime for grid decisions (next cycle)
+      if (regime) this.lastRegime = regime;
 
       // Only execute on BUY/SELL signals
       if (action === 'STRONG_BUY' || action === 'BUY' || action === 'SELL' || action === 'STRONG_SELL') {
