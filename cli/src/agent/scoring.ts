@@ -493,6 +493,8 @@ const LAGGING_TECHNICAL_SIGNALS = new Set(['technical']);
  *  during a trending-up regime — dampening prevents them from suppressing
  *  all long entries. They keep full weight when aligned with the trend. */
 const COUNTER_TREND_DAMPENED = new Set(['kronosVolForecast', 'socialVolume', 'whaleIntent']);
+/** Minimum absolute signal value to trigger counter-trend dampening. */
+const COUNTER_TREND_THRESHOLD = 0.05;
 
 /** Signal name → weight category mapping. */
 const SIGNAL_CATEGORY_MAP: Record<string, keyof ScoringWeights> = {
@@ -614,8 +616,8 @@ export function computeTradeDecision(
     // Signals ALIGNED with the trend keep full weight.
     if (regime && COUNTER_TREND_DAMPENED.has(signal.name)) {
       const isCounterTrend =
-        (regime === 'trending-up' && adjustedValue < -0.05) ||
-        (regime === 'trending-down' && adjustedValue > 0.05);
+        (regime === 'trending-up' && adjustedValue < -COUNTER_TREND_THRESHOLD) ||
+        (regime === 'trending-down' && adjustedValue > COUNTER_TREND_THRESHOLD);
       if (isCounterTrend) {
         signalWeight *= 0.3; // 70% reduction when opposing the trend
       }

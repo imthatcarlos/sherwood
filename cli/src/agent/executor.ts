@@ -36,7 +36,13 @@ export interface OrderParams {
 
 /** Directional trade leverage. Grid uses 4x; directional uses 3x for
  *  tighter stops. Risk is controlled via riskPerTrade (2%) — leverage
- *  amplifies returns without increasing the sizing formula's risk budget. */
+ *  amplifies returns without increasing the sizing formula's risk budget.
+ *
+ *  Cash model note: paper trading debits full notional (qty × price) for
+ *  longs and 20% margin for shorts. On a real perp venue, both sides use
+ *  margin (~20-33%). This means paper cash depletes faster than reality
+ *  for leveraged longs — intentionally conservative to avoid overestimating
+ *  available capital. Live mode (hyperliquid-perp) uses venue margin. */
 const DIRECTIONAL_LEVERAGE = 3;
 
 /** Score-based position sizing multiplier.

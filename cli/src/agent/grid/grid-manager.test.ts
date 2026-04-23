@@ -90,9 +90,11 @@ describe('Grid level computation', () => {
     const sells = levels.filter(l => l.side === 'sell').sort((a, b) => b.price - a.price);
     const lowestBuy = buys[0]!.price;
     const highestSell = sells[0]!.price;
-    // Lowest buy = center - 10 * spacing = 85000 - 10 * 240 = 82600
+    // Range = ATR * atrMultiplier = 1200 * 2 = 2400
+    // Lowest buy = center - range = 85000 - 2400 = 82600
+    // Highest sell = center + range = 85000 + 2400 = 87400
+    // (15 levels × 160 spacing = 2400, same range as old 10 × 240)
     expect(lowestBuy).toBeCloseTo(82600, 0);
-    // Highest sell = center + 10 * spacing = 87400
     expect(highestSell).toBeCloseTo(87400, 0);
   });
 });

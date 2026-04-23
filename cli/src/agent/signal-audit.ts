@@ -28,10 +28,17 @@ const SIGNAL_TO_CATEGORY: Record<string, string> = {
   multiTimeframe: "technical",
   crossSectionalMomentum: "technical",
   tradingviewSignal: "technical",
+  btcNetworkHealth: "technical",
+  kronosVolForecast: "technical",
   dexFlow: "onchain",
   fundingRate: "onchain",
   hyperliquidFlow: "onchain",
+  narrativeVacuum: "onchain",
   sentimentContrarian: "sentiment",
+  socialVolume: "sentiment",
+  predictionMarket: "event",
+  whaleIntent: "smartMoney",
+  flowIntelligence: "smartMoney",
 };
 
 export interface SignalStats {

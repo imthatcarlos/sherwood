@@ -280,10 +280,10 @@ describe("computeTradeDecision", () => {
     );
     // Scores may differ: trending-up dampens lagging technical signals by 50%,
     // so the aggregate shifts toward the non-technical (bullish) signals.
-    // Both should be positive; trending-up fires BUY at its lower 0.25 threshold.
-    expect(trendingUpDecision.score).toBeGreaterThan(0.25);
+    // Both should be positive; trending-up fires BUY at its lower 0.20 threshold.
+    expect(trendingUpDecision.score).toBeGreaterThan(0.20);
     expect(trendingUpDecision.action).toBe("BUY");
-    expect(trendingUpDecision.thresholds?.buy).toBe(0.25);
+    expect(trendingUpDecision.thresholds?.buy).toBe(0.20);
   });
 
   it("ranging regime fires BUY at the 0.17 threshold", () => {

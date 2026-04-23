@@ -90,6 +90,10 @@ export async function callFincept<T = unknown>(
     }
   }
 
+  // Validate script name — prevent path traversal
+  if (script.includes('/') || script.includes('\\') || !script.endsWith('.py')) {
+    return { ok: false, error: `Invalid script name: ${script}`, latencyMs: 0 };
+  }
   const scriptPath = join(FINCEPT_SCRIPTS_DIR, script);
   const t0 = Date.now();
 
