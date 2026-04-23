@@ -79,8 +79,8 @@ describe('Grid level computation', () => {
 
   it('quantity reflects leverage and allocation', () => {
     const levels = makeLevels(85000, 1200);
-    // (1575 * 4) / (15 * 85000) = 0.004941
-    const expectedQty = (1575 * 4) / (15 * 85000);
+    // (1575 * 5) / (15 * 85000) = 0.006176
+    const expectedQty = (1575 * 5) / (15 * 85000);
     expect(levels[0]!.quantity).toBeCloseTo(expectedQty, 6);
   });
 
@@ -142,7 +142,7 @@ describe('Grid fill simulation', () => {
       token: 'bitcoin',
       buyPrice,
       targetSellPrice: sellPrice,
-      quantity: 0.0049,
+      quantity: 0.0062,
       filledAt: Date.now() - 60000,
       closed: false,
       pnlUsd: 0,
@@ -150,11 +150,11 @@ describe('Grid fill simulation', () => {
     });
 
     // Simulate sell fill
-    const profit = (sellPrice - buyPrice) * 0.0049 * 4; // leverage = 4
+    const profit = (sellPrice - buyPrice) * 0.0062 * 5; // leverage = 5
     grid.openFills[0]!.closed = true;
     grid.openFills[0]!.pnlUsd = profit;
 
-    expect(profit).toBeCloseTo(160 * 0.0049 * 4, 2); // ~$3.14
+    expect(profit).toBeCloseTo(160 * 0.0062 * 5, 2); // ~$4.96
     expect(profit).toBeGreaterThan(DEFAULT_GRID_CONFIG.minProfitPerFillUsd);
   });
 
@@ -173,18 +173,18 @@ describe('Grid fill simulation', () => {
 });
 
 describe('Grid rebalance logic', () => {
-  it('detects drift past 55% threshold', () => {
+  it('detects drift past 40% threshold', () => {
     const grid = makeGrid({ centerPrice: 85000, atr: 1200 });
     const range = 1200 * 2; // 2400
-    const driftThreshold = range * DEFAULT_GRID_CONFIG.rebalanceDriftPct; // 0.55 * 2400 = 1320
+    const driftThreshold = range * DEFAULT_GRID_CONFIG.rebalanceDriftPct; // 0.40 * 2400 = 960
 
-    // Price drifted 1400 from center — past 55%
-    const priceFar = 85000 + 1400;
+    // Price drifted 1000 from center — past 40%
+    const priceFar = 85000 + 1000;
     const distFromCenter = Math.abs(priceFar - grid.centerPrice);
     expect(distFromCenter / range).toBeGreaterThanOrEqual(DEFAULT_GRID_CONFIG.rebalanceDriftPct);
 
-    // Price drifted 1000 — not past 55%
-    const priceNear = 85000 + 1000;
+    // Price drifted 800 — not past 40%
+    const priceNear = 85000 + 800;
     const distNear = Math.abs(priceNear - grid.centerPrice);
     expect(distNear / range).toBeLessThan(DEFAULT_GRID_CONFIG.rebalanceDriftPct);
   });

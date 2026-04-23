@@ -28,11 +28,37 @@ export class GridManager {
     this.hl = new HyperliquidProvider();
   }
 
-  /** Load or initialize grid state. Returns USD carved from directional portfolio (0 if already initialized). */
+  /** Load or initialize grid state. Returns USD carved from directional portfolio (0 if already initialized).
+   *  Also syncs new tokens added to config after initial grid setup. */
   async init(totalPortfolioValue: number): Promise<number> {
     const existing = await this.portfolio.load();
-    if (existing) return 0;
-    return this.portfolio.initialize(totalPortfolioValue, this.config);
+    if (!existing) {
+      return this.portfolio.initialize(totalPortfolioValue, this.config);
+    }
+
+    // Sync: add grids for tokens in config but not yet in state
+    let addedAllocation = 0;
+    for (const token of this.config.tokens) {
+      if (!existing.grids.find(g => g.token === token)) {
+        const split = this.config.tokenSplit[token] ?? (1 / this.config.tokens.length);
+        const alloc = existing.totalAllocation * split;
+        existing.grids.push({
+          token,
+          levels: [],
+          openFills: [],
+          allocation: alloc,
+          stats: { totalRoundTrips: 0, totalPnlUsd: 0, todayPnlUsd: 0, totalFills: 0, todayFills: 0, lastDailyReset: 0, lastRebalanceAt: 0 },
+          centerPrice: 0,
+          atr: 0,
+        });
+        addedAllocation += alloc;
+        console.error(`  [grid] Added new token grid: ${token} ($${alloc.toFixed(0)} allocation)`);
+      }
+    }
+    if (addedAllocation > 0) {
+      await this.portfolio.save(existing);
+    }
+    return 0;
   }
 
   /**
