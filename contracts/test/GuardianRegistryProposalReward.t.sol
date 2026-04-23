@@ -125,6 +125,43 @@ contract GuardianRegistryProposalRewardTest is Test {
         assertEq(usdc.balanceOf(approver) - before, FEE_AMOUNT);
     }
 
+    /// @notice Regression for I-A (PR #242 re-review): solo approver who
+    ///         requests unstake mid-review still gets their full gross share.
+    ///         The own-stake weight lookup at `r.openedAt` (not `settledAt`)
+    ///         means a mid-review unstake — which pushes `_stakeCheckpoints=0`
+    ///         at requestUnstake time — does not corrupt the attribution.
+    function test_claim_soloApprover_unstakesMidReview_stillGetsFullShare() public {
+        vm.prank(approver);
+        registry.setCommission(2000); // would otherwise strand remainder
+
+        // Open + vote Approve (freezes w at openedAt).
+        uint256 voteEnd = vm.getBlockTimestamp() + 1;
+        uint256 reviewEnd = voteEnd + 24 hours + 1;
+        mockGov.setProposal(PID, voteEnd, reviewEnd);
+        vm.warp(voteEnd);
+        registry.openReview(PID);
+        vm.warp(voteEnd + 1);
+        vm.prank(approver);
+        registry.voteOnProposal(PID, IGuardianRegistry.GuardianVoteType.Approve);
+
+        // Approver requests unstake mid-review (_stakeCheckpoints[approver]
+        // gets pushed 0 at this moment).
+        vm.prank(approver);
+        registry.requestUnstakeGuardian();
+
+        // Review resolves (not blocked).
+        vm.warp(reviewEnd);
+        registry.resolveReview(PID);
+        _fundPool();
+
+        uint256 before = usdc.balanceOf(approver);
+        vm.prank(approver);
+        registry.claimProposalReward(PID);
+        // Full FEE_AMOUNT — grossFromOwn reads stake at openedAt (before the
+        // mid-review unstake), not at settledAt.
+        assertEq(usdc.balanceOf(approver) - before, FEE_AMOUNT);
+    }
+
     /// @notice Solo approver with 20% commission still gets FULL gross share
     ///         — commission rate is moot when grossFromDelegated = 0 (C-1 fix).
     function test_claim_soloApprover_withCommission_getsFullShare() public {

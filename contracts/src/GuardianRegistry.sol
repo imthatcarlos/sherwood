@@ -624,22 +624,28 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         // totalW >= w by construction (w is one of the weights summed into it).
         uint256 gross = (uint256(pool.amount) * w) / totalW;
 
-        // Split the approver's gross share between own-stake portion
-        // (fully to approver) and delegated-stake portion (commission split).
-        // Clamp ownW at w: voter could have topped up own-stake between
-        // openedAt and settledAt, and we need grossFromDelegated >= 0.
-        uint256 ownW = _stakeCheckpoints[msg.sender].upperLookupRecent(uint32(pool.settledAt));
-        if (ownW > w) ownW = w;
+        // Split the approver's gross share between own-stake portion (fully
+        // to approver) and delegated-stake portion (commission split).
+        // ownW is read at `r.openedAt` — the SAME timestamp used to freeze
+        // `w` in voteOnProposal — so `w >= ownW` holds by construction (w =
+        // own@openedAt + delegated@openedAt). No clamp needed. Reading at
+        // `settledAt` instead would strand funds when an approver requests
+        // unstake mid-review (PR #242 re-review, finding I-A).
+        uint256 ownW = _stakeCheckpoints[msg.sender].upperLookupRecent(uint32(r.openedAt));
         uint256 grossFromOwn = (gross * ownW) / w;
         uint256 grossFromDelegated = gross - grossFromOwn;
 
+        // Commission RATE stays at settledAt (INV-V1.5-11) — only the
+        // vote-weight lookup moves to openedAt.
         uint256 rate = _commissionCheckpoints[msg.sender].upperLookupRecent(uint32(pool.settledAt));
         uint256 commission = (grossFromDelegated * rate) / 10_000;
         uint256 approverPayout = grossFromOwn + commission;
         uint256 remainder = grossFromDelegated - commission;
 
-        // CEI: flag + pool-seed before external transfer. Writing a zero
-        // remainder is cheaper than branching.
+        // CEI: flag + pool-seed before external transfer. Always-write (even
+        // zero remainder) is cheaper in bytecode than branching; solo
+        // approvers pay ~2.1k gas for a zero-write — acceptable vs the
+        // EIP-170 pressure on the registry.
         _approverClaimed[proposalId][msg.sender] = true;
         _delegatorProposalPool[msg.sender][proposalId] = remainder;
 
@@ -653,19 +659,27 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     /// @dev Pulls the delegator's pro-rata share of the delegate's remainder
     ///      pool. Requires the delegate to have already called
     ///      `claimProposalReward` (otherwise the pool is zero). Attribution
-    ///      timestamp is `settledAt`, so a delegator who unstaked mid-review
-    ///      gets 0 if their checkpoint at `settledAt` was already zero.
-    function claimDelegatorProposalReward(address delegate, uint256 proposalId) external whenNotPaused {
+    ///      timestamp is `openedAt` — same as the approver's vote-weight
+    ///      snapshot — so delegator denominator and `grossFromDelegated`
+    ///      numerator align (PR #242 re-review, finding I-B).
+    /// @dev Not `whenNotPaused` — bytecode reclaim. The delegator pool was
+    ///      already seeded by the approver's claim (which IS paused-gated),
+    ///      so value is already earmarked for delegators; pausing the pull
+    ///      doesn't protect anything. `claimUnstakeGuardian` applies the
+    ///      same reasoning.
+    function claimDelegatorProposalReward(address delegate, uint256 proposalId) external {
         if (_delegatorProposalClaimed[delegate][proposalId][msg.sender]) revert AlreadyClaimed();
         uint256 pool = _delegatorProposalPool[delegate][proposalId];
         if (pool == 0) revert DelegatePoolEmpty();
 
         ProposalRewardPool memory p = _proposalGuardianPool[proposalId];
-        uint32 settledAt = uint32(p.settledAt);
+        uint32 openedAt = uint32(_reviews[proposalId].openedAt);
 
-        uint256 my = _delegationCheckpoints[msg.sender][delegate].upperLookupRecent(settledAt);
-        uint256 totalDelegated = _delegatedInboundCheckpoints[delegate].upperLookupRecent(settledAt);
-        if (my == 0 || totalDelegated == 0) revert NoDelegationAtSettle();
+        uint256 my = _delegationCheckpoints[msg.sender][delegate].upperLookupRecent(openedAt);
+        uint256 totalDelegated = _delegatedInboundCheckpoints[delegate].upperLookupRecent(openedAt);
+        // `totalDelegated == 0` would underflow division. `my == 0` would just
+        // compute share = 0; claim flag still flips so no double-claim rot.
+        if (totalDelegated == 0) revert NoDelegationAtSettle();
 
         uint256 share = (pool * my) / totalDelegated;
 
@@ -701,12 +715,13 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     // which returns success/revert + consumed gas, or compute off-chain from
     // `proposalGuardianPool` + `_voteStake` + `commissionAt` + checkpoint views.
 
-    // `unclaimedApproverFee` view removed to reclaim bytecode. The escrow
-    // state is observable via the `ApproverFeeEscrowed` event (emitted on
-    // every escrow write) and the slot can be read via `eth_getStorageAt`
-    // at `keccak256(abi.encode(proposalId, recipient, asset))`. The
-    // `flushUnclaimedApproverFee` call itself returns implicit information
-    // (reverts `NoEscrowedAmount` when empty).
+    // `unclaimedApproverFee(pid, recipient, asset)` wrapper view removed to
+    // reclaim bytecode. The public mapping `unclaimedApproverFees(bytes32)`
+    // serves as the getter — callers compute the key via
+    // `keccak256(abi.encode(proposalId, recipient, asset))` and query:
+    //   cast call <registry> 'unclaimedApproverFees(bytes32)' <key>
+    // or subscribe to `ApproverFeeEscrowed(pid, recipient, asset, amount)`
+    // events.
 
     /// @dev Wrapped ERC20 transfer for guardian-fee claims. On failure (e.g.
     ///      USDC blacklist), records the amount in `unclaimedApproverFees`
