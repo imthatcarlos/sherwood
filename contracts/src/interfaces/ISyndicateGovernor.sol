@@ -177,6 +177,12 @@ interface ISyndicateGovernor {
     // V1.5 new parameter errors
     error InvalidGuardianFeeBps();
     error GuardianFeeRecipientNotSet();
+    /// @notice Guardian fee recipient must equal the bound guardian registry.
+    /// @dev ToB I-1: prevents owner from instantly re-routing guardian fees to
+    ///      an attacker-controlled address. The registry is set once at
+    ///      `initialize` and has no setter, making this effectively immutable
+    ///      unless the owner also performs a UUPS upgrade.
+    error GuardianFeeRecipientNotRegistry();
 
     // ── Events ──
 

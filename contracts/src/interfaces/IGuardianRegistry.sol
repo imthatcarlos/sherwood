@@ -78,6 +78,10 @@ interface IGuardianRegistry {
         uint256 indexed proposalId, address indexed guardian, GuardianVoteType from, GuardianVoteType to
     );
     event ApproverCapReached(uint256 indexed proposalId);
+    /// @notice ToB I-2: emitted when a Block vote is rejected because the
+    ///         blocker array has hit `MAX_BLOCKERS_PER_PROPOSAL`. Parallels
+    ///         `ApproverCapReached`.
+    event BlockerCapReached(uint256 indexed proposalId);
     event ReviewResolved(uint256 indexed proposalId, bool blocked, uint256 slashedAmount);
     event EmergencyReviewOpened(uint256 indexed proposalId, bytes32 callsHash, uint64 reviewEnd);
     event EmergencyReviewCancelled(uint256 indexed proposalId);

@@ -175,6 +175,10 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         if (p.protocolFeeBps > 0 && p.protocolFeeRecipient == address(0)) revert InvalidProtocolFeeRecipient();
         if (p.guardianFeeBps > MAX_GUARDIAN_FEE_BPS) revert InvalidGuardianFeeBps();
         if (p.guardianFeeBps > 0 && p.guardianFeeRecipient == address(0)) revert GuardianFeeRecipientNotSet();
+        // ToB I-1: recipient (when set) must equal the bound registry.
+        if (p.guardianFeeRecipient != address(0) && p.guardianFeeRecipient != guardianRegistry_) {
+            revert GuardianFeeRecipientNotRegistry();
+        }
 
         __Ownable_init(p.owner);
 
@@ -252,6 +256,11 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
     }
 
     function _setGuardianFeeRecipient(address newRecipient) internal override {
+        // ToB I-1: the guardian fee is consumed by the registry's
+        // `fundProposalGuardianPool` — routing it anywhere else would strand
+        // funds away from guardians. Pin the recipient to the bound registry
+        // so owner-instant rotation cannot redirect fees mid-flight.
+        if (newRecipient != _guardianRegistry) revert GuardianFeeRecipientNotRegistry();
         _guardianFeeRecipient = newRecipient;
     }
 

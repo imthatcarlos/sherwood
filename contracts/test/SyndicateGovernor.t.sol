@@ -940,6 +940,24 @@ contract SyndicateGovernorTest is Test {
 
     // ==================== RESCUE ERC721 LOCK ====================
 
+    // ==================== ToB I-1: guardian fee recipient pinning ====================
+
+    /// @notice Owner cannot redirect guardian fees away from the bound registry.
+    function test_setGuardianFeeRecipient_nonRegistry_reverts() public {
+        address attacker = makeAddr("attacker");
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.GuardianFeeRecipientNotRegistry.selector);
+        governor.setGuardianFeeRecipient(attacker);
+    }
+
+    /// @notice Setting the recipient to the bound registry is a no-op-ish
+    ///         re-confirmation but should succeed (idempotent).
+    function test_setGuardianFeeRecipient_registry_succeeds() public {
+        vm.prank(owner);
+        governor.setGuardianFeeRecipient(address(guardianRegistry));
+        assertEq(governor.guardianFeeRecipient(), address(guardianRegistry));
+    }
+
     function test_rescueERC721_blockedDuringActiveProposal() public {
         _createAndExecuteProposal(1500, 7 days);
 

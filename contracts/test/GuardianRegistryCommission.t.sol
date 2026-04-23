@@ -158,4 +158,45 @@ contract GuardianRegistryCommissionTest is Test {
         vm.prank(delegate_);
         registry.setCommission(901);
     }
+
+    /// @notice ToB C-2 regression: if a delegate already has inbound stake,
+    ///         the "first-set" exemption does NOT apply — the raise cap
+    ///         governs immediately to prevent a JIT-rug on existing delegators.
+    function test_setCommission_firstSet_withExistingDelegators_enforcesCap() public {
+        // Stake the delegate as an active guardian so delegation is accepted.
+        wood.mint(delegate_, 100_000e18);
+        vm.prank(delegate_);
+        wood.approve(address(registry), type(uint256).max);
+        vm.prank(delegate_);
+        registry.stakeAsGuardian(10_000e18, 1);
+
+        // A delegator delegates BEFORE the delegate has set commission.
+        address alice = makeAddr("alice");
+        wood.mint(alice, 100_000e18);
+        vm.prank(alice);
+        wood.approve(address(registry), type(uint256).max);
+        vm.prank(alice);
+        registry.delegateStake(delegate_, 5_000e18);
+
+        // First-ever setCommission at 4000 (40%) — would rug Alice. Must
+        // revert because `_delegatedInbound[delegate_] > 0`, so the raise
+        // cap applies from baseline 0 → 500.
+        vm.expectRevert(IGuardianRegistry.CommissionRaiseExceedsLimit.selector);
+        vm.prank(delegate_);
+        registry.setCommission(4000);
+
+        // 500 (== MAX_COMMISSION_INCREASE_PER_EPOCH) is accepted.
+        vm.prank(delegate_);
+        registry.setCommission(500);
+        assertEq(registry.commissionOf(delegate_), 500);
+    }
+
+    /// @notice ToB C-2 regression: first-set with NO inbound stake remains an
+    ///         uncapped announcement — preserves legitimate opening-rate UX.
+    function test_setCommission_firstSet_noDelegators_exemptFromCap() public {
+        // delegate_ has no delegators yet.
+        vm.prank(delegate_);
+        registry.setCommission(3000); // 30% first-set is fine.
+        assertEq(registry.commissionOf(delegate_), 3000);
+    }
 }

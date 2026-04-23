@@ -49,6 +49,12 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     uint256 public constant EPOCH_DURATION = 7 days;
     uint256 public constant MIN_COHORT_STAKE_AT_OPEN = 50_000 * 1e18;
     uint256 public constant MAX_APPROVERS_PER_PROPOSAL = 100;
+    /// @notice ToB I-2: upper bound on blockers per proposal. Caps the O(n)
+    ///         `BlockerAttributed` emit loop in `_emitBlockerAttribution` so
+    ///         `resolveReview` cannot be gas-DoS'd. Blockers beyond the cap
+    ///         revert at vote time; quorum math remains correct because
+    ///         `r.blockStakeWeight` only accumulates for successful pushes.
+    uint256 public constant MAX_BLOCKERS_PER_PROPOSAL = 100;
     uint256 public constant SWEEP_DELAY = 12 weeks;
     uint256 public constant LATE_VOTE_LOCKOUT_BPS = 1000;
     uint256 public constant MAX_REFUND_PER_EPOCH_BPS = 2000;
@@ -515,17 +521,24 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         if (newBps > old) {
             uint256 curEpoch = currentEpoch();
             (bool hasHistory,,) = _commissionCheckpoints[msg.sender].latestCheckpoint();
-            if (!hasHistory) {
-                // First-ever set: no rate limit — delegate is announcing their
-                // opening rate. Seed the baseline to `newBps` so any same-epoch
-                // raise is capped from this announced value.
+            // ToB review C-2: first-set is exempt from the raise cap ONLY
+            // if the delegate has no delegators yet. Previously first-set was
+            // unconditionally uncapped, allowing a delegate to accept
+            // delegations at implied 0% commission and then JIT-rug to 50% in
+            // the same block as `settledAt` — defeating rug-protection. By
+            // gating the exemption on `_delegatedInbound == 0`, legitimate
+            // delegates can still announce any opening rate before attracting
+            // delegators, but any post-delegation raise is rate-limited.
+            if (!hasHistory && _delegatedInbound[msg.sender] == 0) {
+                // Pure announcement: no delegators at risk, no cap.
                 _commissionEpochBaseline[msg.sender] = newBps;
                 _lastCommissionRaiseEpoch[msg.sender] = curEpoch;
             } else {
                 if (_lastCommissionRaiseEpoch[msg.sender] != curEpoch) {
-                    // Entering a new raise-epoch: re-anchor baseline to the
-                    // rate as of the PREVIOUS epoch's final state (via
-                    // checkpoint lookup at epochStart - 1).
+                    // New raise-epoch: re-anchor baseline to previous-epoch
+                    // final state. Lookup at epochStart - 1 excludes any
+                    // checkpoint pushed this epoch. First-set-with-delegators
+                    // (no prior checkpoint) yields baseline = 0.
                     uint256 epochStart = epochGenesis + curEpoch * EPOCH_DURATION;
                     uint256 probe = epochStart == 0 ? 0 : epochStart - 1;
                     _commissionEpochBaseline[msg.sender] =
@@ -806,10 +819,14 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
 
             uint128 weight = _voteStake[proposalId][msg.sender]; // preserved snapshot
             if (existing == GuardianVoteType.Approve) {
-                // Approve → Block: blocks uncapped, always succeeds.
+                // Approve → Block: check Block cap FIRST without mutating the
+                // old side (ToB I-2: blockers are now capped; preserve the
+                // check-first-then-apply semantics so a full Block side leaves
+                // the caller's Approve vote intact rather than dangling).
+                if (_blockers[proposalId].length >= MAX_BLOCKERS_PER_PROPOSAL) revert NewSideFull();
                 _removeApprover(proposalId, msg.sender);
                 r.approveStakeWeight -= weight;
-                _pushBlocker(proposalId, msg.sender);
+                _pushBlocker(proposalId, msg.sender); // guaranteed to fit (cap checked above)
                 r.blockStakeWeight += weight;
             } else {
                 // Block → Approve: check Approve cap FIRST without mutating
@@ -837,6 +854,13 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     }
 
     function _pushBlocker(uint256 proposalId, address g) private {
+        // ToB I-2: cap parallels MAX_APPROVERS_PER_PROPOSAL so the
+        // `BlockerAttributed` emit loop in `_emitBlockerAttribution` is
+        // O(MAX_BLOCKERS_PER_PROPOSAL) — bounded gas at `resolveReview`.
+        if (_blockers[proposalId].length >= MAX_BLOCKERS_PER_PROPOSAL) {
+            emit BlockerCapReached(proposalId);
+            revert NewSideFull();
+        }
         _blockers[proposalId].push(g);
         _blockerIndex[proposalId][g] = _blockers[proposalId].length; // 1-indexed
     }
@@ -1014,7 +1038,12 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         er.blockStakeWeight = 0;
         er.resolved = false;
         er.blocked = false;
-        er.openedAt = uint64(block.timestamp); // V1.5: vote-weight lookup anchor
+        // V1.5 + ToB review C-1: anchor at `block.timestamp - 1` so any
+        // delegation/stake action in the SAME block as openEmergencyReview
+        // cannot inflate the delegate's vote weight via a same-key checkpoint
+        // overwrite. Mirrors the governor's G-C1 pattern
+        // (`snapshotTimestamp = block.timestamp - 1`).
+        er.openedAt = block.timestamp == 0 ? 0 : uint64(block.timestamp - 1);
         unchecked {
             er.nonce++;
         }
@@ -1065,7 +1094,10 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
         r.opened = true;
         r.totalStakeAtOpen = totalAtOpen;
         r.totalDelegatedAtOpen = delegatedAtOpen;
-        r.openedAt = uint64(block.timestamp); // V1.5: freeze vote-weight timestamp
+        // V1.5 + ToB review C-1: anchor at `block.timestamp - 1`. See
+        // openEmergencyReview for rationale. Flash-delegation in the same
+        // block as openReview would otherwise inflate vote weight.
+        r.openedAt = block.timestamp == 0 ? 0 : uint64(block.timestamp - 1);
         if (combinedAtOpen < MIN_COHORT_STAKE_AT_OPEN) {
             r.cohortTooSmall = true;
             emit CohortTooSmallToReview(proposalId, uint128(combinedAtOpen));
@@ -1313,11 +1345,13 @@ contract GuardianRegistry is IGuardianRegistry, OwnableUpgradeable, UUPSUpgradea
     // `resolveReview`, plus `CommissionSet` + `DelegationIncreased` /
     // `DelegationUnstakeClaimed` events already emitted elsewhere.
 
-    /// @notice Permissionless — indexer helper for Merkl's epoch campaign.
+    /// @notice Minter-or-owner — indexer helper for Merkl's epoch campaign.
     ///         Caller transfers WOOD to the Merkl distributor separately (not
     ///         a function of the registry); this emits the event so indexers
-    ///         can correlate the deposit with an epoch ID.
-    function recordEpochBudget(uint256 epochId, uint256 amount) external {
+    ///         can correlate the deposit with an epoch ID. Gated to prevent
+    ///         permissionless spam from poisoning the Merkl attribution feed
+    ///         (ToB I-3).
+    function recordEpochBudget(uint256 epochId, uint256 amount) external onlyMinterOrOwner {
         emit EpochBudgetFunded(epochId, amount);
     }
 
