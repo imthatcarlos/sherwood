@@ -30,7 +30,7 @@ function makeGrid(overrides?: Partial<GridTokenState>): GridTokenState {
     token: 'bitcoin',
     levels: [],
     openFills: [],
-    allocation: 2100, // 60% of 3500
+    allocation: 1575, // 45% of 3500
     stats: emptyStats(),
     centerPrice: 85000,
     atr: 1200,
@@ -41,7 +41,7 @@ function makeGrid(overrides?: Partial<GridTokenState>): GridTokenState {
 function makeLevels(centerPrice: number, atr: number, config = DEFAULT_GRID_CONFIG): GridLevel[] {
   const range = atr * config.atrMultiplier;
   const spacing = range / config.levelsPerSide;
-  const quantity = (2100 * config.leverage) / (config.levelsPerSide * centerPrice);
+  const quantity = (1575 * config.leverage) / (config.levelsPerSide * centerPrice);
   const levels: GridLevel[] = [];
   for (let i = 1; i <= config.levelsPerSide; i++) {
     levels.push({ price: centerPrice - spacing * i, side: 'buy', quantity, filled: false, filledAt: 0 });
@@ -53,11 +53,11 @@ function makeLevels(centerPrice: number, atr: number, config = DEFAULT_GRID_CONF
 }
 
 describe('Grid level computation', () => {
-  it('creates correct number of levels (10 buy + 10 sell)', () => {
+  it('creates correct number of levels (15 buy + 15 sell)', () => {
     const levels = makeLevels(85000, 1200);
-    expect(levels.length).toBe(20);
-    expect(levels.filter(l => l.side === 'buy').length).toBe(10);
-    expect(levels.filter(l => l.side === 'sell').length).toBe(10);
+    expect(levels.length).toBe(30);
+    expect(levels.filter(l => l.side === 'buy').length).toBe(15);
+    expect(levels.filter(l => l.side === 'sell').length).toBe(15);
   });
 
   it('buy levels are below center, sell levels above', () => {
@@ -71,7 +71,7 @@ describe('Grid level computation', () => {
   it('levels are evenly spaced', () => {
     const levels = makeLevels(85000, 1200);
     const buys = levels.filter(l => l.side === 'buy').sort((a, b) => b.price - a.price);
-    const spacing = 1200 * 2 / 10; // ATR * multiplier / levelsPerSide = 240
+    const spacing = 1200 * 2 / 15; // ATR * multiplier / levelsPerSide = 160
     for (let i = 1; i < buys.length; i++) {
       expect(buys[i - 1]!.price - buys[i]!.price).toBeCloseTo(spacing, 4);
     }
@@ -79,8 +79,8 @@ describe('Grid level computation', () => {
 
   it('quantity reflects leverage and allocation', () => {
     const levels = makeLevels(85000, 1200);
-    // (2100 * 3) / (10 * 85000) = 0.007412
-    const expectedQty = (2100 * 3) / (10 * 85000);
+    // (1575 * 4) / (15 * 85000) = 0.004941
+    const expectedQty = (1575 * 4) / (15 * 85000);
     expect(levels[0]!.quantity).toBeCloseTo(expectedQty, 6);
   });
 
@@ -101,7 +101,7 @@ describe('Grid fill simulation', () => {
   it('buy level fills when price drops to level price', () => {
     const grid = makeGrid();
     grid.levels = makeLevels(85000, 1200);
-    const buyLevel = grid.levels.find(l => l.side === 'buy' && l.price > 84700)!;
+    const buyLevel = grid.levels.find(l => l.side === 'buy' && l.price > 84800)!;
 
     // Simulate: price drops to exactly the buy level
     // (Inline simulation — the real GridManager.simulateFills is private,
@@ -117,7 +117,7 @@ describe('Grid fill simulation', () => {
       grid.openFills.push({
         token: 'bitcoin',
         buyPrice: buyLevel.price,
-        targetSellPrice: buyLevel.price + 240, // spacing
+        targetSellPrice: buyLevel.price + 160, // spacing (ATR*2/15)
         quantity: buyLevel.quantity,
         filledAt: Date.now(),
         closed: false,
@@ -132,15 +132,15 @@ describe('Grid fill simulation', () => {
 
   it('round-trip completes when sell fills above a prior buy', () => {
     const grid = makeGrid();
-    const spacing = 240;
-    const buyPrice = 84760;
+    const spacing = 160; // ATR*2/15
+    const buyPrice = 84840;
     const sellPrice = buyPrice + spacing; // 85000
 
     grid.openFills.push({
       token: 'bitcoin',
       buyPrice,
       targetSellPrice: sellPrice,
-      quantity: 0.0074,
+      quantity: 0.0049,
       filledAt: Date.now() - 60000,
       closed: false,
       pnlUsd: 0,
@@ -148,42 +148,43 @@ describe('Grid fill simulation', () => {
     });
 
     // Simulate sell fill
-    const profit = (sellPrice - buyPrice) * 0.0074 * 3; // leverage = 3
+    const profit = (sellPrice - buyPrice) * 0.0049 * 4; // leverage = 4
     grid.openFills[0]!.closed = true;
     grid.openFills[0]!.pnlUsd = profit;
 
-    expect(profit).toBeCloseTo(240 * 0.0074 * 3, 2); // ~$5.33
+    expect(profit).toBeCloseTo(160 * 0.0049 * 4, 2); // ~$3.14
     expect(profit).toBeGreaterThan(DEFAULT_GRID_CONFIG.minProfitPerFillUsd);
   });
 
   it('multi-level sweep fills all crossed levels', () => {
     const grid = makeGrid();
     grid.levels = makeLevels(85000, 1200);
-    const currentPrice = 84000; // drops through 4 buy levels
+    const currentPrice = 84000; // drops through buy levels
 
     const filledBuys = grid.levels.filter(
       l => l.side === 'buy' && !l.filled && currentPrice <= l.price,
     );
-    // Price at 84000 crosses: 84760, 84520, 84280, 84040
-    expect(filledBuys.length).toBe(4);
+    // With 15 levels, spacing=160: levels at 84840, 84680, 84520, 84360, 84200, 84040
+    // Price at 84000 crosses 6 levels
+    expect(filledBuys.length).toBe(6);
   });
 });
 
 describe('Grid rebalance logic', () => {
-  it('detects drift past 70% threshold', () => {
+  it('detects drift past 55% threshold', () => {
     const grid = makeGrid({ centerPrice: 85000, atr: 1200 });
     const range = 1200 * 2; // 2400
-    const driftThreshold = range * 0.70; // 1680
+    const driftThreshold = range * DEFAULT_GRID_CONFIG.rebalanceDriftPct; // 0.55 * 2400 = 1320
 
-    // Price drifted 1700 from center — past 70%
-    const priceFar = 85000 + 1700;
+    // Price drifted 1400 from center — past 55%
+    const priceFar = 85000 + 1400;
     const distFromCenter = Math.abs(priceFar - grid.centerPrice);
-    expect(distFromCenter / range).toBeGreaterThanOrEqual(0.70);
+    expect(distFromCenter / range).toBeGreaterThanOrEqual(DEFAULT_GRID_CONFIG.rebalanceDriftPct);
 
-    // Price drifted only 1000 — not past 70%
+    // Price drifted 1000 — not past 55%
     const priceNear = 85000 + 1000;
     const distNear = Math.abs(priceNear - grid.centerPrice);
-    expect(distNear / range).toBeLessThan(0.70);
+    expect(distNear / range).toBeLessThan(DEFAULT_GRID_CONFIG.rebalanceDriftPct);
   });
 
   it('full rebuild triggers after 12h', () => {
@@ -209,16 +210,18 @@ describe('Grid capital isolation', () => {
 
     const btcAlloc = gridAlloc * DEFAULT_GRID_CONFIG.tokenSplit.bitcoin!;
     const ethAlloc = gridAlloc * DEFAULT_GRID_CONFIG.tokenSplit.ethereum!;
-    expect(btcAlloc).toBe(3000);
-    expect(ethAlloc).toBe(2000);
-    expect(btcAlloc + ethAlloc).toBe(gridAlloc);
+    const solAlloc = gridAlloc * DEFAULT_GRID_CONFIG.tokenSplit.solana!;
+    expect(btcAlloc).toBe(2250);   // 45%
+    expect(ethAlloc).toBe(1500);   // 30%
+    expect(solAlloc).toBe(1250);   // 25%
+    expect(btcAlloc + ethAlloc + solAlloc).toBe(gridAlloc);
   });
 
   it('profits compound in grid pool', () => {
-    const grid = makeGrid({ allocation: 2100 });
+    const grid = makeGrid({ allocation: 1575 });
     const profit = 12.50;
     grid.allocation += profit;
-    expect(grid.allocation).toBe(2112.50);
+    expect(grid.allocation).toBe(1587.50);
   });
 
   it('pause threshold detects 20% drop', () => {

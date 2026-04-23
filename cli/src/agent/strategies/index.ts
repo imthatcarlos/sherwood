@@ -27,10 +27,13 @@ export { PredictionMarketStrategy, SocialVolumeStrategy };
 export { KronosVolForecastStrategy };
 
 export const DEFAULT_STRATEGIES: Strategy[] = [
-  new SentimentContrarianStrategy(),    // sentiment — F&G contrarian
+  // SentimentContrarianStrategy removed from default list — fires only at F&G
+  // extremes (<25 or >75), returns zero 85% of the time, wasting 20% of sentiment
+  // weight budget. Re-enable via config when F&G regime is extreme.
   new BreakoutOnChainStrategy(),        // technical — breakout + volume
   new FundingRateStrategy(),            // onchain — HL funding rates
-  new DexFlowStrategy(),                // onchain — DEX activity
+  // DexFlowStrategy disabled — our tokens (BTC, SOL, HYPE, FARTCOIN) trade on
+  // CEXes, not EVM DEXes. DEXScreener returns 0 txns/hr for most tokens.
   new HyperliquidFlowStrategy(),        // onchain — HL flow/OI/orderbook
   new MultiTimeframeStrategy(),         // technical — multi-TF EMA alignment
   new CrossSectionalMomentumStrategy(), // technical — relative strength ranking
