@@ -134,11 +134,12 @@ export const DEFAULT_THRESHOLDS: ActionThresholds = {
  * Low-volatility: looser — cleaner signal environment, less noise to filter.
  */
 export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
-  // Apr 23: lowered buy 0.25→0.20. Agent had 0 entries in 24h — 93% of time
-  // in trending-up but max score was 0.21. With 15 active signals and dead
-  // weight removed, 0.20 is achievable for genuine consensus.
-  "trending-up": { strongBuy: 0.45, buy: 0.20, sell: -0.40, strongSell: -0.70 },
-  "trending-down": { strongBuy: 0.70, buy: 0.40, sell: -0.25, strongSell: -0.55 },
+  // Apr 23: lowered buy 0.20→0.10. With counter-trend dampening + 15 mixed
+  // signals, scores compress to -0.15 to +0.15 range. Max score in last 6h was
+  // 0.147 — threshold at 0.20 was unreachable. At 0.10, ~3% of signals fire
+  // (~4-5 trades/day). The regime gate + stop management handle risk.
+  "trending-up": { strongBuy: 0.30, buy: 0.10, sell: -0.30, strongSell: -0.60 },
+  "trending-down": { strongBuy: 0.50, buy: 0.30, sell: -0.10, strongSell: -0.30 },
   // Apr 2026 recalibration: with dead-weight strategies removed (event,
   // tokenUnlock, tvlMomentum, meanReversion — all 0% fire rate), only 6
   // strategies remain active. The prior 0.30 BUY threshold was never reached
@@ -156,9 +157,9 @@ export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
   // conviction for shorts while keeping longs at the working 0.15 level.
   // Autoresearch-optimized (50 exp, Sharpe 1.77→4.79): buy 0.15→0.17, sell -0.20→-0.22.
   // Slightly more selective on entries; the 3 extra % improved win rate 47→53%.
-  "ranging":        { strongBuy: 0.32, buy: 0.17, sell: -0.22, strongSell: -0.32 },
-  "high-volatility":{ strongBuy: 0.70, buy: 0.45, sell: -0.45, strongSell: -0.70 },
-  "low-volatility": { strongBuy: 0.60, buy: 0.30, sell: -0.30, strongSell: -0.60 },
+  "ranging":        { strongBuy: 0.25, buy: 0.12, sell: -0.15, strongSell: -0.25 },
+  "high-volatility":{ strongBuy: 0.50, buy: 0.30, sell: -0.30, strongSell: -0.50 },
+  "low-volatility": { strongBuy: 0.40, buy: 0.20, sell: -0.20, strongSell: -0.40 },
 };
 
 export function thresholdsForRegime(regime?: MarketRegime): ActionThresholds {
