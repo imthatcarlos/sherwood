@@ -34,31 +34,31 @@ export interface StrategyParams {
   // Thresholds
   buyThreshold: number;
   sellThreshold: number;
-  // Exit params
+  // Exit params (in price-move terms, NOT leveraged)
   stopLossPct: number;
   takeProfitRR: number;   // R:R multiplier on stop → TP = stop * this
   trailPct: number;
   timeStopHours: number;
-  // RSI period (key finding from Nunchi: 8 > 14)
-  // Note: this doesn't affect replay since signal-history already captured RSI values.
-  // It's tracked for documentation but the RSI in the signals is baked in at capture time.
+  /** Leverage multiplier — PnL = raw price move × leverage. */
+  leverage: number;
 }
 
 const DEFAULT_PARAMS: StrategyParams = {
   weights: {
-    smartMoney: 0.10,
-    technical: 0.25,
-    sentiment: 0.15,
+    smartMoney: 0.05,
+    technical: 0.35,
+    sentiment: 0.10,
     onchain: 0.20,
-    fundamental: 0.05,
-    event: 0.00,
+    fundamental: 0.15,
+    event: 0.15,
   },
-  buyThreshold: 0.15,
-  sellThreshold: -0.20,
-  stopLossPct: 0.05,
-  takeProfitRR: 2.0,
+  buyThreshold: 0.17,
+  sellThreshold: -0.22,
+  stopLossPct: 0.04,    // 4% price move (matches executor STOP_FLOOR)
+  takeProfitRR: 1.5,    // 1.5:1 R:R (matches executor)
   trailPct: 0.04,
-  timeStopHours: 48,
+  timeStopHours: 96,    // matches risk.ts time stop
+  leverage: 3,           // matches DIRECTIONAL_LEVERAGE
 };
 
 // ── Scoring ──
@@ -129,15 +129,19 @@ function scoreParams(
         if (isShort && price < position.extreme) position.extreme = price;
         if (!isShort && price > position.extreme) position.extreme = price;
 
-        const pnl = isShort
+        // Raw price move (before leverage) — used for stop/TP checks
+        const rawPnl = isShort
           ? (position.entryPrice - price) / position.entryPrice
           : (price - position.entryPrice) / position.entryPrice;
+        // Leveraged PnL — actual return on capital
+        const pnl = rawPnl * params.leverage;
         const hours = (ts - position.entryTs) / 3600000;
 
+        // Stop/TP are in price-move terms (not leveraged)
         const tpPct = params.stopLossPct * params.takeProfitRR;
         let exit = false;
-        if (pnl <= -params.stopLossPct) exit = true;
-        else if (pnl >= tpPct) exit = true;
+        if (rawPnl <= -params.stopLossPct) exit = true;
+        else if (rawPnl >= tpPct) exit = true;
         else if (params.trailPct > 0 && (isShort
           ? price >= position.extreme * (1 + params.trailPct)
           : price <= position.extreme * (1 - params.trailPct))) exit = true;
@@ -164,9 +168,10 @@ function scoreParams(
     }
   }
 
-  // Compute metrics — require 20+ trades for statistical significance.
-  // Prior threshold of 5 produced meaningless Sharpe ratios.
-  if (totalTrades < 20) {
+  // Compute metrics — require minimum trades for statistical significance.
+  // Lower threshold during early exploration (5 trades); raise to 20+ once
+  // we have weeks of signal data under the new stack.
+  if (totalTrades < 5) {
     return { sharpe: -999, totalReturn: 0, maxDrawdown: 1, trades: totalTrades, winRate: 0, score: -999 };
   }
 
@@ -236,6 +241,15 @@ const MUTATIONS: Array<{ name: string; mutate: (p: StrategyParams) => StrategyPa
   { name: 'longer_time_stop', mutate: p => ({ ...p, timeStopHours: Math.min(96, p.timeStopHours + 12) }) },
   { name: 'shorter_time_stop', mutate: p => ({ ...p, timeStopHours: Math.max(12, p.timeStopHours - 12) }) },
   { name: 'disable_time_stop', mutate: p => ({ ...p, timeStopHours: 999 }) },
+
+  // Leverage mutations
+  { name: 'increase_leverage', mutate: p => ({ ...p, leverage: Math.min(5, p.leverage + 1) }) },
+  { name: 'decrease_leverage', mutate: p => ({ ...p, leverage: Math.max(1, p.leverage - 1) }) },
+
+  // Fundamental/event weight mutations (newly active categories)
+  { name: 'boost_fundamental', mutate: p => ({ ...p, weights: { ...p.weights, fundamental: Math.min(0.30, p.weights.fundamental + 0.05) } }) },
+  { name: 'boost_event', mutate: p => ({ ...p, weights: { ...p.weights, event: Math.min(0.25, p.weights.event + 0.05) } }) },
+  { name: 'reduce_event', mutate: p => ({ ...p, weights: { ...p.weights, event: Math.max(0.0, p.weights.event - 0.05) } }) },
 ];
 
 // ── Signal history row type (matches signal-logger output) ──

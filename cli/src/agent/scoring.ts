@@ -134,7 +134,10 @@ export const DEFAULT_THRESHOLDS: ActionThresholds = {
  * Low-volatility: looser — cleaner signal environment, less noise to filter.
  */
 export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
-  "trending-up": { strongBuy: 0.55, buy: 0.25, sell: -0.40, strongSell: -0.70 },
+  // Apr 23: lowered buy 0.25→0.20. Agent had 0 entries in 24h — 93% of time
+  // in trending-up but max score was 0.21. With 15 active signals and dead
+  // weight removed, 0.20 is achievable for genuine consensus.
+  "trending-up": { strongBuy: 0.45, buy: 0.20, sell: -0.40, strongSell: -0.70 },
   "trending-down": { strongBuy: 0.70, buy: 0.40, sell: -0.25, strongSell: -0.55 },
   // Apr 2026 recalibration: with dead-weight strategies removed (event,
   // tokenUnlock, tvlMomentum, meanReversion — all 0% fire rate), only 6
