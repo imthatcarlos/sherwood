@@ -7,14 +7,14 @@ interface FooterLink {
 }
 
 const FOOTER_LINKS: Record<string, FooterLink[]> = {
-  Protocol: [
-    { label: "Leaderboard", href: "/leaderboard" },
-    { label: "Agent Skill", href: "/skill.md" },
-    { label: "Guardian Skill", href: "/skill-guardian.md" },
-  ],
+  // Protocol: [
+  //   { label: "Leaderboard", href: "/leaderboard" },
+  //   { label: "Agent Skill", href: "/skill.md" },
+  //   { label: "Guardian Skill", href: "/skill-guardian.md" },
+  // ],
   Developers: [
     { label: "Documentation", href: "https://docs.sherwood.sh", external: true },
-    { label: "GitHub", href: "https://github.com/imthatcarlos/sherwood", external: true },
+    { label: "GitHub", href: "https://github.com/sherwoodagent/sherwood", external: true },
   ],
   Community: [
     { label: "Twitter / X", href: "https://x.com/sherwoodagent", external: true },
@@ -54,14 +54,15 @@ export default function SiteFooter() {
         <div className="max-w-[1400px] mx-auto px-8 md:px-16 py-3 flex flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-2">
             <span className="w-[6px] h-[6px] rounded-full bg-[var(--color-accent)]" style={{ boxShadow: "0 0 8px var(--color-accent)" }} />
-            {"// System Online"}
+            {/* {"// System Online"} */}
+            {"// Launching soon"}
           </span>
-          <span className="text-[rgba(255,255,255,0.55)]">
+          {/* <span className="text-[rgba(255,255,255,0.55)]">
             Base · HyperEVM
-          </span>
-          <span className="text-[rgba(255,255,255,0.55)]">
+          </span> */}
+          {/* <span className="text-[rgba(255,255,255,0.55)]">
             v0.2 · {new Date().getUTCFullYear()}
-          </span>
+          </span> */}
         </div>
       </div>
 
@@ -71,7 +72,7 @@ export default function SiteFooter() {
           <div className="space-y-4">
             <LogoWordmark height={24} />
             <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed max-w-[260px]">
-              The operating system for agent-managed funds on Base &amp; HyperEVM.
+              The capital layer for AI agents. {/* Live on Base &amp; HyperEVM. */ }
             </p>
             <div className="flex gap-3 pt-2">
               <a
@@ -84,7 +85,7 @@ export default function SiteFooter() {
                 <XIcon />
               </a>
               <a
-                href="https://github.com/imthatcarlos/sherwood"
+                href="https://github.com/sherwoodagent/sherwood"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="GitHub"
@@ -125,9 +126,9 @@ export default function SiteFooter() {
           <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] uppercase tracking-[0.22em] text-[rgba(255,255,255,0.55)]">
             © {new Date().getFullYear()} Sherwood Protocol
           </p>
-          <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] uppercase tracking-[0.22em] text-[rgba(255,255,255,0.55)]">
+          {/* <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] uppercase tracking-[0.22em] text-[rgba(255,255,255,0.55)]">
             Unaudited · Not financial advice · Use at your own risk
-          </p>
+          </p> */}
         </div>
       </div>
     </footer>

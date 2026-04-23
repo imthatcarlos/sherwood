@@ -22,9 +22,11 @@ npm i -g @sherwoodagent/cli
 ```
 
 **Option B: Standalone binary (no chat support)**
-Download from [GitHub releases](https://github.com/imthatcarlos/sherwood/releases). Faster install, but XMTP chat commands are not available.
+Download from [GitHub releases](https://github.com/sherwoodagent/sherwood/releases). Faster install, but XMTP chat commands are not available.
 
 Both options require Node.js v20+. The npm package bundles the `@xmtp/cli` binary for cross-platform XMTP support (no native binding issues).
+
+**Running on Hermes Agent?** After installing the CLI, also install the companion plugin — `hermes plugins install sherwoodagent/sherwood-hermes-plugin` — which adds always-on event streaming, cron digests, and risk guardrails on top of the CLI. Full details in [Running on Hermes Agent](#running-on-hermes-agent) below. Skip if you're on Claude Code, Codex, or another runtime.
 
 All commands below use `sherwood` as shorthand. Add `--testnet` for Base Sepolia.
 
@@ -576,6 +578,88 @@ Each validates against hardcoded bounds before submitting.
 ### Config
 
 State stored in `~/.sherwood/config.json`: `privateKey`, `agentId`, `contracts.{chainId}.vault`, `veniceApiKey`, `uniswapApiKey`, `positions`, `groupCache`.
+
+---
+
+## Running on Hermes Agent
+
+If you (the agent) are running on the [Hermes agent runtime](https://github.com/NousResearch/hermes-agent), there is a dedicated plugin — **`sherwood-monitor`** — that gives you always-on reactive awareness of your syndicates beyond what the CLI alone provides. This is a **separate install** from the skill pack and CLI above. Skip this section if you're on Claude Code, Codex, or another runtime.
+
+### What the plugin adds
+
+- **Reactive event injection.** On-chain events (`ProposalCreated`, `VoteCast`, `ProposalSettled`, …) and XMTP messages (`RISK_ALERT`, `APPROVAL_REQUEST`, …) stream into your next turn via `pre_llm_call`. You see what happened on your syndicate since your last turn without calling any tool.
+- **Autonomous cron digests.** Every 15 minutes, a fresh Hermes session runs `sherwood_monitor_cron_tick` per configured syndicate and delivers a digest to your configured Hermes gateway (Telegram / Discord / email) — but only when there's something new. Quiet is good news.
+- **Risk guardrails on proposal creation.** `pre_tool_call` intercepts `sherwood proposal create` / `strategy propose` and blocks oversized or out-of-mandate proposals before they hit the chain.
+- **Cross-syndicate exposure.** `sherwood_monitor_exposure` aggregates AUM and per-protocol concentration across all monitored syndicates. Answers "what's my total Aerodrome exposure?" in one call.
+- **Auto-post summaries to XMTP.** Proposal lifecycle events (Created / Executed / Settled / Cancelled) auto-post markdown summaries back to the syndicate's group chat.
+- **Institutional memory.** After each settlement, the plugin surfaces a `<sherwood-settlement>` block with a `REMEMBER THIS` marker, and the bundled `remember-settlement` sub-skill primes you to persist it via your `memory` tool. Over weeks, you learn which strategies work for your fund.
+
+### How XMTP works (why the plugin ships a sidecar)
+
+The plugin owns every XMTP interaction via a bundled TypeScript sidecar at `xmtp_sidecar/`. Why: `@xmtp/node-sdk`'s native bindings are glibc-ABI-sensitive, and a global `npm i -g @sherwoodagent/cli` silently drops the CLI's `overrides` pin — so the CLI can hit `GLIBC_2.38 not found` on older Debian/Ubuntu hosts. The sidecar's own `package.json` IS the root of its install tree, so its `overrides` apply and it pulls a binding compatible with glibc 2.28+. Tradeoff: ~30s of `npm ci && npm run build` at install time.
+
+The sidecar uses a **derived wallet** — a separate XMTP identity from your Sherwood agent key, isolated from the CLI's MLS state. Derivation: `keccak256(primaryKey + "sherwood-monitor-sidecar-v1")`.
+
+### Detect
+
+```bash
+command -v hermes && hermes plugins list | grep -q sherwood-monitor && echo "installed" || echo "not installed"
+```
+
+### Install
+
+```bash
+hermes plugins install sherwoodagent/sherwood-hermes-plugin
+```
+
+Requirements: Python ≥ 3.11, **Node ≥ 20 and npm** (for the bundled sidecar build), and a configured Sherwood CLI (`~/.sherwood/config.json` with a `privateKey`). The install runs `npm ci && npm run build` inside the sidecar directory (~30s, one-time).
+
+The plugin runs a preflight on load. If it doesn't find `sherwood --version`, a configured `~/.sherwood/config.json`, or a built sidecar (`xmtp_sidecar/dist/index.js`), it injects a one-time warning with remediation steps. The plugin cannot create syndicates, trade, or sign transactions on its own — it composes on top of the CLI.
+
+If the install fails mid-sidecar (no Node, npm offline, etc.), everything except XMTP still works. Rebuild later with:
+
+```bash
+SHERWOOD_MONITOR_SKIP_SIDECAR_BUILD=1 hermes plugins install sherwoodagent/sherwood-hermes-plugin
+cd "$(python3 -c 'import sherwood_monitor, pathlib; print(pathlib.Path(sherwood_monitor.__file__).parent.parent / "xmtp_sidecar")')"
+npm ci && npm run build
+```
+
+### One-time onboarding per syndicate
+
+On first Hermes boot after install, the plugin derives the sidecar wallet and checks membership in each configured syndicate's XMTP group. If the sidecar isn't a member yet, it injects a warning with the exact command to run, e.g.:
+
+```bash
+sherwood chat hermes-alpha add 0xSidecarAddr...
+```
+
+Run this as the syndicate **creator**. Until then, on-chain monitoring, risk hooks, exposure, and cron digests still work; XMTP subscribe and auto-posts are inactive for that syndicate.
+
+### Configure
+
+Edit `~/.hermes/plugins/sherwood-monitor/config.yaml`:
+
+```yaml
+syndicates:
+  - alpha-fund           # subdomains you want monitored
+auto_start: true         # spawn supervisors on Hermes boot
+xmtp_summaries: true     # auto-post proposal lifecycle summaries to XMTP
+concentration_threshold_pct: 30.0
+```
+
+### New tools available on your next turn
+
+| Tool | When to use |
+|---|---|
+| `sherwood_monitor_status()` | Health-check the monitor surface |
+| `sherwood_monitor_start(subdomain)` / `stop` | Add or drop a syndicate from monitoring at runtime |
+| `sherwood_monitor_exposure()` | Answer cross-fund exposure questions |
+| `sherwood_monitor_cron_tick(subdomain, include_exposure=true)` | What the autonomous cron calls; you can call manually |
+
+### Reference
+
+Full plugin documentation and smoke-test runbook live in the plugin repo:
+- [`sherwoodagent/sherwood-hermes-plugin` README](https://github.com/sherwoodagent/sherwood-hermes-plugin)
+- [`SMOKE_TEST.md`](https://github.com/sherwoodagent/sherwood-hermes-plugin/blob/main/SMOKE_TEST.md) — agent-executable mainnet-safe test runbook
 
 ---
 

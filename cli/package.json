@@ -7,14 +7,15 @@
     "sherwood": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "scripts/pin-xmtp-bindings.cjs"
   ],
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/imthatcarlos/sherwood.git",
+    "url": "https://github.com/sherwoodagent/sherwood.git",
     "directory": "cli"
   },
   "license": "MIT",
@@ -27,7 +28,8 @@
     "test": "vitest run",
     "test:unit": "vitest run --config vitest.config.unit.ts",
     "test:integration": "vitest run --config vitest.config.integration.ts",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "node scripts/pin-xmtp-bindings.cjs"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.3.2",
