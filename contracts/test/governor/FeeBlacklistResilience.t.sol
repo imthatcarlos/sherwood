@@ -186,9 +186,7 @@ contract FeeBlacklistResilienceTest is Test {
         assertEq(usdc.balanceOf(agent), agentBalBefore + 1_470e6, "agent fee paid");
         assertEq(usdc.balanceOf(owner), ownerBalBefore + 41_650000, "mgmt fee paid");
         assertEq(usdc.balanceOf(protocolRecipient), 0, "protocol recipient unpaid");
-        assertEq(
-            governor.unclaimedFees(address(vault), protocolRecipient, address(usdc)), 200e6, "escrowed amount"
-        );
+        assertEq(governor.unclaimedFees(address(vault), protocolRecipient, address(usdc)), 200e6, "escrowed amount");
 
         // Strategy is Settled.
         assertEq(

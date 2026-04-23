@@ -353,9 +353,7 @@ contract GuardianRegistryProposalRewardTest is Test {
         vm.prank(approver);
         registry.claimProposalReward(PID);
 
-        assertEq(
-            registry.unclaimedApproverFees(keccak256(abi.encode(PID, approver, address(usdc)))), FEE_AMOUNT
-        );
+        assertEq(registry.unclaimedApproverFees(keccak256(abi.encode(PID, approver, address(usdc)))), FEE_AMOUNT);
     }
 
     function test_flushUnclaimedApproverFee_retriesAfterUnblacklist() public {
@@ -396,8 +394,6 @@ contract GuardianRegistryProposalRewardTest is Test {
         registry.flushUnclaimedApproverFee(9999, approver, address(usdc));
 
         // Original escrow still intact.
-        assertEq(
-            registry.unclaimedApproverFees(keccak256(abi.encode(PID, approver, address(usdc)))), FEE_AMOUNT
-        );
+        assertEq(registry.unclaimedApproverFees(keccak256(abi.encode(PID, approver, address(usdc)))), FEE_AMOUNT);
     }
 }

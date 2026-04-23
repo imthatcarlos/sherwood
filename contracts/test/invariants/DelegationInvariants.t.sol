@@ -58,7 +58,17 @@ contract DelegationInvariantsTest is StdInvariant, Test {
         GuardianRegistry impl = new GuardianRegistry();
         bytes memory initData = abi.encodeCall(
             GuardianRegistry.initialize,
-            (owner, mockGovernor, mockFactory, address(wood), MIN_STAKE, MIN_STAKE, COOL_DOWN, REVIEW_PERIOD, BLOCK_QUORUM_BPS)
+            (
+                owner,
+                mockGovernor,
+                mockFactory,
+                address(wood),
+                MIN_STAKE,
+                MIN_STAKE,
+                COOL_DOWN,
+                REVIEW_PERIOD,
+                BLOCK_QUORUM_BPS
+            )
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
 
@@ -92,9 +102,7 @@ contract DelegationInvariantsTest is StdInvariant, Test {
             for (uint256 j = 0; j < ds.length; j++) {
                 sum += registry.delegationOf(ds[j], gs[i]);
             }
-            assertEq(
-                registry.delegatedInbound(gs[i]), sum, "INV-V1.5-1: inbound != sum(delegations) for this delegate"
-            );
+            assertEq(registry.delegatedInbound(gs[i]), sum, "INV-V1.5-1: inbound != sum(delegations) for this delegate");
         }
     }
 
@@ -106,9 +114,7 @@ contract DelegationInvariantsTest is StdInvariant, Test {
         for (uint256 i = 0; i < gs.length; i++) {
             sum += registry.delegatedInbound(gs[i]);
         }
-        assertEq(
-            registry.totalDelegatedStake(), sum, "INV-V1.5-1g: totalDelegatedStake != sum(inbound)"
-        );
+        assertEq(registry.totalDelegatedStake(), sum, "INV-V1.5-1g: totalDelegatedStake != sum(inbound)");
     }
 
     /// @notice INV-V1.5-4 WOOD custody: registry's WOOD balance must cover
@@ -125,8 +131,12 @@ contract DelegationInvariantsTest is StdInvariant, Test {
         // Prepared owner stakes — delegators could in principle have called
         // `prepareOwnerStake`; handler doesn't drive that path, but we include
         // the term defensively.
-        for (uint256 i = 0; i < gs.length; i++) obligations += registry.preparedStakeOf(gs[i]);
-        for (uint256 i = 0; i < ds.length; i++) obligations += registry.preparedStakeOf(ds[i]);
+        for (uint256 i = 0; i < gs.length; i++) {
+            obligations += registry.preparedStakeOf(gs[i]);
+        }
+        for (uint256 i = 0; i < ds.length; i++) {
+            obligations += registry.preparedStakeOf(ds[i]);
+        }
 
         uint256 bal = wood.balanceOf(address(registry));
         assertGe(bal, obligations, "INV-V1.5-4: registry WOOD balance < obligations");
