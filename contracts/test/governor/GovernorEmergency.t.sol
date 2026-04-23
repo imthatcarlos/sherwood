@@ -55,7 +55,6 @@ contract GovernorEmergencyTest is Test {
     uint256 constant VETO_THRESHOLD_BPS = 4000;
     uint256 constant MAX_PERF_FEE_BPS = 3000;
     uint256 constant COOLDOWN_PERIOD = 1 days;
-    uint256 constant PARAM_CHANGE_DELAY = 1 days;
 
     uint256 constant MIN_GUARDIAN_STAKE = 10_000e18;
     uint256 constant MIN_OWNER_STAKE = 10_000e18;
@@ -115,9 +114,9 @@ contract GovernorEmergencyTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: 30 days,
-                    parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
-                    protocolFeeRecipient: address(0)
+                    protocolFeeRecipient: address(0),
+                    guardianFeeBps: 0
                 }),
                 predictedRegistryProxy
             )

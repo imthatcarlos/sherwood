@@ -81,7 +81,6 @@ contract GuardianRegistryStakeTest is Test {
         assertEq(registry.guardianStake(alice), 10_000e18);
         assertEq(registry.totalGuardianStake(), 10_000e18);
         assertTrue(registry.isActiveGuardian(alice));
-        assertEq(registry.activeGuardianCount(), 1);
     }
 
     function test_stakeAsGuardian_topUp_accumulates_ignoresAgentIdChange() public {
@@ -91,7 +90,6 @@ contract GuardianRegistryStakeTest is Test {
         registry.stakeAsGuardian(5_000e18, 99); // different agentId should be ignored
         assertEq(registry.guardianStake(alice), 15_000e18);
         assertEq(registry.totalGuardianStake(), 15_000e18);
-        assertEq(registry.activeGuardianCount(), 1); // still one guardian
         // TODO: if an agentId view is added, assert it's still 42
     }
 
@@ -119,6 +117,54 @@ contract GuardianRegistryStakeTest is Test {
         registry.stakeAsGuardian(10_000e18, 42);
         assertEq(wood.balanceOf(alice), balBefore - 10_000e18);
         assertEq(wood.balanceOf(address(registry)), 10_000e18);
+    }
+
+    // ── V1.5: checkpoint + getPastStake ──
+
+    /// @notice Stake → top-up → partial state ops all push checkpoints that
+    ///         `getPastStake` resolves historically. Closes the top-up-bias
+    ///         vector: a guardian topping up after review-open reads the
+    ///         pre-topup amount at the earlier timestamp.
+    function test_getPastStake_returnsHistoricalValue() public {
+        vm.prank(alice);
+        registry.stakeAsGuardian(10_000e18, 42);
+        uint256 t1 = vm.getBlockTimestamp();
+
+        vm.warp(vm.getBlockTimestamp() + 1 days);
+        vm.prank(alice);
+        registry.stakeAsGuardian(5_000e18, 42);
+        uint256 t2 = vm.getBlockTimestamp();
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        assertEq(registry.getPastStake(alice, t1), 10_000e18, "at t1: first stake only");
+        assertEq(registry.getPastStake(alice, t2), 15_000e18, "at t2: after top-up");
+    }
+
+    function test_getPastStake_zeroAfterRequestUnstake() public {
+        vm.prank(alice);
+        registry.stakeAsGuardian(10_000e18, 42);
+        uint256 t1 = vm.getBlockTimestamp();
+
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        vm.prank(alice);
+        registry.requestUnstakeGuardian();
+        uint256 t2 = vm.getBlockTimestamp();
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        assertEq(registry.getPastStake(alice, t1), 10_000e18, "active at t1");
+        assertEq(registry.getPastStake(alice, t2), 0, "0 at unstake-request time (not votable)");
+    }
+
+    function test_getPastTotalStake_tracksAggregate() public {
+        vm.prank(alice);
+        registry.stakeAsGuardian(10_000e18, 42);
+        uint256 t1 = vm.getBlockTimestamp();
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        assertEq(registry.getPastTotalStake(t1), 10_000e18, "aggregate matches total after first stake");
     }
 }
 
@@ -152,7 +198,6 @@ contract GuardianRegistryUnstakeTest is Test {
     function test_requestUnstake_removesVotingPower() public {
         assertTrue(registry.isActiveGuardian(alice));
         assertEq(registry.totalGuardianStake(), 10_000e18);
-        assertEq(registry.activeGuardianCount(), 1);
 
         vm.expectEmit(true, false, false, true);
         emit IGuardianRegistry.GuardianUnstakeRequested(alice, block.timestamp);
@@ -161,7 +206,6 @@ contract GuardianRegistryUnstakeTest is Test {
 
         assertFalse(registry.isActiveGuardian(alice));
         assertEq(registry.totalGuardianStake(), 0);
-        assertEq(registry.activeGuardianCount(), 0);
         // stake itself not yet transferred out
         assertEq(registry.guardianStake(alice), 10_000e18);
     }
@@ -193,7 +237,6 @@ contract GuardianRegistryUnstakeTest is Test {
 
         assertTrue(registry.isActiveGuardian(alice));
         assertEq(registry.totalGuardianStake(), 10_000e18);
-        assertEq(registry.activeGuardianCount(), 1);
     }
 
     function test_cancelUnstake_revertsIfNotRequested() public {
@@ -211,7 +254,6 @@ contract GuardianRegistryUnstakeTest is Test {
         vm.prank(alice);
         registry.requestUnstakeGuardian();
         assertEq(registry.totalGuardianStake(), 0);
-        assertEq(registry.activeGuardianCount(), 0);
 
         vm.prank(alice);
         vm.expectRevert(IGuardianRegistry.UnstakeAlreadyRequested.selector);
@@ -219,7 +261,6 @@ contract GuardianRegistryUnstakeTest is Test {
 
         // Totals untouched.
         assertEq(registry.totalGuardianStake(), 0);
-        assertEq(registry.activeGuardianCount(), 0);
         assertFalse(registry.isActiveGuardian(alice));
     }
 
@@ -267,7 +308,6 @@ contract GuardianRegistryUnstakeTest is Test {
         registry.stakeAsGuardian(10_000e18, 77);
         assertEq(registry.guardianStake(alice), 10_000e18);
         assertTrue(registry.isActiveGuardian(alice));
-        assertEq(registry.activeGuardianCount(), 1);
     }
 
     function test_claimUnstake_revertsIfNotRequested() public {
@@ -764,7 +804,12 @@ contract GuardianRegistryVoteTest is Test {
             registry.stakeAsGuardian(10_000e18, 1 + i);
         }
 
-        voteEnd = block.timestamp;
+        // ToB C-1: openReview snapshots at `block.timestamp - 1`. Warp one
+        // second so the stake checkpoints written in this setUp are visible
+        // to the snapshot. Production flows have multi-block separation.
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        voteEnd = vm.getBlockTimestamp();
         reviewEnd = voteEnd + REVIEW_PERIOD;
         governor.setProposal(PROPOSAL_ID, voteEnd, reviewEnd);
     }
@@ -826,15 +871,16 @@ contract GuardianRegistryVoteTest is Test {
         _openReview();
         address g = _guardian(0);
 
-        // Top up *after* openReview: snapshot must reflect stake at vote time
-        // (guardianStake at the moment of voteOnProposal), not at openReview.
+        // Top up AFTER openReview: snapshot weight is frozen at `r.openedAt`,
+        // so the post-open top-up is NOT reflected in vote weight. Closes the
+        // top-up-before-vote bias (see `voteOnProposal` header comment).
         vm.prank(g);
-        registry.stakeAsGuardian(5_000e18, 42); // agentId arg ignored on top-up
+        registry.stakeAsGuardian(5_000e18, 42);
         assertEq(registry.guardianStake(g), 15_000e18);
 
-        // First vote should snapshot the current 15_000e18.
+        // First vote snapshots the pre-open weight = 10_000e18.
         vm.expectEmit(true, true, false, true);
-        emit IGuardianRegistry.GuardianVoteCast(PROPOSAL_ID, g, IGuardianRegistry.GuardianVoteType.Block, 15_000e18);
+        emit IGuardianRegistry.GuardianVoteCast(PROPOSAL_ID, g, IGuardianRegistry.GuardianVoteType.Block, 10_000e18);
         vm.prank(g);
         registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
     }
@@ -848,9 +894,8 @@ contract GuardianRegistryVoteTest is Test {
     }
 
     function test_voteOnProposal_capHitEmitsEventAndReverts() public {
-        _openReview();
-
-        // Fill 100 Approves (mint+stake 100 fresh guardians).
+        // Stake 100 fresh guardians BEFORE openReview so C-1's
+        // `openedAt = block.timestamp - 1` snapshot can see their stake.
         uint256 cap = registry.MAX_APPROVERS_PER_PROPOSAL();
         for (uint256 i = 0; i < cap; i++) {
             address g = address(uint160(0x100000 + i));
@@ -859,17 +904,27 @@ contract GuardianRegistryVoteTest is Test {
             wood.approve(address(registry), type(uint256).max);
             vm.prank(g);
             registry.stakeAsGuardian(10_000e18, 1 + i);
-            vm.prank(g);
-            registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
         }
-
-        // 101st Approve: revert + ApproverCapReached event.
+        // 101st staker (must also be staked pre-open so the cap-rejection
+        // path is the revert we hit, not a stake-timing miss).
         address last = address(uint160(0x100000 + cap));
         wood.mint(last, 100_000e18);
         vm.prank(last);
         wood.approve(address(registry), type(uint256).max);
         vm.prank(last);
         registry.stakeAsGuardian(10_000e18, 999);
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+        // Re-sync MockGovernorMinimal so `voteEnd < block.timestamp < reviewEnd`.
+        uint256 newVoteEnd = vm.getBlockTimestamp();
+        governor.setProposal(PROPOSAL_ID, newVoteEnd, newVoteEnd + REVIEW_PERIOD);
+        _openReview();
+
+        for (uint256 i = 0; i < cap; i++) {
+            address g = address(uint160(0x100000 + i));
+            vm.prank(g);
+            registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
+        }
 
         vm.expectEmit(true, false, false, false);
         emit IGuardianRegistry.ApproverCapReached(PROPOSAL_ID);
@@ -880,6 +935,45 @@ contract GuardianRegistryVoteTest is Test {
         // 101st Block succeeds — blockers uncapped.
         vm.prank(last);
         registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
+    }
+
+    /// @notice ToB I-2 regression: blockers are capped at
+    /// `MAX_BLOCKERS_PER_PROPOSAL` so the `_emitBlockerAttribution` loop in
+    /// `resolveReview` is bounded. The 101st block vote reverts `NewSideFull`
+    /// and emits `BlockerCapReached`.
+    function test_voteOnProposal_blockerCapHitEmitsEventAndReverts() public {
+        uint256 cap = registry.MAX_BLOCKERS_PER_PROPOSAL();
+        for (uint256 i = 0; i < cap; i++) {
+            address g = address(uint160(0x300000 + i));
+            wood.mint(g, 100_000e18);
+            vm.prank(g);
+            wood.approve(address(registry), type(uint256).max);
+            vm.prank(g);
+            registry.stakeAsGuardian(10_000e18, 1 + i);
+        }
+        address last = address(uint160(0x300000 + cap));
+        wood.mint(last, 100_000e18);
+        vm.prank(last);
+        wood.approve(address(registry), type(uint256).max);
+        vm.prank(last);
+        registry.stakeAsGuardian(10_000e18, 999);
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+        uint256 newPid = 42;
+        governor.setProposal(newPid, vm.getBlockTimestamp(), vm.getBlockTimestamp() + REVIEW_PERIOD);
+        registry.openReview(newPid);
+
+        for (uint256 i = 0; i < cap; i++) {
+            address g = address(uint160(0x300000 + i));
+            vm.prank(g);
+            registry.voteOnProposal(newPid, IGuardianRegistry.GuardianVoteType.Block);
+        }
+
+        vm.expectEmit(true, false, false, false);
+        emit IGuardianRegistry.BlockerCapReached(newPid);
+        vm.prank(last);
+        vm.expectRevert(IGuardianRegistry.NewSideFull.selector);
+        registry.voteOnProposal(newPid, IGuardianRegistry.GuardianVoteType.Block);
     }
 }
 
@@ -915,7 +1009,11 @@ contract GuardianRegistryVoteChangeTest is Test {
             registry.stakeAsGuardian(10_000e18, 1 + i);
         }
 
-        voteEnd = block.timestamp;
+        // ToB C-1: warp past stake checkpoints so openReview's
+        // `openedAt = block.timestamp - 1` snapshot can see them.
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        voteEnd = vm.getBlockTimestamp();
         reviewEnd = voteEnd + REVIEW_PERIOD;
         governor.setProposal(PROPOSAL_ID, voteEnd, reviewEnd);
         registry.openReview(PROPOSAL_ID);
@@ -992,10 +1090,13 @@ contract GuardianRegistryVoteChangeTest is Test {
 
     function test_voteChange_blockToApprove_revertsIfApproverCapFull() public {
         // Existing 5 guardians will vote Block first; then saturate Approve with 100 fresh guardians.
-        address blockVoter = _guardian(0);
-        vm.prank(blockVoter);
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
-
+        // ToB C-1: fresh guardians must stake BEFORE openReview was called in
+        // setUp to be visible via the `openedAt = block.timestamp - 1` snapshot.
+        // Since setUp already opened the review, we use guardians whose stake
+        // was already visible — reuse existing cohort + switch semantic.
+        // Work around by cancelling the review setup and re-opening AFTER the
+        // 100 fresh stakes plus a warp.
+        // Simpler: use a separate proposal opened after staking.
         uint256 cap = registry.MAX_APPROVERS_PER_PROPOSAL();
         for (uint256 i = 0; i < cap; i++) {
             address g = address(uint160(0x200000 + i));
@@ -1004,20 +1105,32 @@ contract GuardianRegistryVoteChangeTest is Test {
             wood.approve(address(registry), type(uint256).max);
             vm.prank(g);
             registry.stakeAsGuardian(10_000e18, 1 + i);
+        }
+        vm.warp(vm.getBlockTimestamp() + 1);
+        uint256 newPid = 2;
+        governor.setProposal(newPid, vm.getBlockTimestamp(), vm.getBlockTimestamp() + REVIEW_PERIOD);
+        registry.openReview(newPid);
+
+        address blockVoter = _guardian(0);
+        vm.prank(blockVoter);
+        registry.voteOnProposal(newPid, IGuardianRegistry.GuardianVoteType.Block);
+
+        for (uint256 i = 0; i < cap; i++) {
+            address g = address(uint160(0x200000 + i));
             vm.prank(g);
-            registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
+            registry.voteOnProposal(newPid, IGuardianRegistry.GuardianVoteType.Approve);
         }
 
         // Block voter tries to switch → must revert NewSideFull WITHOUT mutating
         // the old side (check-first-then-apply).
         vm.prank(blockVoter);
         vm.expectRevert(IGuardianRegistry.NewSideFull.selector);
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
+        registry.voteOnProposal(newPid, IGuardianRegistry.GuardianVoteType.Approve);
 
         // Verify blockVoter still holds their Block vote (old side intact).
         vm.prank(blockVoter);
         vm.expectRevert(IGuardianRegistry.NoVoteChange.selector);
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
+        registry.voteOnProposal(newPid, IGuardianRegistry.GuardianVoteType.Block);
     }
 }
 
@@ -1067,7 +1180,11 @@ contract GuardianRegistryResolveTest is Test {
             registry.stakeAsGuardian(10_000e18, 1 + i);
         }
 
-        voteEnd = block.timestamp;
+        // ToB C-1: warp past stake checkpoints so openReview's
+        // `openedAt = block.timestamp - 1` snapshot can see them.
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        voteEnd = vm.getBlockTimestamp();
         reviewEnd = voteEnd + REVIEW_PERIOD;
         governor.setProposal(PROPOSAL_ID, voteEnd, reviewEnd);
     }
@@ -1159,12 +1276,8 @@ contract GuardianRegistryResolveTest is Test {
         assertEq(registry.guardianStake(_guardian(3)), 10_000e18);
         // Aggregate totals decremented.
         assertEq(registry.totalGuardianStake(), totalStakeBefore - slashTotal);
-        assertEq(registry.activeGuardianCount(), 3);
-        // Epoch block-weight credits.
-        uint256 epochId = registry.currentEpoch();
-        assertEq(registry.epochGuardianBlockWeight(epochId, _guardian(2)), 10_000e18);
-        assertEq(registry.epochGuardianBlockWeight(epochId, _guardian(3)), 10_000e18);
-        assertEq(registry.epochTotalBlockWeight(epochId), 20_000e18);
+        // V1.5: epoch block-weight tracking moved to Merkl. Attribution now
+        // lives in the `BlockerAttributed` event — covered in Phase 3 tests.
     }
 
     function test_resolveReview_cohortTooSmall_returnsFalseEvenWithBlockVotes() public {
@@ -1282,7 +1395,6 @@ contract GuardianRegistryResolveTest is Test {
         vm.prank(approver);
         registry.requestUnstakeGuardian();
         assertFalse(registry.isActiveGuardian(approver));
-        assertEq(registry.activeGuardianCount(), 4);
 
         // 4) Resolve → blocked → slashes the approver. Because the unstake
         //    request already decremented totals, `_slashApprovers` must NOT
@@ -1293,17 +1405,13 @@ contract GuardianRegistryResolveTest is Test {
         assertTrue(blocked);
         assertEq(registry.guardianStake(approver), 0);
         // Counters unchanged by the slash (already decremented at request time).
-        assertEq(registry.activeGuardianCount(), 4);
 
         // 5) The ghost-cancel attack: approver tries to cancel the unstake to
-        //    re-enter activeGuardianCount. With the fix in place, this must
-        //    revert. `_slashApprovers` cleared `unstakeRequestedAt`, so the
-        //    first gate hit is `UnstakeNotRequested`.
-        uint256 activeBefore = registry.activeGuardianCount();
+        //    re-enter active status. `_slashApprovers` cleared
+        //    `unstakeRequestedAt`, so the first gate hit is `UnstakeNotRequested`.
         vm.prank(approver);
         vm.expectRevert(IGuardianRegistry.UnstakeNotRequested.selector);
         registry.cancelUnstakeGuardian();
-        assertEq(registry.activeGuardianCount(), activeBefore);
     }
 }
 
@@ -1366,7 +1474,10 @@ contract GuardianRegistryBurnTest is Test {
             vm.prank(g);
             registry.stakeAsGuardian(10_000e18, 1 + i);
         }
-        uint256 voteEnd_ = block.timestamp;
+        // ToB C-1: warp past stake checkpoints so openReview's
+        // `openedAt = block.timestamp - 1` snapshot can see them.
+        vm.warp(vm.getBlockTimestamp() + 1);
+        uint256 voteEnd_ = vm.getBlockTimestamp();
         uint256 reviewEnd_ = voteEnd_ + REVIEW_PERIOD;
         governor.setProposal(PROPOSAL_ID, voteEnd_, reviewEnd_);
         registry.openReview(PROPOSAL_ID);
@@ -1470,6 +1581,10 @@ contract GuardianRegistryEmergencyTest is Test {
             vm.prank(g);
             registry.stakeAsGuardian(10_000e18, 1 + i);
         }
+
+        // ToB C-1: warp past stake checkpoints so openEmergencyReview's
+        // `openedAt = block.timestamp - 1` snapshot can see them.
+        vm.warp(vm.getBlockTimestamp() + 1);
     }
 
     function _guardian(uint256 i) internal pure returns (address) {
@@ -1478,8 +1593,8 @@ contract GuardianRegistryEmergencyTest is Test {
 
     function _openEmergency() internal returns (uint64 reviewEnd_) {
         // Wire up the governor's ProposalView so _slashOwner can resolve vault.
-        reviewEnd_ = uint64(block.timestamp + REVIEW_PERIOD);
-        governor.setProposalWithVault(PROPOSAL_ID, block.timestamp, reviewEnd_, address(vault));
+        reviewEnd_ = uint64(vm.getBlockTimestamp() + REVIEW_PERIOD);
+        governor.setProposalWithVault(PROPOSAL_ID, vm.getBlockTimestamp(), reviewEnd_, address(vault));
         vm.prank(address(governor));
         registry.openEmergencyReview(PROPOSAL_ID, keccak256("calls"));
     }
@@ -1645,450 +1760,6 @@ contract GuardianRegistryEmergencyTest is Test {
         assertEq(logs.length, 0);
         assertEq(second, first);
         assertEq(wood.balanceOf(BURN_ADDRESS), burnedBalance);
-    }
-}
-
-contract GuardianRegistryFundEpochTest is Test {
-    using stdStorage for StdStorage;
-
-    GuardianRegistry registry;
-    ERC20Mock wood;
-    address owner = address(0xA11CE);
-    address governor = address(0x9000);
-    address factory = address(0xFAC10);
-    address minter = address(0xAA71E);
-    address funder = address(0xFADE4);
-    address stranger = address(0xBAD);
-
-    function setUp() public {
-        wood = new ERC20Mock("WOOD", "WOOD", 18);
-        GuardianRegistry impl = new GuardianRegistry();
-        bytes memory initData = abi.encodeCall(
-            GuardianRegistry.initialize,
-            (owner, governor, factory, address(wood), 10_000e18, 10_000e18, 7 days, 24 hours, 3000)
-        );
-        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
-
-        wood.mint(funder, 1_000_000e18);
-        vm.prank(funder);
-        wood.approve(address(registry), type(uint256).max);
-
-        wood.mint(minter, 1_000_000e18);
-        vm.prank(minter);
-        wood.approve(address(registry), type(uint256).max);
-
-        wood.mint(owner, 1_000_000e18);
-        vm.prank(owner);
-        wood.approve(address(registry), type(uint256).max);
-    }
-
-    function test_fundEpoch_currentEpoch_pullsWood() public {
-        uint256 epochId = registry.currentEpoch();
-        uint256 registryBalBefore = wood.balanceOf(address(registry));
-
-        vm.expectEmit(true, true, false, true);
-        emit IGuardianRegistry.EpochFunded(epochId, owner, 5_000e18);
-        vm.prank(owner);
-        registry.fundEpoch(epochId, 5_000e18);
-
-        assertEq(registry.epochBudget(epochId), 5_000e18);
-        assertEq(wood.balanceOf(address(registry)), registryBalBefore + 5_000e18);
-    }
-
-    function test_fundEpoch_futureEpoch_succeeds() public {
-        // Current epoch is 0; fund epoch 5 — future is allowed.
-        vm.prank(owner);
-        registry.fundEpoch(5, 7_500e18);
-        assertEq(registry.epochBudget(5), 7_500e18);
-    }
-
-    function test_fundEpoch_pastEpoch_allowedIfBudgetZero() public {
-        // Warp forward to epoch 2; fund epoch 0 which has not been funded yet.
-        vm.warp(registry.epochGenesis() + 2 * registry.EPOCH_DURATION());
-        assertEq(registry.currentEpoch(), 2);
-        assertEq(registry.epochBudget(0), 0);
-
-        vm.prank(owner);
-        registry.fundEpoch(0, 4_000e18);
-        assertEq(registry.epochBudget(0), 4_000e18);
-    }
-
-    function test_fundEpoch_pastEpoch_revertsIfAlreadyFunded() public {
-        // Fund epoch 0 now (current), then warp to epoch 1 and try to re-fund — reverts.
-        vm.prank(owner);
-        registry.fundEpoch(0, 1_000e18);
-
-        vm.warp(registry.epochGenesis() + registry.EPOCH_DURATION());
-        assertEq(registry.currentEpoch(), 1);
-
-        vm.prank(owner);
-        vm.expectRevert(IGuardianRegistry.FundEpochLocked.selector);
-        registry.fundEpoch(0, 500e18);
-    }
-
-    function test_fundEpoch_onlyOwnerOrMinter() public {
-        vm.prank(stranger);
-        vm.expectRevert(IGuardianRegistry.NotMinterOrOwner.selector);
-        registry.fundEpoch(0, 1_000e18);
-    }
-
-    function test_fundEpoch_minterCanFund() public {
-        // Wire minter into storage directly — the timelocked setter arrives in Task 23.
-        stdstore.target(address(registry)).sig("minter()").checked_write(minter);
-        assertEq(registry.minter(), minter);
-
-        uint256 epochId = registry.currentEpoch();
-        vm.expectEmit(true, true, false, true);
-        emit IGuardianRegistry.EpochFunded(epochId, minter, 2_500e18);
-        vm.prank(minter);
-        registry.fundEpoch(epochId, 2_500e18);
-
-        assertEq(registry.epochBudget(epochId), 2_500e18);
-    }
-}
-
-contract GuardianRegistryClaimEpochTest is Test {
-    GuardianRegistry registry;
-    ERC20Mock wood;
-    MockGovernorMinimal governor;
-    address owner = address(0xA11CE);
-    address factory = address(0xFAC10);
-
-    uint256 constant REVIEW_PERIOD = 24 hours;
-    uint256 constant PROPOSAL_ID = 1;
-    uint256 constant BLOCK_QUORUM_BPS = 3000;
-
-    address internal constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
-
-    function setUp() public {
-        wood = new ERC20Mock("WOOD", "WOOD", 18);
-        governor = new MockGovernorMinimal();
-
-        GuardianRegistry impl = new GuardianRegistry();
-        bytes memory initData = abi.encodeCall(
-            GuardianRegistry.initialize,
-            (
-                owner,
-                address(governor),
-                factory,
-                address(wood),
-                10_000e18,
-                10_000e18,
-                7 days,
-                REVIEW_PERIOD,
-                BLOCK_QUORUM_BPS
-            )
-        );
-        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
-
-        // Stake 5 guardians × varied amounts to exercise pro-rata splits.
-        // _guardian(0) and _guardian(1) will block with 60k / 40k stake.
-        // _guardian(2..4) needed to hit MIN_COHORT_STAKE_AT_OPEN = 50_000e18 —
-        // they'll approve and be slashed.
-        address g0 = _guardian(0);
-        address g1 = _guardian(1);
-        address g2 = _guardian(2);
-        address g3 = _guardian(3);
-        address g4 = _guardian(4);
-
-        _mintAndApprove(g0, 100_000e18);
-        _mintAndApprove(g1, 100_000e18);
-        _mintAndApprove(g2, 100_000e18);
-        _mintAndApprove(g3, 100_000e18);
-        _mintAndApprove(g4, 100_000e18);
-
-        vm.prank(g0);
-        registry.stakeAsGuardian(60_000e18, 1);
-        vm.prank(g1);
-        registry.stakeAsGuardian(40_000e18, 2);
-        vm.prank(g2);
-        registry.stakeAsGuardian(10_000e18, 3);
-        vm.prank(g3);
-        registry.stakeAsGuardian(10_000e18, 4);
-        vm.prank(g4);
-        registry.stakeAsGuardian(10_000e18, 5);
-
-        // Mint WOOD to owner for funding the epoch.
-        wood.mint(owner, 1_000_000e18);
-        vm.prank(owner);
-        wood.approve(address(registry), type(uint256).max);
-    }
-
-    function _guardian(uint256 i) internal pure returns (address) {
-        return address(uint160(0xAA00 + i + 1));
-    }
-
-    function _mintAndApprove(address who, uint256 amt) internal {
-        wood.mint(who, amt);
-        vm.prank(who);
-        wood.approve(address(registry), type(uint256).max);
-    }
-
-    /// @dev Resolves a blocked review in current epoch with g0 (60k) + g1 (40k)
-    ///      blocking, g2+g3 (10k + 10k = 20k) approving. Total cohort = 130k,
-    ///      block weight = 100k (77% ≥ 30% quorum). Approvers get slashed.
-    function _resolveBlockedReview() internal {
-        uint256 voteEnd = block.timestamp;
-        uint256 reviewEnd = voteEnd + REVIEW_PERIOD;
-        governor.setProposal(PROPOSAL_ID, voteEnd, reviewEnd);
-        registry.openReview(PROPOSAL_ID);
-
-        vm.prank(_guardian(0));
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
-        vm.prank(_guardian(1));
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
-        vm.prank(_guardian(2));
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
-        vm.prank(_guardian(3));
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
-
-        vm.warp(reviewEnd);
-        bool blocked = registry.resolveReview(PROPOSAL_ID);
-        assertTrue(blocked);
-    }
-
-    function test_claimEpochReward_happy_paysProRata() public {
-        uint256 epoch0 = registry.currentEpoch();
-        // Fund epoch 0 with 10_000 WOOD.
-        vm.prank(owner);
-        registry.fundEpoch(epoch0, 10_000e18);
-
-        _resolveBlockedReview();
-        // Block weights: g0=60k, g1=40k, total=100k.
-        assertEq(registry.epochGuardianBlockWeight(epoch0, _guardian(0)), 60_000e18);
-        assertEq(registry.epochGuardianBlockWeight(epoch0, _guardian(1)), 40_000e18);
-        assertEq(registry.epochTotalBlockWeight(epoch0), 100_000e18);
-
-        // Warp past epoch 0.
-        vm.warp(registry.epochGenesis() + registry.EPOCH_DURATION());
-        assertEq(registry.currentEpoch(), epoch0 + 1);
-
-        // pendingEpochReward should match.
-        assertEq(registry.pendingEpochReward(_guardian(0), epoch0), 6_000e18);
-        assertEq(registry.pendingEpochReward(_guardian(1), epoch0), 4_000e18);
-
-        uint256 bal0Before = wood.balanceOf(_guardian(0));
-        vm.expectEmit(true, true, false, true);
-        emit IGuardianRegistry.EpochRewardClaimed(epoch0, _guardian(0), 6_000e18);
-        vm.prank(_guardian(0));
-        registry.claimEpochReward(epoch0);
-        assertEq(wood.balanceOf(_guardian(0)), bal0Before + 6_000e18);
-
-        uint256 bal1Before = wood.balanceOf(_guardian(1));
-        vm.prank(_guardian(1));
-        registry.claimEpochReward(epoch0);
-        assertEq(wood.balanceOf(_guardian(1)), bal1Before + 4_000e18);
-
-        // Budget fully drained.
-        assertEq(registry.epochBudget(epoch0), 0);
-    }
-
-    function test_claimEpochReward_doubleClaim_reverts() public {
-        uint256 epoch0 = registry.currentEpoch();
-        vm.prank(owner);
-        registry.fundEpoch(epoch0, 10_000e18);
-        _resolveBlockedReview();
-
-        vm.warp(registry.epochGenesis() + registry.EPOCH_DURATION());
-
-        vm.prank(_guardian(0));
-        registry.claimEpochReward(epoch0);
-
-        vm.prank(_guardian(0));
-        vm.expectRevert(IGuardianRegistry.NothingToClaim.selector);
-        registry.claimEpochReward(epoch0);
-    }
-
-    function test_claimEpochReward_beforeEpochEnds_reverts() public {
-        uint256 epoch0 = registry.currentEpoch();
-        vm.prank(owner);
-        registry.fundEpoch(epoch0, 10_000e18);
-        _resolveBlockedReview();
-
-        // Still inside epoch 0.
-        vm.prank(_guardian(0));
-        vm.expectRevert(IGuardianRegistry.EpochNotEnded.selector);
-        registry.claimEpochReward(epoch0);
-    }
-
-    function test_claimEpochReward_revertsIfUnfunded() public {
-        uint256 epoch0 = registry.currentEpoch();
-        // Do not fund epoch 0 — just resolve a blocked review crediting weights.
-        _resolveBlockedReview();
-
-        vm.warp(registry.epochGenesis() + registry.EPOCH_DURATION());
-
-        // No budget → payout == 0 → revert.
-        vm.prank(_guardian(0));
-        vm.expectRevert(IGuardianRegistry.NothingToClaim.selector);
-        registry.claimEpochReward(epoch0);
-
-        // Late-fund the same past epoch (allowed since budget == 0).
-        vm.prank(owner);
-        registry.fundEpoch(epoch0, 10_000e18);
-
-        // Now g0 can claim.
-        uint256 bal0Before = wood.balanceOf(_guardian(0));
-        vm.prank(_guardian(0));
-        registry.claimEpochReward(epoch0);
-        assertEq(wood.balanceOf(_guardian(0)), bal0Before + 6_000e18);
-    }
-
-    function test_claimEpochReward_revertsIfNoWeight() public {
-        uint256 epoch0 = registry.currentEpoch();
-        vm.prank(owner);
-        registry.fundEpoch(epoch0, 10_000e18);
-        _resolveBlockedReview();
-
-        vm.warp(registry.epochGenesis() + registry.EPOCH_DURATION());
-
-        // g4 never voted Block — no weight in epoch 0.
-        assertEq(registry.epochGuardianBlockWeight(epoch0, _guardian(4)), 0);
-        vm.prank(_guardian(4));
-        vm.expectRevert(IGuardianRegistry.NothingToClaim.selector);
-        registry.claimEpochReward(epoch0);
-    }
-}
-
-contract GuardianRegistrySweepTest is Test {
-    GuardianRegistry registry;
-    ERC20Mock wood;
-    MockGovernorMinimal governor;
-    address owner = address(0xA11CE);
-    address factory = address(0xFAC10);
-    address stranger = address(0xBAD);
-
-    uint256 constant REVIEW_PERIOD = 24 hours;
-    uint256 constant PROPOSAL_ID = 1;
-    uint256 constant BLOCK_QUORUM_BPS = 3000;
-
-    function setUp() public {
-        wood = new ERC20Mock("WOOD", "WOOD", 18);
-        governor = new MockGovernorMinimal();
-
-        GuardianRegistry impl = new GuardianRegistry();
-        bytes memory initData = abi.encodeCall(
-            GuardianRegistry.initialize,
-            (
-                owner,
-                address(governor),
-                factory,
-                address(wood),
-                10_000e18,
-                10_000e18,
-                7 days,
-                REVIEW_PERIOD,
-                BLOCK_QUORUM_BPS
-            )
-        );
-        registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
-
-        // Stake 5 guardians so we can trigger a blocked review with enough weight.
-        for (uint256 i = 0; i < 5; i++) {
-            address g = _guardian(i);
-            wood.mint(g, 100_000e18);
-            vm.prank(g);
-            wood.approve(address(registry), type(uint256).max);
-            vm.prank(g);
-            registry.stakeAsGuardian(10_000e18, 1 + i);
-        }
-
-        wood.mint(owner, 1_000_000e18);
-        vm.prank(owner);
-        wood.approve(address(registry), type(uint256).max);
-    }
-
-    function _guardian(uint256 i) internal pure returns (address) {
-        return address(uint160(0xAA00 + i + 1));
-    }
-
-    /// @dev Blocks in epoch 0 with 2 blockers (g0, g1) and 2 approvers (g2, g3).
-    function _resolveBlockedReview() internal {
-        uint256 voteEnd = block.timestamp;
-        uint256 reviewEnd = voteEnd + REVIEW_PERIOD;
-        governor.setProposal(PROPOSAL_ID, voteEnd, reviewEnd);
-        registry.openReview(PROPOSAL_ID);
-
-        vm.prank(_guardian(0));
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
-        vm.prank(_guardian(1));
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Block);
-        vm.prank(_guardian(2));
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
-        vm.prank(_guardian(3));
-        registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
-
-        vm.warp(reviewEnd);
-        registry.resolveReview(PROPOSAL_ID);
-    }
-
-    function test_sweepUnclaimed_revertsBeforeDelay() public {
-        uint256 epoch0 = registry.currentEpoch();
-        vm.prank(owner);
-        registry.fundEpoch(epoch0, 10_000e18);
-
-        uint256 epochEnd = registry.epochGenesis() + (epoch0 + 1) * registry.EPOCH_DURATION();
-        vm.warp(epochEnd + registry.SWEEP_DELAY() - 1);
-
-        vm.expectRevert(IGuardianRegistry.SweepTooEarly.selector);
-        registry.sweepUnclaimed(epoch0);
-    }
-
-    function test_sweepUnclaimed_permissionless() public {
-        uint256 epoch0 = registry.currentEpoch();
-        vm.prank(owner);
-        registry.fundEpoch(epoch0, 10_000e18);
-
-        uint256 epochEnd = registry.epochGenesis() + (epoch0 + 1) * registry.EPOCH_DURATION();
-        vm.warp(epochEnd + registry.SWEEP_DELAY());
-
-        // Stranger can call — no auth.
-        vm.prank(stranger);
-        registry.sweepUnclaimed(epoch0);
-        assertEq(registry.epochBudget(epoch0), 0);
-    }
-
-    function test_sweepUnclaimed_movesResidualToCurrentEpoch() public {
-        uint256 epoch0 = registry.currentEpoch();
-        vm.prank(owner);
-        registry.fundEpoch(epoch0, 10_000e18);
-
-        // Resolve blocked review: block weight g0 10k + g1 10k = 20k total.
-        _resolveBlockedReview();
-
-        // Warp into epoch 1 so g0 can claim 5k.
-        vm.warp(registry.epochGenesis() + registry.EPOCH_DURATION());
-        vm.prank(_guardian(0));
-        registry.claimEpochReward(epoch0);
-        // 5000 paid, 5000 residual.
-        assertEq(registry.epochBudget(epoch0), 5_000e18);
-
-        // Warp far enough that we are well past SWEEP_DELAY after epoch 0 end.
-        uint256 epochEnd = registry.epochGenesis() + (epoch0 + 1) * registry.EPOCH_DURATION();
-        vm.warp(epochEnd + registry.SWEEP_DELAY() + 1);
-
-        uint256 toEpoch = registry.currentEpoch();
-        uint256 toBefore = registry.epochBudget(toEpoch);
-
-        vm.expectEmit(true, true, false, true);
-        emit IGuardianRegistry.EpochUnclaimedSwept(epoch0, toEpoch, 5_000e18);
-        registry.sweepUnclaimed(epoch0);
-
-        assertEq(registry.epochBudget(epoch0), 0);
-        assertEq(registry.epochBudget(toEpoch), toBefore + 5_000e18);
-    }
-
-    function test_sweepUnclaimed_noopIfZero() public {
-        uint256 epoch0 = registry.currentEpoch();
-        uint256 epochEnd = registry.epochGenesis() + (epoch0 + 1) * registry.EPOCH_DURATION();
-        vm.warp(epochEnd + registry.SWEEP_DELAY());
-
-        // Never funded — budget is 0. Must not revert, must not emit.
-        vm.recordLogs();
-        registry.sweepUnclaimed(epoch0);
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        assertEq(logs.length, 0);
-        assertEq(registry.epochBudget(epoch0), 0);
     }
 }
 
@@ -2264,16 +1935,7 @@ contract GuardianRegistryPauseTest is Test {
         registry.voteOnProposal(PROPOSAL_ID, IGuardianRegistry.GuardianVoteType.Approve);
     }
 
-    function test_pause_freezesClaimEpochReward() public {
-        vm.prank(owner);
-        registry.pause();
-
-        // Warp past an epoch so caller isn't blocked by EpochNotEnded first.
-        vm.warp(registry.epochGenesis() + registry.EPOCH_DURATION());
-        vm.prank(alice);
-        vm.expectRevert(IGuardianRegistry.ProtocolPaused.selector);
-        registry.claimEpochReward(0);
-    }
+    // V1.5: claimEpochReward removed. Merkl distributor has its own pause.
 
     function test_pause_doesNotFreezeClaimUnstake() public {
         // Guardian has staked; request unstake, pause, then claim after cooldown.
@@ -2346,8 +2008,6 @@ contract GuardianRegistryParamTest is Test {
     address factory = address(0xFAC10);
     address stranger = address(0xBAD);
 
-    uint256 constant PARAM_DELAY = 24 hours;
-
     // Initial values (match the initialize call below).
     uint256 constant INIT_MIN_GUARDIAN_STAKE = 10_000e18;
     uint256 constant INIT_MIN_OWNER_STAKE = 10_000e18;
@@ -2373,26 +2033,17 @@ contract GuardianRegistryParamTest is Test {
             )
         );
         registry = GuardianRegistry(address(new ERC1967Proxy(address(impl), initData)));
-        // parameterChangeDelay defaults to 24h per the initializer.
     }
 
-    function _key(bytes memory label) internal pure returns (bytes32) {
-        return keccak256(label);
-    }
-
-    // ── Queue + finalize happy path ──
-    function test_setMinGuardianStake_queuesAndFinalizes() public {
+    // ── Owner-instant setters happy path ──
+    function test_setMinGuardianStake_ownerInstant() public {
         uint256 target = 20_000e18;
-        bytes32 key = registry.PARAM_MIN_GUARDIAN_STAKE();
+        vm.expectEmit(true, false, false, true);
+        emit IGuardianRegistry.ParameterChangeFinalized(
+            registry.PARAM_MIN_GUARDIAN_STAKE(), INIT_MIN_GUARDIAN_STAKE, target
+        );
         vm.prank(owner);
         registry.setMinGuardianStake(target);
-
-        // Value unchanged before finalize.
-        assertEq(registry.minGuardianStake(), INIT_MIN_GUARDIAN_STAKE);
-
-        vm.warp(block.timestamp + PARAM_DELAY + 1);
-        vm.prank(owner);
-        registry.finalizeParameterChange(key);
         assertEq(registry.minGuardianStake(), target);
     }
 
@@ -2411,21 +2062,23 @@ contract GuardianRegistryParamTest is Test {
         // Exactly 1_000e18 should succeed.
         vm.prank(owner);
         registry.setMinOwnerStake(1_000e18);
+        assertEq(registry.minOwnerStake(), 1_000e18);
     }
 
-    function test_setCoolDownPeriod_boundsEnforced() public {
+    function test_setCooldownPeriod_boundsEnforced() public {
         vm.prank(owner);
         vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
-        registry.setCoolDownPeriod(1 days - 1);
+        registry.setCooldownPeriod(1 days - 1);
 
         vm.prank(owner);
         vm.expectRevert(IGuardianRegistry.InvalidParameter.selector);
-        registry.setCoolDownPeriod(30 days + 1);
+        registry.setCooldownPeriod(30 days + 1);
 
         vm.startPrank(owner);
-        registry.setCoolDownPeriod(1 days);
-        registry.cancelParameterChange(registry.PARAM_COOLDOWN());
-        registry.setCoolDownPeriod(30 days);
+        registry.setCooldownPeriod(1 days);
+        assertEq(registry.coolDownPeriod(), 1 days);
+        registry.setCooldownPeriod(30 days);
+        assertEq(registry.coolDownPeriod(), 30 days);
         vm.stopPrank();
     }
 
@@ -2440,8 +2093,9 @@ contract GuardianRegistryParamTest is Test {
 
         vm.startPrank(owner);
         registry.setReviewPeriod(6 hours);
-        registry.cancelParameterChange(registry.PARAM_REVIEW_PERIOD());
+        assertEq(registry.reviewPeriod(), 6 hours);
         registry.setReviewPeriod(7 days);
+        assertEq(registry.reviewPeriod(), 7 days);
         vm.stopPrank();
     }
 
@@ -2456,62 +2110,10 @@ contract GuardianRegistryParamTest is Test {
 
         vm.startPrank(owner);
         registry.setBlockQuorumBps(1_000);
-        registry.cancelParameterChange(registry.PARAM_BLOCK_QUORUM_BPS());
+        assertEq(registry.blockQuorumBps(), 1_000);
         registry.setBlockQuorumBps(10_000);
+        assertEq(registry.blockQuorumBps(), 10_000);
         vm.stopPrank();
-    }
-
-    // ── Finalize path reverts ──
-    function test_finalizeParameterChange_revertsIfNotReady() public {
-        bytes32 key = registry.PARAM_REVIEW_PERIOD();
-        vm.prank(owner);
-        registry.setReviewPeriod(12 hours);
-        vm.prank(owner);
-        vm.expectRevert(IGuardianRegistry.ChangeNotReady.selector);
-        registry.finalizeParameterChange(key);
-    }
-
-    function test_finalizeParameterChange_revertsIfNoPending() public {
-        bytes32 key = registry.PARAM_REVIEW_PERIOD();
-        vm.prank(owner);
-        vm.expectRevert(IGuardianRegistry.NoChangePending.selector);
-        registry.finalizeParameterChange(key);
-    }
-
-    // ── Cancel path ──
-    function test_cancelParameterChange_clearsPending() public {
-        bytes32 key = registry.PARAM_REVIEW_PERIOD();
-        vm.startPrank(owner);
-        registry.setReviewPeriod(12 hours);
-        registry.cancelParameterChange(key);
-        // Now we can re-queue.
-        registry.setReviewPeriod(18 hours);
-        vm.stopPrank();
-    }
-
-    // ── Double-queue guard ──
-    function test_queueChange_revertsIfAlreadyPending() public {
-        vm.prank(owner);
-        registry.setReviewPeriod(12 hours);
-        vm.prank(owner);
-        vm.expectRevert(IGuardianRegistry.ChangeAlreadyPending.selector);
-        registry.setReviewPeriod(18 hours);
-    }
-
-    // ── Minter (owner-instant) ──
-    function test_setMinter_ownerInstant_emitsEvent() public {
-        address m = address(0x1234);
-        vm.expectEmit(true, true, false, true);
-        emit IGuardianRegistry.MinterUpdated(address(0), m);
-        vm.prank(owner);
-        registry.setMinter(m);
-        assertEq(registry.minter(), m);
-    }
-
-    function test_setMinter_onlyOwner() public {
-        vm.prank(stranger);
-        vm.expectRevert();
-        registry.setMinter(address(0xBEEF));
     }
 
     // ── Owner-only access on the other setters ──
@@ -2522,7 +2124,7 @@ contract GuardianRegistryParamTest is Test {
         vm.expectRevert();
         registry.setMinOwnerStake(20_000e18);
         vm.expectRevert();
-        registry.setCoolDownPeriod(2 days);
+        registry.setCooldownPeriod(2 days);
         vm.expectRevert();
         registry.setReviewPeriod(12 hours);
         vm.expectRevert();

@@ -69,9 +69,9 @@ contract DeployRobinhoodTestnet is ScriptBase {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: 7 days,
-                    parameterChangeDelay: 1 days,
                     protocolFeeBps: 200,
-                    protocolFeeRecipient: deployer
+                    protocolFeeRecipient: deployer,
+                    guardianFeeBps: 0
                 }),
                 predictedRegistryProxy
             )
@@ -109,11 +109,10 @@ contract DeployRobinhoodTestnet is ScriptBase {
         require(address(factory) == predictedFactoryProxy, "factory addr mismatch");
         console.log("SyndicateFactory:", address(factory));
 
-        // 6. Queue factory registration on governor. G-M4: setFactory is
-        //    timelocked; deployer must run FinalizeParams after
-        //    parameterChangeDelay elapses to wire the factory.
+        // 6. Register factory on governor. V1.5: setters apply immediately.
+        //    P1-1: guardian fee recipient pinned at init — no separate wiring.
         SyndicateGovernor(governorProxy).setFactory(address(factory));
-        console.log("Governor.setFactory queued:", address(factory));
+        console.log("Governor.setFactory applied:", address(factory));
 
         vm.stopBroadcast();
 

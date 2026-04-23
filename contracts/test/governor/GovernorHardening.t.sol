@@ -39,7 +39,6 @@ contract GovernorHardeningTest is Test {
     uint256 constant VETO_THRESHOLD_BPS = 4000;
     uint256 constant MAX_PERF_FEE_BPS = 3000;
     uint256 constant COOLDOWN_PERIOD = 1 days;
-    uint256 constant PARAM_CHANGE_DELAY = 1 days;
 
     function setUp() public {
         usdc = new ERC20Mock("USD Coin", "USDC", 6);
@@ -63,9 +62,9 @@ contract GovernorHardeningTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: 30 days,
-                    parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
-                    protocolFeeRecipient: address(0)
+                    protocolFeeRecipient: address(0),
+                    guardianFeeBps: 0
                 }),
                 address(guardianRegistry)
             )
@@ -211,18 +210,13 @@ contract GovernorHardeningTest is Test {
         vm.prank(lp1);
         governor.vote(proposalId, ISyndicateGovernor.VoteType.Against);
 
-        // Owner queues a raise to 8000.
+        // Owner raises vetoThresholdBps to 8000 (applies immediately in V1.5).
         vm.prank(owner);
         governor.setVetoThresholdBps(8000);
-
-        // Warp past BOTH voting window AND param-change delay so the
-        // finalize goes through and state resolution fires on the next call.
-        vm.warp(vm.getBlockTimestamp() + PARAM_CHANGE_DELAY + 1);
-
-        // Finalize — live bps is now 8000.
-        vm.prank(owner);
-        governor.finalizeParameterChange(keccak256("vetoThresholdBps"));
         assertEq(governor.getGovernorParams().vetoThresholdBps, 8000);
+
+        // Warp past voting window so state resolution fires on the next call.
+        vm.warp(vm.getBlockTimestamp() + VOTING_PERIOD + 1);
 
         // Under the snapshotted bps (4000): 60k / 100k = 60% >= 40% → Rejected.
         // Under live (8000): 60% < 80% → Approved.
@@ -453,25 +447,6 @@ contract GovernorHardeningTest is Test {
             _settleCalls(),
             new ISyndicateGovernor.CoProposer[](0)
         );
-    }
-
-    // ==================== G-M5 — stale parameter change ====================
-
-    /// @notice G-M5: `finalizeParameterChange` must revert `ChangeStale` once
-    ///         `block.timestamp > effectiveAt + MAX_PARAM_STALENESS`. Owner
-    ///         must re-queue to reactivate.
-    function test_finalizeParameterChange_revertsIfStale() public {
-        bytes32 key = keccak256("votingPeriod");
-
-        vm.prank(owner);
-        governor.setVotingPeriod(2 days);
-
-        // Warp past the delay AND beyond MAX_PARAM_STALENESS from effectiveAt.
-        vm.warp(block.timestamp + PARAM_CHANGE_DELAY + governor.MAX_PARAM_STALENESS() + 1);
-
-        vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.ChangeStale.selector);
-        governor.finalizeParameterChange(key);
     }
 
     // ==================== G-M1 — propose blocks on open proposal ====================

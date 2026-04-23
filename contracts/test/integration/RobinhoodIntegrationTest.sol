@@ -67,15 +67,11 @@ abstract contract RobinhoodIntegrationTest is Test {
 
         // Governor needs factory authorized to call addVault().
         // On a fresh deployment this may not be set yet — set it via the
-        // deployer/owner. G-M4: setFactory is timelocked.
+        // deployer/owner. V1.5: setFactory applies immediately.
         address govOwner = governor.owner();
         if (governor.factory() != address(factory)) {
-            vm.startPrank(govOwner);
+            vm.prank(govOwner);
             governor.setFactory(address(factory));
-            // Warp past the governor's configured parameter-change delay.
-            vm.warp(block.timestamp + 7 days + 1);
-            governor.finalizeParameterChange(governor.PARAM_FACTORY());
-            vm.stopPrank();
         }
 
         _createTestSyndicate();

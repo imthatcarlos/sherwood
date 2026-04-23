@@ -140,20 +140,15 @@ contract DeploySherwood is ScriptBase {
         console.log("FactoryProxy:", d.factoryProxy);
         require(d.factoryProxy == predictedFactoryProxy, "factory addr mismatch");
 
-        // 6. Queue factory registration on governor. G-M4: setFactory is
-        //    timelocked via the GovernorParameters dispatcher. The deployer
-        //    must run `FinalizeParams.s.sol` with the PARAM_FACTORY key after
-        //    `parameterChangeDelay` has elapsed to complete the wiring.
-        //
-        //    Deploy-day freeze: during the [deploy, finalize] window (min 6h
-        //    up to 7d, depending on the configured delay), `governor.factory()`
-        //    returns address(0), so `SyndicateFactory.createSyndicate` will
-        //    revert at `SyndicateGovernor.addVault`'s `msg.sender == factory`
-        //    check. Do NOT accept user syndicate creations until finalize.
+        // 6. Register factory on governor. V1.5: setFactory applies
+        //    immediately (owner-multisig governs via its own delay).
         SyndicateGovernor(d.governorProxy).setFactory(d.factoryProxy);
-        console.log("Governor.setFactory queued -- finalize after parameterChangeDelay");
+        console.log("Governor.setFactory applied");
 
-        // 7. Seed slash appeal reserve + epoch 0 rewards (best-effort; skipped
+        // 7. P1-1: guardian fee recipient pinned to `_guardianRegistry` at
+        //    init — no separate wiring step needed.
+
+        // 8. Seed slash appeal reserve + epoch 0 rewards (best-effort; skipped
         //    on zero amounts so testnets don't need a WOOD balance).
         _seedRegistry(d.deployer, d.registryProxy, cfg);
 
@@ -203,9 +198,9 @@ contract DeploySherwood is ScriptBase {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: cfg.maxStrategyDays * 1 days,
-                    parameterChangeDelay: 3 days,
                     protocolFeeBps: cfg.protocolFeeBps,
-                    protocolFeeRecipient: deployer
+                    protocolFeeRecipient: deployer,
+                    guardianFeeBps: 0
                 }),
                 registryProxy
             )
@@ -281,9 +276,13 @@ contract DeploySherwood is ScriptBase {
             GuardianRegistry(registryProxy).fundSlashAppealReserve(cfg.slashAppealSeed);
             console.log("SlashAppealReserve seeded:", cfg.slashAppealSeed);
         }
+        // V1.5: epoch-0 seed removed — WOOD epoch block-rewards distributed
+        // via Merkl off-chain. Protocol owner funds Merkl campaign directly
+        // (transfer WOOD to merkl distributor) then calls `recordEpochBudget`
+        // for the indexer event. Not scripted into Deploy to keep deployment
+        // scope disjoint from off-chain reward infra.
         if (cfg.epochZeroSeed > 0) {
-            GuardianRegistry(registryProxy).fundEpoch(0, cfg.epochZeroSeed);
-            console.log("Epoch 0 budget seeded:", cfg.epochZeroSeed);
+            console.log("Note: epochZeroSeed ignored (moved to Merkl):", cfg.epochZeroSeed);
         }
     }
 
@@ -319,12 +318,15 @@ contract DeploySherwood is ScriptBase {
         _checkUint("gov.maxStrategyDuration", p.maxStrategyDuration, maxDays * 1 days);
         _checkUint("gov.protocolFeeBps", governor.protocolFeeBps(), 200);
         _checkAddr("gov.protocolFeeRecipient", governor.protocolFeeRecipient(), deployer);
-        // G-M4: gov.factory is queued in step 6 and finalized out-of-band after
-        //       parameterChangeDelay. Validate the queued pending change
-        //       instead of the live value.
-        ISyndicateGovernor.PendingChange memory pendingFactory = governor.getPendingChange(governor.PARAM_FACTORY());
-        require(pendingFactory.exists, "gov.factory: queued change missing");
-        _checkAddr("gov.factory (pending)", address(uint160(pendingFactory.newValue)), factoryAddr);
+        // V1.5: timelock removed — factory + guardian-fee recipient are set
+        // directly in step 6. Validate the live values.
+        _checkAddr("gov.factory", governor.factory(), factoryAddr);
+        // V1.5: guardianFeeBps defaults to 0 at init (fee stream disabled
+        // until the multisig is ready); recipient is wired to the registry
+        // immediately so we can flip bps > 0 later with a single set call.
+        _checkUint("gov.guardianFeeBps", governor.guardianFeeBps(), 0);
+        // P1-1: recipient is pinned to `_guardianRegistry` — no separate
+        // field to validate (registry validation below asserts the pointer).
     }
 
     function _validateFactory(
@@ -366,6 +368,7 @@ contract DeploySherwood is ScriptBase {
         _checkUint("registry.reviewPeriod", reg.reviewPeriod(), DEFAULT_REVIEW_PERIOD);
         _checkUint("registry.blockQuorumBps", reg.blockQuorumBps(), DEFAULT_BLOCK_QUORUM_BPS);
         // Governor knows about the registry (set at init-time).
+        // P1-1: recipient is pinned to this same pointer — fees route here.
         _checkAddr("gov.guardianRegistry", SyndicateGovernor(governorAddr).guardianRegistry(), registryAddr);
     }
 

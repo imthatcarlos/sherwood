@@ -62,7 +62,6 @@ contract GuardianReviewLifecycleTest is Test {
     uint256 constant VETO_THRESHOLD_BPS = 4000;
     uint256 constant MAX_PERF_FEE_BPS = 3000;
     uint256 constant COOLDOWN_PERIOD = 1 days;
-    uint256 constant PARAM_CHANGE_DELAY = 1 days;
 
     uint256 constant MIN_GUARDIAN_STAKE = 10_000e18;
     uint256 constant MIN_OWNER_STAKE = 10_000e18;
@@ -121,9 +120,9 @@ contract GuardianReviewLifecycleTest is Test {
                     maxCoProposers: 5,
                     minStrategyDuration: 1 hours,
                     maxStrategyDuration: 30 days,
-                    parameterChangeDelay: PARAM_CHANGE_DELAY,
                     protocolFeeBps: 0,
-                    protocolFeeRecipient: address(0)
+                    protocolFeeRecipient: address(0),
+                    guardianFeeBps: 0
                 }),
                 predictedRegistryProxy
             )
@@ -473,10 +472,9 @@ contract GuardianReviewLifecycleTest is Test {
         assertGt(burnAfter, burnBefore, "burn sink received slashed WOOD");
         assertEq(burnAfter - burnBefore, 3 * GUARDIAN_STAKE, "burn amount == 3 approver stakes");
 
-        // Blockers' epoch block-weight is credited for epoch reward claims.
-        uint256 ep = registry.currentEpoch();
-        assertGt(registry.epochGuardianBlockWeight(ep, g6), 0, "g6 credited for epoch rewards");
-        assertGt(registry.epochGuardianBlockWeight(ep, g10), 0, "g10 credited for epoch rewards");
+        // V1.5: blocker epoch attribution is emitted as `BlockerAttributed` and
+        // attributed off-chain via Merkl. Event inspection is covered in
+        // Phase 3 dedicated tests.
     }
 
     /// @notice Vote-change path: first-vote stake snapshot is preserved when a
@@ -517,9 +515,8 @@ contract GuardianReviewLifecycleTest is Test {
         // keep their stake).
         assertEq(registry.guardianStake(g1), GUARDIAN_STAKE, "g1 not slashed - ended as blocker");
 
-        // Blockers (including g1) should appear in the epoch weight tally.
-        uint256 ep = registry.currentEpoch();
-        assertGt(registry.epochGuardianBlockWeight(ep, g1), 0, "g1 block weight credited");
+        // V1.5: blocker attribution emitted via BlockerAttributed event, not
+        // queryable on-chain. See Phase 3 event-inspection tests.
     }
 
     /// @notice No keeper ever calls `openReview`. After `reviewEnd`, anyone calls
