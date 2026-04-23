@@ -488,6 +488,12 @@ export function scoreEvent(data: {
 /** Lagging technical indicators whose weight is dampened during momentum moves. */
 const LAGGING_TECHNICAL_SIGNALS = new Set(['technical']);
 
+/** Signals whose weight is dampened when they oppose the regime direction.
+ *  Kronos, socialVolume, and whaleIntent can stay bearish for extended periods
+ *  during a trending-up regime — dampening prevents them from suppressing
+ *  all long entries. They keep full weight when aligned with the trend. */
+const COUNTER_TREND_DAMPENED = new Set(['kronosVolForecast', 'socialVolume', 'whaleIntent']);
+
 /** Signal name → weight category mapping. */
 const SIGNAL_CATEGORY_MAP: Record<string, keyof ScoringWeights> = {
   technical: "technical",
@@ -598,6 +604,21 @@ export function computeTradeDecision(
     if (regime && (regime === 'trending-up' || regime === 'trending-down')
         && LAGGING_TECHNICAL_SIGNALS.has(signal.name)) {
       signalWeight *= 0.5;
+    }
+
+    // Dampen counter-trend signals during strong regime moves.
+    // In trending-up: Kronos bearish prediction, high social attention (contrarian
+    // bearish), and whale short positioning can persist for days while price
+    // keeps climbing — dampening prevents them from suppressing all long entries.
+    // In trending-down: same signals dampened when they're bullish.
+    // Signals ALIGNED with the trend keep full weight.
+    if (regime && COUNTER_TREND_DAMPENED.has(signal.name)) {
+      const isCounterTrend =
+        (regime === 'trending-up' && adjustedValue < -0.05) ||
+        (regime === 'trending-down' && adjustedValue > 0.05);
+      if (isCounterTrend) {
+        signalWeight *= 0.3; // 70% reduction when opposing the trend
+      }
     }
 
     // Skip zero-value / near-zero-confidence signals from the denominator.
