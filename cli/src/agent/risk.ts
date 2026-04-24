@@ -390,9 +390,12 @@ export class RiskManager {
       }
     }
 
-    // Check cash availability
-    if (sizeUsd > this.portfolio.cash) {
-      return { allowed: false, reason: `Insufficient cash: need $${sizeUsd.toFixed(2)}, have $${this.portfolio.cash.toFixed(2)}` };
+    // Check cash availability — compare margin requirement (33%) against cash,
+    // not full notional. openPosition debits margin, not full notional.
+    const MARGIN_FRACTION = 0.33;
+    const marginRequired = sizeUsd * MARGIN_FRACTION;
+    if (marginRequired > this.portfolio.cash) {
+      return { allowed: false, reason: `Insufficient cash: need $${marginRequired.toFixed(2)} margin (${(MARGIN_FRACTION*100).toFixed(0)}% of $${sizeUsd.toFixed(0)}), have $${this.portfolio.cash.toFixed(2)}` };
     }
 
     // Check drawdown limits
