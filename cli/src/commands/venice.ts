@@ -10,15 +10,17 @@
 
 import { Command } from "commander";
 import type { Address } from "viem";
-import { formatUnits, isAddress } from "viem";
+import { formatUnits, isAddress, parseUnits } from "viem";
 import chalk from "chalk";
 import ora from "ora";
-import { getPublicClient, getAccount, formatContractError } from "../lib/client.js";
+import { getPublicClient, getAccount, writeContractWithRetry, waitForReceipt, formatContractError } from "../lib/client.js";
+import { getChain } from "../lib/network.js";
 import { VENICE } from "../lib/addresses.js";
 import { SYNDICATE_VAULT_ABI, ERC20_ABI, VENICE_STAKING_ABI } from "../lib/abis.js";
 import { provisionApiKey, checkApiKeyValid, chatCompletion, listModels } from "../lib/venice.js";
 import { getVeniceApiKey } from "../lib/config.js";
 import { readFileSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
 
 export function registerVeniceCommands(program: Command): void {
   const venice = program.command("venice").description("Venice private inference — provision API keys, run inference");
@@ -81,6 +83,145 @@ export function registerVeniceCommands(program: Command): void {
       }
     });
 
+  // ── venice mint-diem ──
+
+  venice
+    .command("mint-diem")
+    .description("Lock sVVV to mint DIEM (Venice inference credits; ~1d cooldown)")
+    .requiredOption("--amount <n>", "Amount of sVVV to lock (human-readable, 18 decimals)")
+    .option("--slippage <bps>", "Slippage tolerance in bps (default 500 = 5%)", "500")
+    .option("--yes", "Skip the cooldown confirmation prompt")
+    .action(async (opts) => {
+      const account = getAccount();
+      const client = getPublicClient();
+      const chain = getChain();
+      const { STAKING, DIEM } = VENICE();
+
+      const amount = parseUnits(opts.amount, 18);
+      const slippageBps = BigInt(opts.slippage ?? "500");
+      if (slippageBps < 0n || slippageBps > 10000n) {
+        console.error(chalk.red(`Invalid slippage bps: ${opts.slippage} (must be 0–10000)`));
+        process.exit(1);
+      }
+
+      // 1. Check sVVV balance
+      const balSpinner = ora("Checking sVVV balance...").start();
+      let sVvvBalance: bigint;
+      try {
+        sVvvBalance = await client.readContract({
+          address: STAKING,
+          abi: VENICE_STAKING_ABI,
+          functionName: "balanceOf",
+          args: [account.address],
+        }) as bigint;
+      } catch (err) {
+        balSpinner.fail("Failed to read sVVV balance");
+        console.error(chalk.red(formatContractError(err)));
+        process.exit(1);
+      }
+      if (sVvvBalance < amount) {
+        balSpinner.fail(
+          `Insufficient sVVV: have ${formatUnits(sVvvBalance, 18)}, need ${opts.amount}`,
+        );
+        console.log(chalk.yellow("  Stake VVV first (see VeniceInferenceStrategy proposal flow)."));
+        process.exit(1);
+      }
+      balSpinner.succeed(`sVVV balance: ${formatUnits(sVvvBalance, 18)}`);
+
+      // 2. Quote DIEM out
+      const quoteSpinner = ora("Quoting DIEM output...").start();
+      let expected: bigint;
+      try {
+        expected = await client.readContract({
+          address: STAKING,
+          abi: VENICE_STAKING_ABI,
+          functionName: "getDiemAmountOut",
+          args: [amount],
+        }) as bigint;
+      } catch (err) {
+        quoteSpinner.fail("Failed to quote DIEM output");
+        console.error(chalk.red(formatContractError(err)));
+        process.exit(1);
+      }
+      if (expected === 0n) {
+        quoteSpinner.fail("Quote returned 0 DIEM — refusing to mint");
+        process.exit(1);
+      }
+      const minOut = (expected * (10000n - slippageBps)) / 10000n;
+      quoteSpinner.succeed(
+        `Expected: ${formatUnits(expected, 18)} DIEM  (minOut @ ${slippageBps}bps: ${formatUnits(minOut, 18)})`,
+      );
+
+      // 3. Cooldown warning + confirmation
+      console.log();
+      console.log(chalk.yellow("  ⚠  sVVV locked via mintDiem has a ~1 day cooldown before it can"));
+      console.log(chalk.yellow("     be unstaked. This action is effectively one-way for 24h."));
+      console.log(chalk.dim("     x402 alternative (pay-per-request in USDC, no DIEM lock):"));
+      console.log(chalk.dim("     https://docs.venice.ai/overview/guides/generating-api-key-agent#paying-for-inference"));
+      console.log();
+
+      if (!opts.yes) {
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        try {
+          const answer = (await rl.question(`  Lock ${opts.amount} sVVV for DIEM credits? [y/N] `)).trim().toLowerCase();
+          if (answer !== "y" && answer !== "yes") {
+            console.log(chalk.dim("  Aborted."));
+            process.exit(0);
+          }
+        } finally {
+          rl.close();
+        }
+      }
+
+      // 4. Read DIEM balance before (for delta)
+      let diemBefore = 0n;
+      try {
+        diemBefore = await client.readContract({
+          address: DIEM,
+          abi: ERC20_ABI,
+          functionName: "balanceOf",
+          args: [account.address],
+        }) as bigint;
+      } catch {
+        // best-effort — don't block
+      }
+
+      // 5. Mint DIEM
+      const mintSpinner = ora(`Minting DIEM from ${opts.amount} sVVV...`).start();
+      try {
+        const hash = await writeContractWithRetry({
+          account,
+          chain,
+          address: STAKING,
+          abi: VENICE_STAKING_ABI,
+          functionName: "mintDiem",
+          args: [amount, minOut],
+        });
+        await waitForReceipt(hash);
+
+        const diemAfter = await client.readContract({
+          address: DIEM,
+          abi: ERC20_ABI,
+          functionName: "balanceOf",
+          args: [account.address],
+        }) as bigint;
+        const delta = diemAfter - diemBefore;
+
+        mintSpinner.succeed(
+          `Minted ${formatUnits(delta > 0n ? delta : diemAfter, 18)} DIEM` +
+          (delta > 0n ? ` (balance: ${formatUnits(diemAfter, 18)})` : ""),
+        );
+        console.log(chalk.dim(`  Tx: ${hash}`));
+        console.log(chalk.yellow("  Note: Venice refreshes DIEM credit allocation at 00:00 UTC."));
+        console.log(chalk.yellow("        Inference may 402 until the next epoch rollover."));
+        console.log(chalk.dim("  Then run: sherwood venice infer --model <id> --prompt \"...\""));
+      } catch (err) {
+        mintSpinner.fail("mintDiem failed");
+        console.error(chalk.red(formatContractError(err)));
+        process.exit(1);
+      }
+    });
+
   // ── venice status ──
 
   venice
@@ -133,8 +274,8 @@ export function registerVeniceCommands(program: Command): void {
           })
         );
 
-        // Check current agent's sVVV + pending rewards
-        const [mySvvv, myPending] = await Promise.all([
+        // Check current agent's sVVV + pending rewards + DIEM
+        const [mySvvv, myPending, myDiem] = await Promise.all([
           client.readContract({
             address: VENICE().STAKING,
             abi: VENICE_STAKING_ABI,
@@ -145,6 +286,12 @@ export function registerVeniceCommands(program: Command): void {
             address: VENICE().STAKING,
             abi: VENICE_STAKING_ABI,
             functionName: "pendingRewards",
+            args: [account.address],
+          }) as Promise<bigint>,
+          client.readContract({
+            address: VENICE().DIEM,
+            abi: ERC20_ABI,
+            functionName: "balanceOf",
             args: [account.address],
           }) as Promise<bigint>,
         ]);
@@ -175,6 +322,8 @@ export function registerVeniceCommands(program: Command): void {
         console.log(chalk.bold("\n  Your Wallet"));
         console.log(`    sVVV:              ${formatUnits(mySvvv, 18)}`);
         console.log(`    Pending rewards:   ${formatUnits(myPending, 18)} VVV`);
+        console.log(`    DIEM (credits):    ${formatUnits(myDiem, 18)}`);
+        console.log(chalk.dim("    (mint via `sherwood venice mint-diem --amount <sVVV>`)"));
 
         console.log(chalk.bold("\n  Venice API"));
         console.log(`    Key:     ${apiKey ? `${apiKey.slice(0, 8)}...${apiKey.slice(-4)}` : chalk.dim("not provisioned")}`);
