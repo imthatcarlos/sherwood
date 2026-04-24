@@ -8,6 +8,26 @@ import { homedir } from 'node:os';
 import chalk from 'chalk';
 import type { Position, PortfolioState } from './risk.js';
 
+/** Margin fraction for perp positions — both longs and shorts. */
+const MARGIN_FRACTION = 0.33;
+
+/**
+ * Compute total portfolio value with margin-based position accounting.
+ * For leveraged perp positions, the portfolio "owns" the margin + unrealized PnL,
+ * not the full notional. This prevents phantom value when cash is debited at
+ * margin rate but positions are counted at full notional.
+ */
+function computeTotalValue(cash: number, positions: Position[]): number {
+  const positionEquity = positions.reduce((sum, p) => {
+    const isShort = p.side === 'short';
+    const pnl = isShort
+      ? (p.entryPrice - p.currentPrice) * p.quantity
+      : (p.currentPrice - p.entryPrice) * p.quantity;
+    return sum + p.quantity * p.entryPrice * MARGIN_FRACTION + pnl;
+  }, 0);
+  return cash + positionEquity;
+}
+
 /** Check and reset PnL counters based on time boundaries */
 export function resetPnlCounters(state: PortfolioState): PortfolioState {
   const now = Date.now();
@@ -278,13 +298,9 @@ export class PortfolioTracker {
     // With 3x directional leverage, a $3,500 notional position only locks $1,167
     // margin (33%). Prior code debited full notional for longs, depleting cash 3x
     // faster than reality and blocking subsequent trades.
-    const MARGIN_FRACTION = 0.33; // ~3x leverage margin requirement
     const cashDebit = position.quantity * position.entryPrice * MARGIN_FRACTION;
     this.state.cash -= cashDebit;
-    this.state.totalValue = this.state.cash + this.state.positions.reduce(
-      (sum, p) => sum + p.quantity * p.currentPrice,
-      0,
-    );
+    this.state.totalValue = computeTotalValue(this.state.cash, this.state.positions);
 
     // Orca-inspired: PnL-aware daily cap, see README / PR #223.
     // Count this NEW entry against the day's turnover budget.
@@ -343,12 +359,8 @@ export class PortfolioTracker {
 
     this.state.positions[idx] = updated;
     // Both longs and shorts use margin-based cash debit (33% = 3x leverage).
-    const MARGIN_FRACTION = 0.33;
     this.state.cash -= addPrice * addQuantity * MARGIN_FRACTION;
-    this.state.totalValue = this.state.cash + this.state.positions.reduce(
-      (sum, p) => sum + p.quantity * p.currentPrice,
-      0,
-    );
+    this.state.totalValue = computeTotalValue(this.state.cash, this.state.positions);
 
     await this.save(this.state);
     return updated;
@@ -402,16 +414,12 @@ export class PortfolioTracker {
     // Remove position and update cash.
     // Both longs and shorts return margin (33% of notional) + PnL.
     this.state.positions.splice(idx, 1);
-    const MARGIN_FRACTION = 0.33;
     const cashCredit = pos.quantity * pos.entryPrice * MARGIN_FRACTION + pnlUsd;
     this.state.cash += cashCredit;
     this.state.dailyPnl += pnlUsd;
     this.state.weeklyPnl += pnlUsd;
     this.state.monthlyPnl += pnlUsd;
-    this.state.totalValue = this.state.cash + this.state.positions.reduce(
-      (sum, p) => sum + p.quantity * p.currentPrice,
-      0,
-    );
+    this.state.totalValue = computeTotalValue(this.state.cash, this.state.positions);
 
     // Record stop-loss cooldown to prevent rapid re-entry
     if (reason.toLowerCase().includes('stop')) {
@@ -493,7 +501,6 @@ export class PortfolioTracker {
     pos.quantity -= quantityClosed;
     pos.partialTaken = true;
     // Return margin fraction (33%) + PnL for both longs and shorts.
-    const MARGIN_FRACTION = 0.33;
     const partialCashCredit = pos.entryPrice * quantityClosed * MARGIN_FRACTION + pnlUsd;
     this.state.cash += partialCashCredit;
     this.state.dailyPnl += pnlUsd;
@@ -533,10 +540,7 @@ export class PortfolioTracker {
       }
     }
 
-    this.state.totalValue = this.state.cash + this.state.positions.reduce(
-      (sum, p) => sum + p.quantity * p.currentPrice,
-      0,
-    );
+    this.state.totalValue = computeTotalValue(this.state.cash, this.state.positions);
 
     await this.save(this.state);
     return this.state;
