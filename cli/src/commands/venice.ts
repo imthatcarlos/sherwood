@@ -152,7 +152,36 @@ export function registerVeniceCommands(program: Command): void {
         `Expected: ${formatUnits(expected, 18)} DIEM  (minOut @ ${slippageBps}bps: ${formatUnits(minOut, 18)})`,
       );
 
-      // 3. Cooldown warning + confirmation
+      // 3. Spendability check — Venice requires >= 0.1 DIEM minimum before any
+      //    DIEM credit becomes spendable on inference calls. Warn the agent
+      //    upfront so they can size up sVVV (or switch to x402) before locking.
+      const MIN_SPENDABLE_DIEM = parseUnits("0.1", 18);
+      let currentDiem = 0n;
+      try {
+        currentDiem = await client.readContract({
+          address: DIEM,
+          abi: ERC20_ABI,
+          functionName: "balanceOf",
+          args: [account.address],
+        }) as bigint;
+      } catch {
+        // best-effort
+      }
+      const projectedDiem = currentDiem + expected;
+      if (projectedDiem < MIN_SPENDABLE_DIEM) {
+        const shortfall = MIN_SPENDABLE_DIEM - projectedDiem;
+        // Linear extrapolation: scale up amount by the ratio shortfall/expected
+        const sVvvNeeded = (amount * shortfall + expected - 1n) / expected; // ceil-div
+        console.log();
+        console.log(chalk.red("  ⚠  Venice requires ≥ 0.1 DIEM minimum before ANY DIEM credit"));
+        console.log(chalk.red("     becomes spendable on inference calls."));
+        console.log(chalk.red(`     Projected DIEM after mint: ${formatUnits(projectedDiem, 18)}  (short by ${formatUnits(shortfall, 18)})`));
+        console.log(chalk.red(`     Approx additional sVVV needed: ${formatUnits(sVvvNeeded, 18)}`));
+        console.log(chalk.dim("     Below threshold, this DIEM sits idle — consider acquiring"));
+        console.log(chalk.dim("     more sVVV first, or use x402 USDC pay-per-request."));
+      }
+
+      // 4. Cooldown warning + confirmation
       console.log();
       console.log(chalk.yellow("  ⚠  sVVV locked via mintDiem has a ~1 day cooldown before it can"));
       console.log(chalk.yellow("     be unstaked. This action is effectively one-way for 24h."));
@@ -173,20 +202,8 @@ export function registerVeniceCommands(program: Command): void {
         }
       }
 
-      // 4. Read DIEM balance before (for delta)
-      let diemBefore = 0n;
-      try {
-        diemBefore = await client.readContract({
-          address: DIEM,
-          abi: ERC20_ABI,
-          functionName: "balanceOf",
-          args: [account.address],
-        }) as bigint;
-      } catch {
-        // best-effort — don't block
-      }
-
-      // 5. Mint DIEM
+      // 5. Mint DIEM (reuses `currentDiem` read in step 3 as the pre-balance)
+      const diemBefore = currentDiem;
       const mintSpinner = ora(`Minting DIEM from ${opts.amount} sVVV...`).start();
       try {
         const hash = await writeContractWithRetry({
@@ -212,9 +229,10 @@ export function registerVeniceCommands(program: Command): void {
           (delta > 0n ? ` (balance: ${formatUnits(diemAfter, 18)})` : ""),
         );
         console.log(chalk.dim(`  Tx: ${hash}`));
-        console.log(chalk.yellow("  Note: Venice refreshes DIEM credit allocation at 00:00 UTC."));
-        console.log(chalk.yellow("        Inference may 402 until the next epoch rollover."));
-        console.log(chalk.dim("  Then run: sherwood venice infer --model <id> --prompt \"...\""));
+        console.log(chalk.yellow("  Note: Venice requires ≥ 0.1 DIEM to spend ANY DIEM credit, and"));
+        console.log(chalk.yellow("        refreshes daily allocation at 00:00 UTC. Below threshold,"));
+        console.log(chalk.yellow("        inference will continue to 402."));
+        console.log(chalk.dim("  Once over threshold: sherwood venice infer --model <id> --prompt \"...\""));
       } catch (err) {
         mintSpinner.fail("mintDiem failed");
         console.error(chalk.red(formatContractError(err)));
