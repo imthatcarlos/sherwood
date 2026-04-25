@@ -205,7 +205,7 @@ Each row is a **doc update** (not a code change). `mintlify-docs/` changes route
 | A28 | `collaborative-proposals.mdx`: `expireCollaboration(proposalId)` | Function doesn't exist (lazy resolution) | Same |
 | A29 | `collaborative-proposals.mdx`: "Execute: lead only, Settle: lead only" | `executeProposal` permissionless; `settleProposal` proposer-anytime / anyone-after-duration | Same |
 | A33 | `reference/deployments.mdx` Base addresses | All four stale vs `chains/8453.json` | Update after mainnet redeployment |
-| A34 | `reference/deployments.mdx` Feature Matrix: HyperEVM "No" for Moonwell/Aerodrome/Venice | `chains/999.json` has those template keys (unusable on HyperEVM) | Fix the matrix or remove keys from chain config |
+| A34 ✅ | `reference/deployments.mdx` Feature Matrix: HyperEVM "No" for Moonwell/Aerodrome/Venice | `chains/999.json` has those template keys (unusable on HyperEVM) | Closed (issue #234) — five disabled-on-HyperEVM template addresses zeroed in `chains/999.json`; `DeployTemplates.s.sol` gated to deploy/write/validate only `HyperliquidPerpStrategy` on chain 999 |
 | A35 | `architecture.mdx`: "per-agent caps" | `AgentConfig` has no caps | Fix `mintlify-docs/protocol/architecture.mdx` |
 | A38 | `architecture.mdx`: `transferPerformanceFee` as "governor-only fee distribution" | No amount/recipient/token caps — governor can move any ERC-20 | Document the trust assumption, or add caps |
 | A41 | `economics.mdx`: "WOOD/SHARES early-exit pool" | Full ve(3,3) stack ships, mostly undocumented | Expand `mintlify-docs/` to cover ve(3,3) |
