@@ -4,3 +4,6 @@
 [submodule "hermes-plugin"]
 	path = hermes-plugin
 	url = git@github.com:sherwoodagent/sherwood-hermes-plugin.git
+[submodule "hermes-dashboard"]
+	path = hermes-dashboard
+	url = git@github.com:sherwoodagent/hermes-dashboard.git
