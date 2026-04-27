@@ -117,9 +117,9 @@ export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
   // signals, scores compress to -0.15 to +0.15 range. Max score in last 6h was
   // 0.147 — threshold at 0.20 was unreachable. At 0.10, ~3% of signals fire
   // (~4-5 trades/day). The regime gate + stop management handle risk.
-  // Autoresearch (Apr 24): buy 0.10→0.12 (more selective), sell -0.30→-0.13
-  "trending-up": { strongBuy: 0.25, buy: 0.12, sell: -0.13, strongSell: -0.25 },
-  "trending-down": { strongBuy: 0.25, buy: 0.13, sell: -0.12, strongSell: -0.25 },
+  // Autoresearch (Apr 27): buy 0.12→0.14 (more selective, validated on walk-forward)
+  "trending-up": { strongBuy: 0.30, buy: 0.14, sell: -0.14, strongSell: -0.30 },
+  "trending-down": { strongBuy: 0.30, buy: 0.14, sell: -0.14, strongSell: -0.30 },
   // Apr 2026 recalibration: with dead-weight strategies removed (event,
   // tokenUnlock, tvlMomentum, meanReversion — all 0% fire rate), only 6
   // strategies remain active. The prior 0.30 BUY threshold was never reached
@@ -137,7 +137,7 @@ export const REGIME_THRESHOLDS: Record<MarketRegime, ActionThresholds> = {
   // conviction for shorts while keeping longs at the working 0.15 level.
   // Autoresearch-optimized (50 exp, Sharpe 1.77→4.79): buy 0.15→0.17, sell -0.20→-0.22.
   // Slightly more selective on entries; the 3 extra % improved win rate 47→53%.
-  "ranging":        { strongBuy: 0.25, buy: 0.12, sell: -0.15, strongSell: -0.25 },
+  "ranging":        { strongBuy: 0.30, buy: 0.14, sell: -0.14, strongSell: -0.30 },
   "high-volatility":{ strongBuy: 0.50, buy: 0.30, sell: -0.30, strongSell: -0.50 },
   "low-volatility": { strongBuy: 0.40, buy: 0.20, sell: -0.20, strongSell: -0.40 },
 };
@@ -477,14 +477,25 @@ const COUNTER_TREND_DAMPENED = new Set(['kronosVolForecast', 'socialVolume', 'wh
 /** Minimum absolute signal value to trigger counter-trend dampening. */
 const COUNTER_TREND_THRESHOLD = 0.05;
 
-/** Signals that recent forward-return analysis showed as harmful or dead.
- *  They are still logged for audit, but they no longer affect action scoring. */
+/** Signals excluded from scoring — still logged for audit.
+ *  Forward-return analysis (Apr 27, 50 trades):
+ *  - crossSectionalMomentum: INVERTED (-0.123 edge, bullish before dumps)
+ *  - multiTimeframe: weak inverted (-0.080 edge)
+ *  - btcNetworkHealth: zero variance (always +0.200)
+ *  - socialVolume: 85% zero, no forward edge
+ *  - fundingRate: 88% perma-bearish, no directional info
+ *  - tradingviewSignal: 84% dead
+ *  - momentum, hyperliquidFlow, event: noise / dead */
 const EXCLUDED_SCORING_SIGNALS = new Set([
   'tradingviewSignal',
   'momentum',
   'fundingRate',
   'hyperliquidFlow',
   'event',
+  'crossSectionalMomentum',
+  'multiTimeframe',
+  'btcNetworkHealth',
+  'socialVolume',
   'tokenUnlock',
   'tvlMomentum',
 ]);

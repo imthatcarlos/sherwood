@@ -45,17 +45,17 @@ export interface StrategyParams {
 
 const DEFAULT_PARAMS: StrategyParams = {
   weights: {
-    smartMoney: 0.05,
-    technical: 0.35,
+    smartMoney: 0.30,
+    technical: 0.25,
     sentiment: 0.10,
     onchain: 0.20,
     fundamental: 0.15,
-    event: 0.15,
+    event: 0.00,
   },
-  buyThreshold: 0.12,     // autoresearch-optimized
-  sellThreshold: -0.13,   // autoresearch-optimized
-  stopLossPct: 0.05,    // 5% price move (widened from 4%)
-  takeProfitRR: 1.5,
+  buyThreshold: 0.14,     // autoresearch walk-forward validated
+  sellThreshold: -0.14,
+  stopLossPct: 0.05,
+  takeProfitRR: 2.0,     // wider TP captures more upside
   trailPct: 0.03,       // tighter trail (from 4%)
   timeStopHours: 84,    // shorter (from 96h)
   leverage: 1,           // no leverage until WR > 60%

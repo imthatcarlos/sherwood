@@ -281,10 +281,10 @@ describe("computeTradeDecision", () => {
     // Scores may differ: trending-up dampens lagging technical signals by 50%,
     // so the aggregate shifts toward the non-technical (bullish) signals.
     // Both should be positive; trending-up fires BUY at its 0.10 threshold.
-    expect(trendingUpDecision.score).toBeGreaterThan(0.10);
+    expect(trendingUpDecision.score).toBeGreaterThan(0.14);
     // With lowered thresholds, strong bullish signals now hit STRONG_BUY (>= 0.30)
     expect(["BUY", "STRONG_BUY"]).toContain(trendingUpDecision.action);
-    expect(trendingUpDecision.thresholds?.buy).toBe(0.12);
+    expect(trendingUpDecision.thresholds?.buy).toBe(0.14);
   });
 
   it("ranging regime fires BUY at the 0.17 threshold", () => {
@@ -296,11 +296,11 @@ describe("computeTradeDecision", () => {
     const rangingDecision = computeTradeDecision(
       signals, undefined, undefined, undefined, "ranging",
     );
-    expect(rangingDecision.score).toBeGreaterThan(0.12);
+    expect(rangingDecision.score).toBeGreaterThan(0.14);
     expect(rangingDecision.score).toBeLessThan(0.25);
     expect(rangingDecision.action).toBe("BUY");
-    expect(rangingDecision.thresholds?.buy).toBe(0.12);
-    expect(rangingDecision.thresholds?.sell).toBeCloseTo(-0.15, 2);
+    expect(rangingDecision.thresholds?.buy).toBe(0.14);
+    expect(rangingDecision.thresholds?.sell).toBeCloseTo(-0.14, 2);
   });
 
   it("trending-up BUY threshold is lower than SELL (asymmetric in favor of longs)", () => {

@@ -121,7 +121,7 @@ export class TradeExecutor {
   }> {
     // Token blacklist — serial losers identified from trade analysis.
     // AAVE: 4 trades, 1W, -$145. FARTCOIN: 2 trades, 0W, -$118.
-    const BLACKLISTED_TOKENS = new Set(['aave', 'fartcoin']);
+    const BLACKLISTED_TOKENS = new Set(['aave', 'fartcoin', 'dogecoin']);
     if (BLACKLISTED_TOKENS.has(tokenId)) {
       return {
         success: false,
@@ -216,7 +216,7 @@ export class TradeExecutor {
     //   Time stop: 96h (see risk.ts) — if it hasn't moved, it's dead money
     const isShort = decision.action === 'SELL' || decision.action === 'STRONG_SELL';
     const direction: 'long' | 'short' = isShort ? 'short' : 'long';
-    const RR_RATIO = 1.5;  // was 2.0 — 9.4% TP was unrealistic, 1.5:1 hits more often
+    const RR_RATIO = 2.0;  // autoresearch (Apr 27): 1.5→2.0 captures more upside from winners
     // Nunchi autoresearch (103 experiments): wider ATR stops let winners run.
     // Their optimal was 5.5x ATR; we use 3.5x as a compromise between letting
     // winners breathe and controlling loss on stopped trades. Prior 1.5x was
