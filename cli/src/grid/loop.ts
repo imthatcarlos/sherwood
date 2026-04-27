@@ -1,0 +1,144 @@
+/**
+ * Standalone grid event loop — runs the grid strategy independently
+ * from the directional agent loop on 1-minute cycles.
+ *
+ * Usage:
+ *   const loop = new GridLoop({ capital: 5000, cycle: 60_000 });
+ *   await loop.start();
+ */
+
+import chalk from 'chalk';
+import { GridManager } from './manager.js';
+import { GridPortfolio } from './portfolio.js';
+import { DEFAULT_GRID_CONFIG } from './config.js';
+import type { GridConfig } from './config.js';
+import { HyperliquidProvider } from '../providers/data/hyperliquid.js';
+
+export interface GridLoopConfig {
+  /** Starting capital in USD. */
+  capital: number;
+  /** Cycle interval in milliseconds. */
+  cycle: number;
+  /** Optional overrides for the default grid config. */
+  config?: Partial<GridConfig>;
+}
+
+export class GridLoop {
+  private cfg: GridLoopConfig;
+  private gridConfig: GridConfig;
+  private manager: GridManager;
+  private hl: HyperliquidProvider;
+  private running = false;
+  private cycleCount = 0;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(cfg: GridLoopConfig) {
+    this.cfg = cfg;
+    this.gridConfig = { ...DEFAULT_GRID_CONFIG, ...cfg.config };
+    this.manager = new GridManager(this.gridConfig);
+    this.hl = new HyperliquidProvider();
+  }
+
+  /** Start the grid loop. Resolves when shut down via SIGINT/SIGTERM. */
+  async start(): Promise<void> {
+    this.running = true;
+
+    // Graceful shutdown
+    const shutdown = () => {
+      console.error(chalk.yellow('\n  [grid-loop] Shutting down…'));
+      this.running = false;
+      if (this.timer) {
+        clearTimeout(this.timer);
+        this.timer = null;
+      }
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+
+    // Initialize grid if no state exists
+    await this.manager.init(this.cfg.capital);
+
+    // Startup banner
+    console.error(chalk.cyan(
+      `\n  [grid-loop] Started — capital=$${this.cfg.capital.toFixed(0)} ` +
+      `cycle=${(this.cfg.cycle / 1000).toFixed(0)}s ` +
+      `tokens=[${this.gridConfig.tokens.join(', ')}] ` +
+      `leverage=${this.gridConfig.leverage}x ` +
+      `levels=${this.gridConfig.levelsPerSide}/side\n`
+    ));
+
+    // Main loop
+    while (this.running) {
+      try {
+        await this.tick();
+      } catch (err) {
+        console.error(chalk.red(`  [grid-loop] Tick error: ${(err as Error).message}`));
+      }
+
+      // Wait for next cycle (interruptible via shutdown)
+      if (this.running) {
+        await new Promise<void>(resolve => {
+          this.timer = setTimeout(resolve, this.cfg.cycle);
+        });
+      }
+    }
+
+    // Cleanup listeners
+    process.off('SIGINT', shutdown);
+    process.off('SIGTERM', shutdown);
+    console.error(chalk.yellow('  [grid-loop] Stopped.'));
+  }
+
+  /** Execute one grid cycle. */
+  private async tick(): Promise<void> {
+    this.cycleCount++;
+    const start = Date.now();
+
+    // Fetch mark prices from Hyperliquid
+    const prices: Record<string, number> = {};
+    for (const token of this.gridConfig.tokens) {
+      const data = await this.hl.getHyperliquidData(token);
+      if (data?.markPrice && data.markPrice > 0) {
+        prices[token] = data.markPrice;
+      }
+    }
+
+    if (Object.keys(prices).length === 0) {
+      console.error(chalk.dim(`  [grid-loop] #${this.cycleCount} — no prices, skipping`));
+      return;
+    }
+
+    const result = await this.manager.tick(prices);
+    const elapsed = Date.now() - start;
+
+    // Log round trips when they happen
+    if (result.roundTrips > 0) {
+      console.error(chalk.green(
+        `  [grid-loop] #${this.cycleCount} — ${result.roundTrips} RT(s), ` +
+        `+$${result.pnlUsd.toFixed(2)} PnL, ${result.fills} fill(s) [${elapsed}ms]`
+      ));
+    }
+
+    // Log fills (without round trips)
+    if (result.fills > 0 && result.roundTrips === 0) {
+      console.error(chalk.dim(
+        `  [grid-loop] #${this.cycleCount} — ${result.fills} fill(s), 0 RTs [${elapsed}ms]`
+      ));
+    }
+
+    // Periodic status every ~60 cycles
+    if (this.cycleCount % 60 === 0) {
+      const stats = this.manager.getStats();
+      if (stats) {
+        console.error(chalk.cyan(
+          `  [grid-loop] Status #${this.cycleCount} — ` +
+          `totalPnL=$${stats.totalPnlUsd.toFixed(2)} ` +
+          `todayPnL=$${stats.todayPnlUsd.toFixed(2)} ` +
+          `RTs=${stats.totalRoundTrips} ` +
+          `alloc=$${stats.allocation.toFixed(0)} ` +
+          `${stats.paused ? '(PAUSED)' : ''}`
+        ));
+      }
+    }
+  }
+}
