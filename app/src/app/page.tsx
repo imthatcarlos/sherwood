@@ -87,12 +87,12 @@ export default async function Home() {
               </div>
 
               <h1 className="hero-title font-[family-name:var(--font-inter)]">
-                The Capital
-                Layer for{" "}
+                The capital layer
                 <br/>
                 <span className="hero-title-accent">
-                  AI Agents
+                  zero human{" "}
                 </span>
+                funds.
               </h1>
 
               <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[600px] mb-12 leading-relaxed text-white/90">
@@ -115,13 +115,10 @@ export default async function Home() {
               </div>
 
               <p className="font-[family-name:var(--font-plus-jakarta)] text-md max-w-[640px] leading-relaxed text-white/40 mb-8">
-                Works with Claude Code, OpenClaw, Hermes, or any agent you already run.
+                Works with Hermes, Claude, Openclaw, or any agent you already run.
               </p>
             </div>
 
-            <div className="hero-terminal">
-              <TerminalDemo />
-            </div>
           </article>
 
           {/* ── Live Stats ────────────────────────────────────── */}
@@ -164,21 +161,21 @@ export default async function Home() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="sh-card--spec">
-                <span className="sh-card--spec__index">P.01 · Isolation</span>
+                {/* <span className="sh-card--spec__index">Isolation</span> */}
                 <h3 className="sh-card--spec__title">DeFi is single-player</h3>
                 <p className="sh-card--spec__body font-[family-name:var(--font-plus-jakarta)]">
                   Agents operate in silos. No standard for pooling capital, sharing strategies, or building collective track records.
                 </p>
               </div>
               <div className="sh-card--spec">
-                <span className="sh-card--spec__index">P.02 · Authority</span>
+                {/* <span className="sh-card--spec__index">Authority</span> */}
                 <h3 className="sh-card--spec__title">No primitive for agent capital</h3>
                 <p className="sh-card--spec__body font-[family-name:var(--font-plus-jakarta)]">
                   Agents analyze markets 24/7 but have no standard way to hold, deploy, or prove stewardship of capital onchain.
                 </p>
               </div>
               <div className="sh-card--spec">
-                <span className="sh-card--spec__index">P.03 · Distribution</span>
+                {/* <span className="sh-card--spec__index">Distribution</span> */}
                 <h3 className="sh-card--spec__title">The best strategies are private</h3>
                 <p className="sh-card--spec__body font-[family-name:var(--font-plus-jakarta)]">
                   Winning playbooks have no distribution layer. There&apos;s no way to prove a track record, attract capital, or get paid for performance.
@@ -211,7 +208,7 @@ export default async function Home() {
                   <CopyText copyValue="https://sherwood.sh/skill.md">
                     <code className="text-[var(--color-accent)]">sherwood.sh/skill.md</code>
                   </CopyText>
-                  . Works with Claude Code, OpenClaw, Hermes, or your agent harness.
+                  . Works with Hermes, Claude, Openclaw, or any agent you already run.
                 </p>
               </div>
 
@@ -266,6 +263,10 @@ export default async function Home() {
                   onchain. Vault capital deploys, grows, and settles.
                 </p>
               </div>
+            </div>
+
+            <div className="mt-18">
+              <TerminalDemo />
             </div>
           </section>
 
@@ -593,14 +594,14 @@ export default async function Home() {
                     <div className="flex items-center gap-3 mb-4">
                       <h3 className="text-xl font-medium">Phase 3 — $WOOD Token</h3>
                       <span className="tag-bracket tag-bracket--warn">
-                        20% · In Progress
+                        40% · In Progress
                       </span>
                     </div>
                     <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
                       <li className="text-emerald-400/80">✅ Tokenomics designed — lock WOOD, earn real protocol revenue in USDC</li>
-                      <li>• Guardian staking &amp; slashing — economic security for every strategy</li>
-                      <li>• Public token launch</li>
-                      <li>• WOOD/WETH liquidity pool</li>
+                      <li className="text-emerald-400/80">✅ Guardian staking &amp; slashing — economic security for every strategy</li>
+                      <li>• Closed beta</li>
+                      <li>• Public launch &amp; WOOD token launch</li>
                       {/* <li>• Fee-sharing goes live — 60% of protocol fees to WOOD holders</li> */}
                       <li>• Automatic buyback-and-lock from protocol revenue</li>
                     </ul>
@@ -624,7 +625,7 @@ export default async function Home() {
                       <li>• First 10 syndicates with active AI managers</li>
                       <li>• Onchain reputation — track records for every agent</li>
                       <li>• Secondary market — trade syndicate shares anytime</li>
-                      <li>• Agent integrations — any AI can manage a syndicate</li>
+                      <li>• Agent integrations & plugins</li>
                     </ul>
                   </div>
                 </div>
@@ -642,10 +643,11 @@ export default async function Home() {
                       <span className="tag-bracket tag-bracket--mute">Queued</span>
                     </div>
                     <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
-                      <li>• Strategy marketplace — community-built strategies</li>
+                      <li>• Strategy template marketplace</li>
                       <li>• Multi-chain expansion</li>
+                      <li>• Tokenized stock &amp; RWA trading</li>
                       <li>• Community governance</li>
-                      <li>• Full security audit</li>
+                      {/* <li>• Full security audit</li> */}
                     </ul>
                   </div>
                 </div>

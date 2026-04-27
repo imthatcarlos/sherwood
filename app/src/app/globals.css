@@ -796,9 +796,6 @@ select:focus-visible {
 }
 
 /* ── Hero ───────────────────────────────────────────────── */
-/* Mobile / tablet: single-column flow. Terminal renders inline below copy.
-   Wide screens: flex row — text column on the left, terminal column on the
-   right, vertically centered with the H1 area. */
 
 .hero-section {
   position: relative;
@@ -806,53 +803,6 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-}
-
-.hero-content {
-  display: contents; /* Mobile default — children participate in hero-section's flow */
-}
-
-.hero-terminal {
-  display: block;
-  margin: 2rem auto 4rem;
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.hero-terminal .terminal-demo {
-  width: 100%;
-  max-width: 560px;
-  margin: 0 auto;
-}
-
-@media (min-width: 1280px) {
-  .hero-section {
-    flex-direction: row;
-    align-items: center;
-    column-gap: 3rem;
-  }
-  .hero-content {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 0;
-    min-width: 0;
-  }
-  .hero-terminal {
-    flex: 0 0 auto;
-    margin: 0;
-    align-self: center;
-  }
-  .hero-terminal .terminal-demo {
-    width: 500px;
-    max-width: none;
-    margin: 0;
-  }
-}
-
-@media (min-width: 1500px) {
-  .hero-terminal .terminal-demo {
-    width: 560px;
-  }
 }
 
 .hero-title {
@@ -2864,8 +2814,6 @@ a.sh-tab {
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
   margin: 2rem 0;
-  /* On wide screens the hero terminal floats absolutely to the right
-     (see .hero-terminal). Cap width so cards stay in the left column. */
   max-width: 720px;
 }
 @media (max-width: 768px) {

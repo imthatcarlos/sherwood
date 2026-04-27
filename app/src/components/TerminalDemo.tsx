@@ -35,17 +35,19 @@ const SCENE_1: ScriptLine[] = [
 ];
 
 const SCENE_2: ScriptLine[] = [
-  { type: "command", text: "$ sherwood strategy propose --template moonwell-supply", delay: 0 },
+  { type: "command", text: "$ sherwood strategy propose --template hyperliquid-perp", delay: 0 },
   { type: "blank", text: "", delay: 600 },
-  { type: "dim", text: "  Cloning MoonwellSupply template...", delay: 500 },
+  { type: "dim", text: "  Cloning HyperliquidPerp template...", delay: 500 },
   { type: "success", text: "  ✓ Cloned + initialized", delay: 200 },
   { type: "blank", text: "", delay: 300 },
   { type: "label", text: "  ◆ Proposal Summary", delay: 100 },
   { type: "separator", text: "─".repeat(48), delay: 50 },
-  { type: "output", text: "  Name:             Supply USDC to Moonwell", delay: 80 },
-  { type: "output", text: "  Performance Fee:  10%", delay: 80 },
+  { type: "output", text: "  Name:             10x BTC perp on Hyperliquid", delay: 80 },
+  { type: "output", text: "  Asset:            USDC (dynamic-all)", delay: 80 },
+  { type: "output", text: "  Leverage:         10x", delay: 80, segments: [{ text: "  Leverage:         " }, { text: "10x", accent: true }] },
+  { type: "output", text: "  Performance Fee:  15%", delay: 80 },
   { type: "output", text: "  Duration:         7 days", delay: 80 },
-  { type: "output", text: "  Calls:            2 execute + 2 settle", delay: 80 },
+  { type: "output", text: "  Calls:            3 execute + 2 settle", delay: 80 },
   { type: "separator", text: "─".repeat(48), delay: 50 },
   { type: "blank", text: "", delay: 300 },
   { type: "dim", text: "  Submitting proposal...", delay: 700 },
@@ -79,13 +81,15 @@ const SCENE_4: ScriptLine[] = [
   { type: "output", text: "  venice-inference    Stake VVV for sVVV — AI inference", delay: 120, segments: [{ text: "  venice-inference", accent: true }, { text: "    Stake VVV for sVVV — AI inference" }] },
   { type: "output", text: "  wsteth-moonwell     wstETH → Moonwell — stacked yield", delay: 120, segments: [{ text: "  wsteth-moonwell", accent: true }, { text: "     wstETH → Moonwell — stacked yield" }] },
   { type: "output", text: "  mamo-yield          Optimized yield via Morpho vaults", delay: 120, segments: [{ text: "  mamo-yield", accent: true }, { text: "          Optimized yield via Morpho vaults" }] },
+  { type: "output", text: "  portfolio           Weighted portfolio with rebalancing", delay: 120, segments: [{ text: "  portfolio", accent: true }, { text: "           Weighted portfolio with rebalancing" }] },
+  { type: "output", text: "  hyperliquid-perp    Leveraged perps on Hyperliquid", delay: 120, segments: [{ text: "  hyperliquid-perp", accent: true }, { text: "    Leveraged perps on Hyperliquid" }] },
   { type: "blank", text: "", delay: 100 },
   { type: "separator", text: "─".repeat(48), delay: 50 },
-  { type: "output", text: "  5 templates available", delay: 80 },
+  { type: "output", text: "  7 templates available", delay: 80 },
 ];
 
 const SCENES = [SCENE_1, SCENE_2, SCENE_3, SCENE_4];
-const PAUSE_BETWEEN_SCENES = 8000;
+const PAUSE_BETWEEN_SCENES = 5000;
 const TYPING_SPEED = 35; // ms per character for command lines
 
 export default function TerminalDemo() {
