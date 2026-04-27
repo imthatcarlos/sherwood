@@ -563,4 +563,31 @@ contract GovernorEmergencyTest is Test {
         assertEq(registry.ownerStake(address(vault)), MIN_OWNER_STAKE, "owner stake preserved");
         assertFalse(vault.redemptionsLocked(), "vault unlocked post-settle");
     }
+
+    function test_emergencySettle_reopenWithoutCancel_reverts() public {
+        uint256 pid = _createExecutedProposal(7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, _customCalls());
+
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.EmergencyAlreadyOpen.selector);
+        governor.emergencySettleWithCalls(pid, _customCalls());
+    }
+
+    function test_cancelEmergencySettle_afterStandardSettle_reverts() public {
+        uint256 pid = _createExecutedProposal(7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, _customCalls());
+
+        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
+        governor.settleProposal(pid);
+
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.ProposalNotExecuted.selector);
+        governor.cancelEmergencySettle(pid);
+    }
 }
