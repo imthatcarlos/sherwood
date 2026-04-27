@@ -592,9 +592,7 @@ contract GovernorEmergencyTest is Test {
         BatchExecutorLib.Call[] memory tooMany = new BatchExecutorLib.Call[](65);
         for (uint256 i = 0; i < 65; i++) {
             tooMany[i] = BatchExecutorLib.Call({
-                target: address(usdc),
-                data: abi.encodeCall(usdc.approve, (address(targetToken), 0)),
-                value: 0
+                target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 0)), value: 0
             });
         }
 
