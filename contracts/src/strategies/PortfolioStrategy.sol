@@ -60,6 +60,7 @@ contract PortfolioStrategy is BaseStrategy {
     error RebalancingInProgress();
     error StalePrice();
     error InvalidSlippage();
+    error QuoteUnavailable();
 
     // ── Constants ──
     uint256 public constant MAX_BASKET_SIZE = 20;
@@ -395,18 +396,19 @@ contract PortfolioStrategy is BaseStrategy {
 
     /// @dev Adapter-quote-driven minOut. Adapters with reliable quote() (e.g.
     ///      UniswapSwapAdapter against a real V3 pool) return the expected
-    ///      output, off which we apply maxSlippageBps. Adapters that don't
-    ///      implement quote (returns 0) get a 0 floor — caller must use the
-    ///      chainlink-priced rebalanceDelta path for protection.
+    ///      output, off which we apply maxSlippageBps. Adapters whose quote()
+    ///      returns 0 or reverts cannot guarantee slippage, so we revert with
+    ///      `QuoteUnavailable`. The chainlink-priced `rebalanceDelta` path
+    ///      bypasses this helper and computes its floor from signed feeds.
     function _quoteMinOut(address tokenIn, address tokenOut, uint256 amountIn, bytes memory extraData)
         internal
         returns (uint256)
     {
         try swapAdapter.quote(tokenIn, tokenOut, amountIn, extraData) returns (uint256 expected) {
-            if (expected == 0) return 0;
+            if (expected == 0) revert QuoteUnavailable();
             return (expected * (BPS_DENOMINATOR - maxSlippageBps)) / BPS_DENOMINATOR;
         } catch {
-            return 0;
+            revert QuoteUnavailable();
         }
     }
 

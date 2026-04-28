@@ -86,14 +86,13 @@ contract SynthraDirectAdapter is ISwapAdapter {
         }
 
         // Execute swap — positive amountSpecified = exact input
-        (int256 amount0, int256 amount1) = ISynthraPool(pool)
-            .swap(
-                msg.sender, // recipient gets output tokens
-                zeroForOne,
-                int256(amountIn),
-                zeroForOne ? MIN_SQRT_RATIO + 1 : MAX_SQRT_RATIO - 1,
-                ""
-            );
+        (int256 amount0, int256 amount1) = ISynthraPool(pool).swap(
+            msg.sender, // recipient gets output tokens
+            zeroForOne,
+            int256(amountIn),
+            zeroForOne ? MIN_SQRT_RATIO + 1 : MAX_SQRT_RATIO - 1,
+            ""
+        );
 
         // Calculate output amount (the negative delta is the output)
         amountOut = zeroForOne ? uint256(-amount1) : uint256(-amount0);
@@ -126,12 +125,12 @@ contract SynthraDirectAdapter is ISwapAdapter {
     }
 
     /// @inheritdoc ISwapAdapter
-    function quote(address tokenIn, address tokenOut, uint256 amountIn, bytes calldata extraData)
-        external
-        override
-        returns (uint256)
-    {
-        // Not needed for execution — return 0
+    /// @dev Direct-pool adapter does not implement an on-chain quoter — returns 0.
+    ///      Callers that drive `amountOutMin` from `quote()` (e.g. PortfolioStrategy
+    ///      execute/settle/rebalance) will revert with `QuoteUnavailable`. Use this
+    ///      adapter only with strategies whose minOut is computed from an external
+    ///      price source (e.g. Chainlink Data Streams, MoonwellSupplyStrategy).
+    function quote(address, address, uint256, bytes calldata) external pure override returns (uint256) {
         return 0;
     }
 }

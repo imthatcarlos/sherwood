@@ -56,7 +56,14 @@ contract WoodToken is OFT, ERC20Permit, ERC20Votes {
         _mint(to, minted);
     }
 
-    /// @notice Returns how many tokens can still be minted before hitting the cap.
+    /// @notice Remaining mintable headroom against the lifetime mint cap.
+    /// @dev Computed as `MAX_SUPPLY - _totalEverMinted`, NOT
+    ///      `MAX_SUPPLY - totalSupply()`. Burns (including OFT bridge-out
+    ///      `_burn`) do NOT replenish this counter — once a token is minted on
+    ///      this chain it permanently consumes cap budget, so the 1B cap stays
+    ///      load-bearing across cross-chain round-trips. Integrators looking
+    ///      for circulating-supply headroom should compute that themselves
+    ///      from `totalSupply()`.
     function totalMintable() public view returns (uint256) {
         return MAX_SUPPLY - _totalEverMinted;
     }
