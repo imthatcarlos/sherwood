@@ -296,6 +296,24 @@ export class GridManager {
     await this.buildGrid(grid, currentPrice);
   }
 
+  /** Get open fill exposure per token — used by the hedge manager. */
+  getOpenFillExposure(): Array<{ token: string; totalQuantity: number; totalNotional: number; avgEntryPrice: number; fillCount: number }> {
+    const state = this.portfolio.getState();
+    if (!state) return [];
+    return state.grids.map(g => {
+      const opens = g.openFills.filter(f => !f.closed);
+      const totalQty = opens.reduce((s, f) => s + f.quantity, 0);
+      const totalNotional = opens.reduce((s, f) => s + f.quantity * f.buyPrice, 0);
+      return {
+        token: g.token,
+        totalQuantity: totalQty,
+        totalNotional,
+        avgEntryPrice: totalQty > 0 ? totalNotional / totalQty : 0,
+        fillCount: opens.length,
+      };
+    }).filter(e => e.fillCount > 0);
+  }
+
   /** Get aggregate stats for display. */
   getStats(): { totalPnlUsd: number; todayPnlUsd: number; todayFills: number; totalRoundTrips: number; allocation: number; paused: boolean } | null {
     const state = this.portfolio.getState();

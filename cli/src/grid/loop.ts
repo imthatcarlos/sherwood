@@ -16,6 +16,7 @@ import { GridPortfolio } from './portfolio.js';
 import { DEFAULT_GRID_CONFIG } from './config.js';
 import type { GridConfig } from './config.js';
 import { HyperliquidProvider } from '../providers/data/hyperliquid.js';
+import { GridHedgeManager } from './hedge.js';
 
 const GRID_CYCLES_PATH = join(homedir(), '.sherwood', 'grid', 'cycles.jsonl');
 
@@ -32,6 +33,7 @@ export class GridLoop {
   private cfg: GridLoopConfig;
   private gridConfig: GridConfig;
   private manager: GridManager;
+  private hedge: GridHedgeManager;
   private hl: HyperliquidProvider;
   private running = false;
   private cycleCount = 0;
@@ -41,6 +43,7 @@ export class GridLoop {
     this.cfg = cfg;
     this.gridConfig = { ...DEFAULT_GRID_CONFIG, ...cfg.config };
     this.manager = new GridManager(this.gridConfig);
+    this.hedge = new GridHedgeManager();
     this.hl = new HyperliquidProvider();
   }
 
@@ -131,6 +134,17 @@ export class GridLoop {
       ));
     }
 
+    // Delta hedge — adjust short positions to offset underwater grid longs
+    const openExposure = this.manager.getOpenFillExposure();
+    const hedgeResult = await this.hedge.tick(openExposure, prices);
+    if (hedgeResult.adjustments > 0) {
+      console.error(chalk.magenta(
+        `  [hedge] ${hedgeResult.adjustments} adjustment(s), ` +
+        `unrealized: $${hedgeResult.unrealizedPnl.toFixed(2)}, ` +
+        `total realized: $${hedgeResult.totalRealizedPnl.toFixed(2)}`
+      ));
+    }
+
     // Write cycle log for cron monitor
     const stats = this.manager.getStats();
     const cycleEntry = {
@@ -144,6 +158,8 @@ export class GridLoop {
       totalRoundTrips: stats?.totalRoundTrips ?? 0,
       allocation: stats?.allocation ?? 0,
       paused: stats?.paused ?? false,
+      hedgeUnrealizedPnl: hedgeResult.unrealizedPnl,
+      hedgeTotalRealizedPnl: hedgeResult.totalRealizedPnl,
     };
     try {
       await mkdir(join(homedir(), '.sherwood', 'grid'), { recursive: true });
@@ -154,13 +170,18 @@ export class GridLoop {
     if (this.cycleCount % 60 === 0) {
       const stats = this.manager.getStats();
       if (stats) {
+        const hedgeStatus = this.hedge.getStatus();
+        const hedgeInfo = hedgeStatus && hedgeStatus.positions.length > 0
+          ? ` hedge=$${hedgeResult.unrealizedPnl.toFixed(2)}unr/$${hedgeStatus.totalRealizedPnl.toFixed(2)}real`
+          : '';
         console.error(chalk.cyan(
           `  [grid-loop] Status #${this.cycleCount} — ` +
           `totalPnL=$${stats.totalPnlUsd.toFixed(2)} ` +
           `todayPnL=$${stats.todayPnlUsd.toFixed(2)} ` +
           `RTs=${stats.totalRoundTrips} ` +
-          `alloc=$${stats.allocation.toFixed(0)} ` +
-          `${stats.paused ? '(PAUSED)' : ''}`
+          `alloc=$${stats.allocation.toFixed(0)}` +
+          `${hedgeInfo}` +
+          `${stats.paused ? ' (PAUSED)' : ''}`
         ));
       }
     }
