@@ -920,7 +920,16 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         _lastSettledAt[vault] = block.timestamp;
         proposal.state = ProposalState.Settled;
         delete _capitalSnapshots[proposalId];
+        // Close the registry-side review alongside the local hash. Without
+        // this, a normal `settleProposal` running while an emergency review
+        // is open leaves the registry's `EmergencyReview` struct stranded;
+        // post-PR #247 the new `state == Executed` guards on
+        // `cancelEmergencySettle` / `finalizeEmergencySettle` make the owner
+        // unable to clear it themselves, and `resolveEmergencyReview`
+        // (permissionless, no proposal-state check) would slash the owner
+        // for an already-settled proposal.
         if (_emergencyCallsHashes[proposalId] != bytes32(0)) {
+            _getRegistry().cancelEmergencyReview(proposalId);
             _clearEmergencyCalls(proposalId);
         }
         _decOpen(vault);
