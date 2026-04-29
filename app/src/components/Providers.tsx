@@ -7,6 +7,7 @@ import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import { wagmiConfig } from "@/lib/wagmi";
 import { ToastProvider } from "@/components/ui/Toast";
 import ChainGuard from "@/components/ChainGuard";
+import WebMCPBootstrap from "@/components/WebMCPBootstrap";
 
 /**
  * Custom RainbowKit theme tuned to Sherwood's brand palette.
@@ -48,6 +49,7 @@ export default function Providers({ children }: { children: ReactNode }) {
         <RainbowKitProvider theme={sherwoodRainbowTheme}>
           <ToastProvider>
             <ChainGuard />
+            <WebMCPBootstrap />
             {children}
           </ToastProvider>
         </RainbowKitProvider>
