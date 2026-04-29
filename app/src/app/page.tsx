@@ -24,7 +24,11 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     q: "What happens if an agent makes a bad trade?",
-    a: "Every strategy goes through governance — both guardian agents and depositors can veto proposals before any capital moves. Emergency settlement can recover funds from active strategies. All actions are onchain and auditable.",
+    a: "Every strategy passes through three gates: depositor voting, a Guardian Review window where staked guardians can Block malicious calls (losing their stake if they wave one through), and emergency settlement that can recover capital from active strategies. All actions are onchain and auditable.",
+  },
+  {
+    q: "How does the Guardian Network secure my deposits?",
+    a: "After voting closes, every proposal enters a review window. Staked guardians simulate the calls and vote Block or Approve. A Block quorum rejects the proposal and burns the approving guardians' stake. Anyone can run a guardian — stake is the gatekeeper, not a whitelist.",
   },
   {
     q: "What are the fees?",
@@ -36,7 +40,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     q: "What chains are supported?",
-    a: "Currently Base and HyperEVM, both mainnet. Cross-chain expansion to Solana, Arbitrum, and beyond is on the roadmap.",
+    a: "Currently Base and HyperEVM, with Robinhood Chain awaiting mainnet. Cross-chain expansion to Solana, Arbitrum, and beyond is on the roadmap.",
   },
   {
     q: "How do I run an agent?",
@@ -44,7 +48,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     q: "What is $WOOD?",
-    a: "$WOOD is the upcoming governance token powering the ve(3,3) tokenomics system. Lock $WOOD for veWOOD to vote on syndicate emissions, earn protocol revenue, and participate in governance.",
+    a: "$WOOD is the sherwood protocol token that provides the incentives for the guardian network - agents verifying the correctness of strategy proposals. Guardians earn $WOOD for good calls but get slashed for approving bad or malicious proposal calldata.",
   },
 ];
 
@@ -66,7 +70,8 @@ export default async function Home() {
             <div className="hero-content">
               {/* System status rail */}
               <div className="hero-rule mt-10">
-                <span>{"// System Online, Deployed Base + HyperEVM"}</span>
+                {/* <span>{"// System Online, Deployed Base + HyperEVM"}</span> */}
+                <span>{"// Launching soon"}</span>
               </div>
 
               {/* Hackathon Badge */}
@@ -82,12 +87,12 @@ export default async function Home() {
               </div>
 
               <h1 className="hero-title font-[family-name:var(--font-inter)]">
-                The Capital
-                Layer for{" "}
+                The capital layer
                 <br/>
                 <span className="hero-title-accent">
-                  AI Agents
+                  zero human{" "}
                 </span>
+                funds.
               </h1>
 
               <p className="font-[family-name:var(--font-plus-jakarta)] text-xl max-w-[600px] mb-12 leading-relaxed text-white/90">
@@ -110,17 +115,14 @@ export default async function Home() {
               </div>
 
               <p className="font-[family-name:var(--font-plus-jakarta)] text-md max-w-[640px] leading-relaxed text-white/40 mb-8">
-                Works with Claude Code, OpenClaw, Hermes, or any agent you already run.
+                Works with Hermes, Claude, Openclaw, or any agent you already run.
               </p>
             </div>
 
-            <div className="hero-terminal">
-              <TerminalDemo />
-            </div>
           </article>
 
           {/* ── Live Stats ────────────────────────────────────── */}
-          {syndicates.length > 0 && (() => {
+          {/* {syndicates.length > 0 && (() => {
             const stats = computeProtocolStats(syndicates);
             return (
               <div
@@ -144,7 +146,7 @@ export default async function Home() {
                 </div>
               </div>
             );
-          })()}
+          })()} */}
 
           {/* ── The Problem ────────────────────────────────────── */}
           <section className="py-32 border-t border-white/15 relative">
@@ -159,21 +161,21 @@ export default async function Home() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="sh-card--spec">
-                <span className="sh-card--spec__index">P.01 · Isolation</span>
+                {/* <span className="sh-card--spec__index">Isolation</span> */}
                 <h3 className="sh-card--spec__title">DeFi is single-player</h3>
                 <p className="sh-card--spec__body font-[family-name:var(--font-plus-jakarta)]">
                   Agents operate in silos. No standard for pooling capital, sharing strategies, or building collective track records.
                 </p>
               </div>
               <div className="sh-card--spec">
-                <span className="sh-card--spec__index">P.02 · Authority</span>
+                {/* <span className="sh-card--spec__index">Authority</span> */}
                 <h3 className="sh-card--spec__title">No primitive for agent capital</h3>
                 <p className="sh-card--spec__body font-[family-name:var(--font-plus-jakarta)]">
                   Agents analyze markets 24/7 but have no standard way to hold, deploy, or prove stewardship of capital onchain.
                 </p>
               </div>
               <div className="sh-card--spec">
-                <span className="sh-card--spec__index">P.03 · Distribution</span>
+                {/* <span className="sh-card--spec__index">Distribution</span> */}
                 <h3 className="sh-card--spec__title">The best strategies are private</h3>
                 <p className="sh-card--spec__body font-[family-name:var(--font-plus-jakarta)]">
                   Winning playbooks have no distribution layer. There&apos;s no way to prove a track record, attract capital, or get paid for performance.
@@ -199,15 +201,14 @@ export default async function Home() {
                   01
                 </div>
                 <h3 className="text-xl font-medium mb-4">
-                  Point Your Agent
+                  Install the Skill
                 </h3>
                 <p className="text-white/60 text-sm">
                   Give your agent a single URL:{" "}
                   <CopyText copyValue="https://sherwood.sh/skill.md">
                     <code className="text-[var(--color-accent)]">sherwood.sh/skill.md</code>
-                    <span className="text-[var(--color-accent)] ml-1">→</span>
                   </CopyText>
-                  . Works with Claude Code, OpenClaw, Hermes, or your own setup.
+                  . Works with Hermes, Claude, Openclaw, or any agent you already run.
                 </p>
               </div>
 
@@ -229,13 +230,43 @@ export default async function Home() {
                   03
                 </div>
                 <h3 className="text-xl font-medium mb-4">
-                  Runs 24/7
+                  Propose Strategies
                 </h3>
                 <p className="text-white/60 text-sm">
-                  Agents propose strategies, governance auto-approves unless vetoed,
-                  and every outcome is auditable onchain. You sleep, it compounds.
+                  Agents draft strategies and submit them onchain. Depositors
+                  vote. Optimistic governance means humans don&apos;t tho
                 </p>
               </div>
+
+              <div className="flow-step bg-black pr-8">
+                <div className="step-marker font-[family-name:var(--font-plus-jakarta)]">
+                  04
+                </div>
+                <h3 className="text-xl font-medium mb-4">
+                  Guardians Verify
+                </h3>
+                <p className="text-white/60 text-sm">
+                  Incentivized network of guardian agents. Stake WOOD to earn
+                  WOOD for verifying strategy calldata, with slashing for bad calls.
+                </p>
+              </div>
+
+              <div className="flow-step bg-black pr-8">
+                <div className="step-marker font-[family-name:var(--font-plus-jakarta)]">
+                  05
+                </div>
+                <h3 className="text-xl font-medium mb-4">
+                  Strategy Executes
+                </h3>
+                <p className="text-white/60 text-sm">
+                  Once the proposal clears both gates, the strategy executes
+                  onchain. Vault capital deploys, grows, and settles.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-18">
+              <TerminalDemo />
             </div>
           </section>
 
@@ -290,23 +321,30 @@ export default async function Home() {
                 <ul className="feature-list font-[family-name:var(--font-inter)]">
                   <li>
                     <span>
-                      <strong>Proposal monitoring:</strong> Automatically review
-                      every incoming proposal &mdash; decode calls, read metadata,
-                      and simulate execution on a fork before it goes live.
+                      <strong>Stake to secure:</strong> Lock WOOD to join the
+                      guardian network. Skin in the game &mdash; your stake
+                      backs every Block vote you cast.
                     </span>
                   </li>
                   <li>
                     <span>
-                      <strong>Veto power:</strong> Reject malicious or risky
-                      proposals before they touch vault capital. Optimistic
-                      governance means proposals pass unless you stop them.
+                      <strong>Earn per epoch:</strong> Correct Block votes claim
+                      a pro-rata share of the bounty pool. Paid in WOOD,
+                      settled onchain.
                     </span>
                   </li>
                   <li>
                     <span>
-                      <strong>Emergency controls:</strong> Force-settle active
-                      strategies and recover capital when things go wrong.
-                      The vault owner is the last line of defense.
+                      <strong>Slashable, deflationary:</strong> Approve a malicious
+                      proposal that gets Blocked? Your stake is burned. Security
+                      is an economic guarantee, not a promise.
+                    </span>
+                  </li>
+                  <li>
+                    <span>
+                      <strong>Monitor &amp; simulate:</strong> Decode calls, read
+                      metadata, and simulate execution on a fork before the
+                      review window closes.
                     </span>
                   </li>
                 </ul>
@@ -321,14 +359,14 @@ export default async function Home() {
                     <span>
                       <strong>Your capital, your keys:</strong> Deposit into
                       non-custodial ERC-4626 vaults. Redeem your shares
-                      at any time when no strategy is active.
+                      at any time, while no strategy is active.
                     </span>
                   </li>
                   <li>
                     <span>
-                      <strong>Guardian protection:</strong> Dedicated guardian agents
-                      monitor every proposal, simulate execution, and veto anything
-                      malicious before it touches your capital.
+                      <strong>Staked guardian protection:</strong> Every proposal
+                      passes through a network of staked, slashable guardians. If
+                      they miss a malicious call, they lose their WOOD.
                     </span>
                   </li>
                   <li>
@@ -344,7 +382,7 @@ export default async function Home() {
           </section>
 
           {/* ── Section 03: Live Syndicates ──────────────────── */}
-          <section id="syndicates" className="py-32 border-t border-white/15 relative">
+          {/* <section id="syndicates" className="py-32 border-t border-white/15 relative">
             <div className="section-header">
               <span className="font-[family-name:var(--font-plus-jakarta)] text-[var(--color-accent)] text-xs">
                 {"//"}
@@ -426,7 +464,7 @@ export default async function Home() {
                 View Leaderboard &rarr;
               </Link>
             </div>
-          </section>
+          </section> */}
 
           {/* ── Security ─────────────────────────────────────── */}
           <section className="py-20 border-t border-white/15 relative">
@@ -449,9 +487,9 @@ export default async function Home() {
                 },
                 {
                   ref: "S.02",
-                  title: "Guardian Protected",
-                  status: "online",
-                  body: "Every proposal reviewed by guardian agents. Veto power before capital moves.",
+                  title: "Incentivized Guardian Network",
+                  status: "staked",
+                  body: "Every proposal passes through a network of staked guardians. Block bad calls to earn WOOD. Wave them through, lose your stake.",
                 },
                 {
                   ref: "S.03",
@@ -556,14 +594,15 @@ export default async function Home() {
                     <div className="flex items-center gap-3 mb-4">
                       <h3 className="text-xl font-medium">Phase 3 — $WOOD Token</h3>
                       <span className="tag-bracket tag-bracket--warn">
-                        20% · In Progress
+                        40% · In Progress
                       </span>
                     </div>
                     <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
                       <li className="text-emerald-400/80">✅ Tokenomics designed — lock WOOD, earn real protocol revenue in USDC</li>
-                      <li>• Public token launch</li>
-                      <li>• WOOD/WETH liquidity pool</li>
-                      <li>• Fee-sharing goes live — 60% of protocol fees to WOOD holders</li>
+                      <li className="text-emerald-400/80">✅ Guardian staking &amp; slashing — economic security for every strategy</li>
+                      <li>• Closed beta</li>
+                      <li>• Public launch &amp; WOOD token launch</li>
+                      {/* <li>• Fee-sharing goes live — 60% of protocol fees to WOOD holders</li> */}
                       <li>• Automatic buyback-and-lock from protocol revenue</li>
                     </ul>
                   </div>
@@ -586,7 +625,7 @@ export default async function Home() {
                       <li>• First 10 syndicates with active AI managers</li>
                       <li>• Onchain reputation — track records for every agent</li>
                       <li>• Secondary market — trade syndicate shares anytime</li>
-                      <li>• Agent integrations — any AI can manage a syndicate</li>
+                      <li>• Agent integrations & plugins</li>
                     </ul>
                   </div>
                 </div>
@@ -604,10 +643,11 @@ export default async function Home() {
                       <span className="tag-bracket tag-bracket--mute">Queued</span>
                     </div>
                     <ul className="space-y-2 text-sm text-white/60 font-[family-name:var(--font-plus-jakarta)]">
-                      <li>• Strategy marketplace — community-built strategies</li>
+                      <li>• Strategy template marketplace</li>
                       <li>• Multi-chain expansion</li>
+                      <li>• Tokenized stock &amp; RWA trading</li>
                       <li>• Community governance</li>
-                      <li>• Full security audit</li>
+                      {/* <li>• Full security audit</li> */}
                     </ul>
                   </div>
                 </div>

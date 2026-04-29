@@ -7,9 +7,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { privateKeyToAccount } from "viem/accounts";
 
 const CONFIG_DIR = path.join(os.homedir(), ".sherwood");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
+const DASHBOARD_BRIDGE_PATH = path.join(CONFIG_DIR, "dashboard.json");
 
 /** Per-chain user-specific addresses (stored by chainId). */
 export interface ChainContracts {
@@ -65,6 +67,40 @@ export function loadConfig(): SherwoodConfig {
 export function saveConfig(config: SherwoodConfig): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
+  writeDashboardBridge(config);
+}
+
+/**
+ * Public-safe derivation of config.json for Hermes dashboard plugins to read.
+ * Excludes privateKey + every other sensitive field. Hermes' sherwood-companion
+ * plugin reads ~/.sherwood/dashboard.json to auto-detect the operator's
+ * primary syndicate without prompting.
+ *
+ * Wrapped in try/catch — bridge-write failure must not break a config save.
+ */
+function writeDashboardBridge(config: SherwoodConfig): void {
+  try {
+    let agentWallet: string | null = null;
+    if (config.privateKey) {
+      const key = config.privateKey.startsWith("0x")
+        ? (config.privateKey as `0x${string}`)
+        : (`0x${config.privateKey}` as `0x${string}`);
+      agentWallet = privateKeyToAccount(key).address;
+    }
+    const bridge = {
+      version: 1,
+      agentWallet,
+      syndicates: config.syndicates ?? {},
+      primarySyndicate: config.primarySyndicate ?? {},
+    };
+    fs.writeFileSync(
+      DASHBOARD_BRIDGE_PATH,
+      JSON.stringify(bridge, null, 2),
+      { mode: 0o600 },
+    );
+  } catch {
+    // Non-fatal: plugin will fall back to manual subdomain entry.
+  }
 }
 
 export function cacheGroupId(subdomain: string, groupId: string): void {

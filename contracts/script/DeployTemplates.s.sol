@@ -56,6 +56,7 @@ contract DeployTemplates is ScriptBase {
         t.mamo = _tryReadAddress(json, MAMO_KEY);
         t.hyperliquid = _tryReadAddress(json, HYPERLIQUID_KEY);
 
+        bool isHyperEvm = block.chainid == 999;
         bool anyDeployed = false;
 
         console.log("\n=== Strategy Template Deployment ===\n");
@@ -64,63 +65,73 @@ contract DeployTemplates is ScriptBase {
 
         vm.startBroadcast();
 
-        if (_needsDeploy(t.moonwell)) {
-            if (t.moonwell != address(0)) {
-                console.log("  Stale    MoonwellSupplyStrategy:   %s (no code, redeploying)", t.moonwell);
-            }
-            t.moonwell = address(new MoonwellSupplyStrategy());
-            console.log("  Deployed MoonwellSupplyStrategy:   %s", t.moonwell);
-            anyDeployed = true;
+        // Moonwell/Aerodrome/Venice/wstETH-Moonwell/Mamo are not active on HyperEVM
+        // (no Moonwell, Uniswap, Venice, or Aerodrome on chain 999). Only HyperliquidPerp
+        // deploys there. Off HyperEVM, only the five non-perp templates deploy.
+        if (isHyperEvm) {
+            console.log("  Skipped  MoonwellSupplyStrategy:   N/A on HyperEVM");
+            console.log("  Skipped  AerodromeLPStrategy:      N/A on HyperEVM");
+            console.log("  Skipped  VeniceInferenceStrategy:  N/A on HyperEVM");
+            console.log("  Skipped  WstETHMoonwellStrategy:   N/A on HyperEVM");
+            console.log("  Skipped  MamoYieldStrategy:        N/A on HyperEVM");
         } else {
-            console.log("  Skipped  MoonwellSupplyStrategy:   %s (already deployed)", t.moonwell);
+            if (_needsDeploy(t.moonwell)) {
+                if (t.moonwell != address(0)) {
+                    console.log("  Stale    MoonwellSupplyStrategy:   %s (no code, redeploying)", t.moonwell);
+                }
+                t.moonwell = address(new MoonwellSupplyStrategy());
+                console.log("  Deployed MoonwellSupplyStrategy:   %s", t.moonwell);
+                anyDeployed = true;
+            } else {
+                console.log("  Skipped  MoonwellSupplyStrategy:   %s (already deployed)", t.moonwell);
+            }
+
+            if (_needsDeploy(t.aerodrome)) {
+                if (t.aerodrome != address(0)) {
+                    console.log("  Stale    AerodromeLPStrategy:      %s (no code, redeploying)", t.aerodrome);
+                }
+                t.aerodrome = address(new AerodromeLPStrategy());
+                console.log("  Deployed AerodromeLPStrategy:      %s", t.aerodrome);
+                anyDeployed = true;
+            } else {
+                console.log("  Skipped  AerodromeLPStrategy:      %s (already deployed)", t.aerodrome);
+            }
+
+            if (_needsDeploy(t.venice)) {
+                if (t.venice != address(0)) {
+                    console.log("  Stale    VeniceInferenceStrategy:  %s (no code, redeploying)", t.venice);
+                }
+                t.venice = address(new VeniceInferenceStrategy());
+                console.log("  Deployed VeniceInferenceStrategy:  %s", t.venice);
+                anyDeployed = true;
+            } else {
+                console.log("  Skipped  VeniceInferenceStrategy:  %s (already deployed)", t.venice);
+            }
+
+            if (_needsDeploy(t.wsteth)) {
+                if (t.wsteth != address(0)) {
+                    console.log("  Stale    WstETHMoonwellStrategy:   %s (no code, redeploying)", t.wsteth);
+                }
+                t.wsteth = address(new WstETHMoonwellStrategy());
+                console.log("  Deployed WstETHMoonwellStrategy:   %s", t.wsteth);
+                anyDeployed = true;
+            } else {
+                console.log("  Skipped  WstETHMoonwellStrategy:   %s (already deployed)", t.wsteth);
+            }
+
+            if (_needsDeploy(t.mamo)) {
+                if (t.mamo != address(0)) {
+                    console.log("  Stale    MamoYieldStrategy:        %s (no code, redeploying)", t.mamo);
+                }
+                t.mamo = address(new MamoYieldStrategy());
+                console.log("  Deployed MamoYieldStrategy:        %s", t.mamo);
+                anyDeployed = true;
+            } else {
+                console.log("  Skipped  MamoYieldStrategy:        %s (already deployed)", t.mamo);
+            }
         }
 
-        if (_needsDeploy(t.aerodrome)) {
-            if (t.aerodrome != address(0)) {
-                console.log("  Stale    AerodromeLPStrategy:      %s (no code, redeploying)", t.aerodrome);
-            }
-            t.aerodrome = address(new AerodromeLPStrategy());
-            console.log("  Deployed AerodromeLPStrategy:      %s", t.aerodrome);
-            anyDeployed = true;
-        } else {
-            console.log("  Skipped  AerodromeLPStrategy:      %s (already deployed)", t.aerodrome);
-        }
-
-        if (_needsDeploy(t.venice)) {
-            if (t.venice != address(0)) {
-                console.log("  Stale    VeniceInferenceStrategy:  %s (no code, redeploying)", t.venice);
-            }
-            t.venice = address(new VeniceInferenceStrategy());
-            console.log("  Deployed VeniceInferenceStrategy:  %s", t.venice);
-            anyDeployed = true;
-        } else {
-            console.log("  Skipped  VeniceInferenceStrategy:  %s (already deployed)", t.venice);
-        }
-
-        if (_needsDeploy(t.wsteth)) {
-            if (t.wsteth != address(0)) {
-                console.log("  Stale    WstETHMoonwellStrategy:   %s (no code, redeploying)", t.wsteth);
-            }
-            t.wsteth = address(new WstETHMoonwellStrategy());
-            console.log("  Deployed WstETHMoonwellStrategy:   %s", t.wsteth);
-            anyDeployed = true;
-        } else {
-            console.log("  Skipped  WstETHMoonwellStrategy:   %s (already deployed)", t.wsteth);
-        }
-
-        if (_needsDeploy(t.mamo)) {
-            if (t.mamo != address(0)) {
-                console.log("  Stale    MamoYieldStrategy:        %s (no code, redeploying)", t.mamo);
-            }
-            t.mamo = address(new MamoYieldStrategy());
-            console.log("  Deployed MamoYieldStrategy:        %s", t.mamo);
-            anyDeployed = true;
-        } else {
-            console.log("  Skipped  MamoYieldStrategy:        %s (already deployed)", t.mamo);
-        }
-
-        // A1: HyperliquidPerpStrategy only deploys on HyperEVM (chain ID 999)
-        if (block.chainid == 999) {
+        if (isHyperEvm) {
             if (_needsDeploy(t.hyperliquid)) {
                 if (t.hyperliquid != address(0)) {
                     console.log("  Stale    HyperliquidPerpStrategy:  %s (no code, redeploying)", t.hyperliquid);
@@ -140,13 +151,14 @@ contract DeployTemplates is ScriptBase {
         // ── 3. Save addresses ──
 
         if (anyDeployed) {
-            vm.writeJson(vm.toString(t.moonwell), path, string.concat(".", MOONWELL_KEY));
-            vm.writeJson(vm.toString(t.aerodrome), path, string.concat(".", AERODROME_KEY));
-            vm.writeJson(vm.toString(t.venice), path, string.concat(".", VENICE_KEY));
-            vm.writeJson(vm.toString(t.wsteth), path, string.concat(".", WSTETH_KEY));
-            vm.writeJson(vm.toString(t.mamo), path, string.concat(".", MAMO_KEY));
-            if (block.chainid == 999) {
+            if (isHyperEvm) {
                 vm.writeJson(vm.toString(t.hyperliquid), path, string.concat(".", HYPERLIQUID_KEY));
+            } else {
+                vm.writeJson(vm.toString(t.moonwell), path, string.concat(".", MOONWELL_KEY));
+                vm.writeJson(vm.toString(t.aerodrome), path, string.concat(".", AERODROME_KEY));
+                vm.writeJson(vm.toString(t.venice), path, string.concat(".", VENICE_KEY));
+                vm.writeJson(vm.toString(t.wsteth), path, string.concat(".", WSTETH_KEY));
+                vm.writeJson(vm.toString(t.mamo), path, string.concat(".", MAMO_KEY));
             }
             console.log("\n  Addresses saved to %s", path);
         } else {
@@ -156,7 +168,7 @@ contract DeployTemplates is ScriptBase {
         // ── 4. Validate ──
 
         console.log("\n=== Validation ===\n");
-        _validate(t);
+        _validate(t, isHyperEvm);
         console.log("\n  All validations passed.\n");
     }
 
@@ -175,49 +187,50 @@ contract DeployTemplates is ScriptBase {
     }
 
     /// @notice Validate all deployed templates have correct on-chain state.
-    function _validate(Templates memory t) internal view {
-        // Each template should have code deployed
-        require(t.moonwell.code.length > 0, "MoonwellSupplyStrategy: no code");
-        console.log("  MoonwellSupplyStrategy:  code OK (%s bytes)", t.moonwell.code.length);
+    function _validate(Templates memory t, bool isHyperEvm) internal view {
+        // Each template should have code deployed (skip the five disabled-on-HyperEVM)
+        if (isHyperEvm) {
+            console.log("  MoonwellSupplyStrategy:  skipped (not on HyperEVM)");
+            console.log("  AerodromeLPStrategy:     skipped (not on HyperEVM)");
+            console.log("  VeniceInferenceStrategy: skipped (not on HyperEVM)");
+            console.log("  WstETHMoonwellStrategy:  skipped (not on HyperEVM)");
+            console.log("  MamoYieldStrategy:       skipped (not on HyperEVM)");
 
-        require(t.aerodrome.code.length > 0, "AerodromeLPStrategy: no code");
-        console.log("  AerodromeLPStrategy:     code OK (%s bytes)", t.aerodrome.code.length);
-
-        require(t.venice.code.length > 0, "VeniceInferenceStrategy: no code");
-        console.log("  VeniceInferenceStrategy: code OK (%s bytes)", t.venice.code.length);
-
-        require(t.wsteth.code.length > 0, "WstETHMoonwellStrategy: no code");
-        console.log("  WstETHMoonwellStrategy:  code OK (%s bytes)", t.wsteth.code.length);
-
-        require(t.mamo.code.length > 0, "MamoYieldStrategy: no code");
-        console.log("  MamoYieldStrategy:       code OK (%s bytes)", t.mamo.code.length);
-
-        // A1: Only validate Hyperliquid on HyperEVM (chain ID 999)
-        if (block.chainid == 999) {
             require(t.hyperliquid.code.length > 0, "HyperliquidPerpStrategy: no code");
             console.log("  HyperliquidPerpStrategy: code OK (%s bytes)", t.hyperliquid.code.length);
-        } else {
-            console.log("  HyperliquidPerpStrategy: skipped (not on HyperEVM)");
-        }
 
-        // Verify each returns the correct strategy name
-        _validateName(t.moonwell, "Moonwell Supply", "MoonwellSupplyStrategy");
-        _validateName(t.aerodrome, "Aerodrome LP", "AerodromeLPStrategy");
-        _validateName(t.venice, "Venice Inference", "VeniceInferenceStrategy");
-        _validateName(t.wsteth, "wstETH Moonwell Yield", "WstETHMoonwellStrategy");
-        _validateName(t.mamo, "Mamo Yield", "MamoYieldStrategy");
-        if (block.chainid == 999) {
             _validateName(t.hyperliquid, "Hyperliquid Perp", "HyperliquidPerpStrategy");
-        }
 
-        // Templates should NOT be initialized (vault == address(0))
-        require(IStrategy(t.moonwell).vault() == address(0), "MoonwellSupplyStrategy: already initialized");
-        require(IStrategy(t.aerodrome).vault() == address(0), "AerodromeLPStrategy: already initialized");
-        require(IStrategy(t.venice).vault() == address(0), "VeniceInferenceStrategy: already initialized");
-        require(IStrategy(t.wsteth).vault() == address(0), "WstETHMoonwellStrategy: already initialized");
-        require(IStrategy(t.mamo).vault() == address(0), "MamoYieldStrategy: already initialized");
-        if (block.chainid == 999) {
             require(IStrategy(t.hyperliquid).vault() == address(0), "HyperliquidPerpStrategy: already initialized");
+        } else {
+            require(t.moonwell.code.length > 0, "MoonwellSupplyStrategy: no code");
+            console.log("  MoonwellSupplyStrategy:  code OK (%s bytes)", t.moonwell.code.length);
+
+            require(t.aerodrome.code.length > 0, "AerodromeLPStrategy: no code");
+            console.log("  AerodromeLPStrategy:     code OK (%s bytes)", t.aerodrome.code.length);
+
+            require(t.venice.code.length > 0, "VeniceInferenceStrategy: no code");
+            console.log("  VeniceInferenceStrategy: code OK (%s bytes)", t.venice.code.length);
+
+            require(t.wsteth.code.length > 0, "WstETHMoonwellStrategy: no code");
+            console.log("  WstETHMoonwellStrategy:  code OK (%s bytes)", t.wsteth.code.length);
+
+            require(t.mamo.code.length > 0, "MamoYieldStrategy: no code");
+            console.log("  MamoYieldStrategy:       code OK (%s bytes)", t.mamo.code.length);
+
+            console.log("  HyperliquidPerpStrategy: skipped (not on HyperEVM)");
+
+            _validateName(t.moonwell, "Moonwell Supply", "MoonwellSupplyStrategy");
+            _validateName(t.aerodrome, "Aerodrome LP", "AerodromeLPStrategy");
+            _validateName(t.venice, "Venice Inference", "VeniceInferenceStrategy");
+            _validateName(t.wsteth, "wstETH Moonwell Yield", "WstETHMoonwellStrategy");
+            _validateName(t.mamo, "Mamo Yield", "MamoYieldStrategy");
+
+            require(IStrategy(t.moonwell).vault() == address(0), "MoonwellSupplyStrategy: already initialized");
+            require(IStrategy(t.aerodrome).vault() == address(0), "AerodromeLPStrategy: already initialized");
+            require(IStrategy(t.venice).vault() == address(0), "VeniceInferenceStrategy: already initialized");
+            require(IStrategy(t.wsteth).vault() == address(0), "WstETHMoonwellStrategy: already initialized");
+            require(IStrategy(t.mamo).vault() == address(0), "MamoYieldStrategy: already initialized");
         }
         console.log("  All templates: vault == address(0) (not initialized) OK");
     }
