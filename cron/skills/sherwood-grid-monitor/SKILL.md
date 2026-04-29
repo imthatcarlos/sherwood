@@ -35,10 +35,11 @@ This prints a formatted table. Use its output as the base.
 
 ```bash
 python3 -c "
-import json
+import json, os
 from datetime import datetime
 
-g = json.load(open('/home/ana/.sherwood/grid/portfolio.json'))
+home = os.path.expanduser('~')
+g = json.load(open(os.path.join(home, '.sherwood/grid/portfolio.json')))
 grids = g.get('grids', [])
 init_ts = g.get('initializedAt', 0)
 age_days = max(1, (datetime.now().timestamp() * 1000 - init_ts) / 86400000) if init_ts else 1
@@ -50,14 +51,27 @@ today_pnl = sum(grid['stats']['todayPnlUsd'] for grid in grids)
 today_fills = sum(grid['stats']['todayFills'] for grid in grids)
 daily_avg = total_pnl / age_days
 monthly = daily_avg * 30
+roi_pct = (monthly / total_alloc * 100) if total_alloc > 0 else 0
+
+# Hedge stats (delta-neutral hedging PnL)
+hedge_path = os.path.join(home, '.sherwood/grid/hedge.json')
+hedge_pnl = 0.0
+hedge_count = 0
+try:
+    h = json.load(open(hedge_path))
+    hedge_pnl = h.get('totalPnlUsd', 0.0)
+    hedge_count = h.get('totalHedges', 0)
+except (FileNotFoundError, json.JSONDecodeError):
+    pass
 
 print(f'GRID STRATEGY REPORT')
 print(f'━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 print()
 print(f'💰 Total PnL: +\${total_pnl:.2f} ({total_rts} round trips)')
+print(f'🛡️ Hedge PnL: \${hedge_pnl:+.2f} ({hedge_count} hedges)')
 print(f'📊 Today: +\${today_pnl:.2f} ({today_fills} fills)')
 print(f'📈 Daily avg: \${daily_avg:.2f}/day')
-print(f'📅 Monthly projection: \${monthly:.0f}/month ({monthly/total_alloc*100:.0f}% ROI)')
+print(f'📅 Monthly projection: \${monthly:.0f}/month ({roi_pct:.0f}% ROI)')
 print(f'💼 Allocation: \${total_alloc:,.0f}')
 print(f'⏱️ Running: {age_days:.1f} days')
 print()

@@ -11,8 +11,8 @@
  * Orca's fix: refuse the entry if the most recent short-term velocity is not
  * aligned with the direction.
  *
- *   - BUY  rejected if 1h velocity < BUY_MIN_PCT  (default -0.3%)
- *   - SELL rejected if 1h velocity > SELL_MAX_PCT (default +0.3%)
+ *   - BUY  rejected if 1h velocity < BUY_MIN_PCT  (default -1.0%)
+ *   - SELL rejected if 1h velocity > SELL_MAX_PCT (default +1.0%)
  *   - HOLD never gated.
  *
  * When velocity data is unavailable (no Hyperliquid fields, insufficient candle
