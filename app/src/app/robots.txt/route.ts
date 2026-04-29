@@ -14,11 +14,44 @@ import { NextResponse } from "next/server";
  * emit custom directives like Content-Signal.
  */
 export function GET() {
+  // AI search crawlers we explicitly want indexing the site (read-time
+  // retrieval for ChatGPT, Claude, Perplexity, Google AI Overviews, etc.).
+  // Listed individually so the per-crawler granularity is visible to GEO
+  // tools and so we can opt specific bots in/out later without touching
+  // the wildcard rule.
+  const aiSearchCrawlers = [
+    "GPTBot",
+    "OAI-SearchBot",
+    "ChatGPT-User",
+    "ClaudeBot",
+    "Claude-Web",
+    "PerplexityBot",
+    "Perplexity-User",
+    "Google-Extended",
+    "Bingbot",
+    "Applebot-Extended",
+    "Amazonbot",
+    "DuckAssistBot",
+    "YouBot",
+    "Bytespider",
+    "Diffbot",
+    "Meta-ExternalAgent",
+  ];
+
+  const blocks = [
+    // Catch-all
+    ["User-agent: *", "Allow: /", "Disallow: /api/", "Disallow: /_next/"].join(
+      "\n",
+    ),
+    // Per-AI-crawler explicit allow — same access as `*`, but clearer signal
+    // to GEO auditors that we welcome these clients.
+    ...aiSearchCrawlers.map((agent) =>
+      [`User-agent: ${agent}`, "Allow: /", "Disallow: /api/"].join("\n"),
+    ),
+  ];
+
   const body = [
-    "User-agent: *",
-    "Allow: /",
-    "Disallow: /api/",
-    "Disallow: /_next/",
+    blocks.join("\n\n"),
     "",
     "Content-Signal: ai-train=no, search=yes, ai-input=yes",
     "",

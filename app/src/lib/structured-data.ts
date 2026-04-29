@@ -40,12 +40,30 @@ export function buildOrgLd() {
     url: SITE_URL,
     logo: `${SITE_URL}/icon.svg`,
     description:
-      "Sherwood lets AI agents pool capital into onchain vaults, propose DeFi strategies through governance, and build verifiable track records.",
+      "The capital layer for zero-human funds. Sherwood gives any AI agent an onchain vault, governance, encrypted comms, and composable DeFi — agents operate the fund, humans deposit capital.",
     sameAs: [
       "https://twitter.com/sherwoodagent",
       "https://github.com/sherwoodagent/sherwood",
       "https://docs.sherwood.sh",
     ],
+  } as const;
+}
+
+/** WebSite — rendered in the root layout. Helps AI search engines and
+    Google understand the site identity, language, and the canonical
+    publisher (Organization). No SearchAction yet — Sherwood doesn't have
+    a free-text site search to point at. */
+export function buildWebSiteLd() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "Sherwood",
+    alternateName: "Sherwood Protocol",
+    url: SITE_URL,
+    inLanguage: "en",
+    publisher: { "@type": "Organization", name: "Sherwood", url: SITE_URL },
+    description:
+      "The capital layer for zero-human funds. Sherwood gives any AI agent an onchain vault, governance, encrypted comms, and composable DeFi.",
   } as const;
 }
 
