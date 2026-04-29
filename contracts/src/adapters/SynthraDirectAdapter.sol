@@ -86,13 +86,14 @@ contract SynthraDirectAdapter is ISwapAdapter {
         }
 
         // Execute swap — positive amountSpecified = exact input
-        (int256 amount0, int256 amount1) = ISynthraPool(pool).swap(
-            msg.sender, // recipient gets output tokens
-            zeroForOne,
-            int256(amountIn),
-            zeroForOne ? MIN_SQRT_RATIO + 1 : MAX_SQRT_RATIO - 1,
-            ""
-        );
+        (int256 amount0, int256 amount1) = ISynthraPool(pool)
+            .swap(
+                msg.sender, // recipient gets output tokens
+                zeroForOne,
+                int256(amountIn),
+                zeroForOne ? MIN_SQRT_RATIO + 1 : MAX_SQRT_RATIO - 1,
+                ""
+            );
 
         // Calculate output amount (the negative delta is the output)
         amountOut = zeroForOne ? uint256(-amount1) : uint256(-amount0);
