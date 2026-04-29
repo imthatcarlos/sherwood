@@ -182,7 +182,7 @@ contract ProtocolInvariantsTest is StdInvariant, Test {
         selectors[5] = ProtocolHandler.tryVoteOnProposal.selector;
         selectors[6] = ProtocolHandler.tryOpenReview.selector;
         selectors[7] = ProtocolHandler.tryResolveReview.selector;
-        selectors[8] = ProtocolHandler.tryResolveEmergencyReview.selector;
+        selectors[8] = ProtocolHandler.tryFinalizeEmergency.selector;
         selectors[9] = ProtocolHandler.stake.selector;
         selectors[10] = ProtocolHandler.requestUnstake.selector;
         selectors[11] = ProtocolHandler.cancelUnstake.selector;
@@ -416,7 +416,7 @@ contract ProtocolInvariantsTest is StdInvariant, Test {
     ///         `whenNotPaused` MUST revert during pause. The handler tracks
     ///         per-call attempt / revert counters for `flushBurn`,
     ///         `claimEpochReward`, `voteOnProposal`, `openReview`,
-    ///         `resolveReview`, and `resolveEmergencyReview`. This invariant
+    ///         `resolveReview`, and `finalizeEmergency`. This invariant
     ///         asserts the counters are equal — any guarded write that
     ///         silently succeeded during pause would make `attempts >
     ///         reverts`.
