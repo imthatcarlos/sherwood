@@ -51,6 +51,9 @@ contract HyperliquidGridStrategy is BaseStrategy {
     uint8 constant ACTION_CANCEL_ALL = 2;
     uint8 constant ACTION_CANCEL_AND_PLACE = 3;
 
+    // ── Limits ──
+    uint32 constant MAX_ASSETS = 32;
+
     // ── Storage (per-clone) ──
     IERC20 public asset;
     uint256 public depositAmount;
@@ -67,7 +70,7 @@ contract HyperliquidGridStrategy is BaseStrategy {
     uint32[] public assetIndices;
     mapping(uint32 => bool) public isAssetWhitelisted;
     bool public settled;
-    bool public swept;
+    uint256 public cumulativeSwept;
 
     struct GridOrder {
         uint32 assetIndex;
@@ -99,6 +102,7 @@ contract HyperliquidGridStrategy is BaseStrategy {
         if (maxOrderSize_ == 0) revert InvalidAmount();
         if (maxOrdersPerTick_ == 0) revert InvalidAmount();
         if (assetIndices_.length == 0) revert InvalidAmount();
+        if (assetIndices_.length > MAX_ASSETS) revert InvalidAmount();
 
         asset = IERC20(asset_);
         depositAmount = depositAmount_;
@@ -107,8 +111,10 @@ contract HyperliquidGridStrategy is BaseStrategy {
         maxOrderSize = maxOrderSize_;
         maxOrdersPerTick = maxOrdersPerTick_;
         for (uint256 i = 0; i < assetIndices_.length; i++) {
-            assetIndices.push(assetIndices_[i]);
-            isAssetWhitelisted[assetIndices_[i]] = true;
+            uint32 ai = assetIndices_[i];
+            if (isAssetWhitelisted[ai]) continue; // dedup
+            assetIndices.push(ai);
+            isAssetWhitelisted[ai] = true;
         }
     }
 
@@ -154,6 +160,10 @@ contract HyperliquidGridStrategy is BaseStrategy {
         }
     }
 
+    /// @dev Notional check: HL convention is `szDecimals + pxDecimals = 6`, so
+    ///      `sz * limitPx / 1e6` always yields notional in USDC-6-decimal units
+    ///      regardless of the asset's specific szDecimals. This holds for ALL
+    ///      perps on HyperCore.
     function _placeOrders(GridOrder[] memory orders) internal {
         if (orders.length > maxOrdersPerTick) revert TooManyOrders(orders.length, maxOrdersPerTick);
         for (uint256 i = 0; i < orders.length; i++) {
@@ -175,10 +185,13 @@ contract HyperliquidGridStrategy is BaseStrategy {
     }
 
     /// @notice Force-close all positions on tracked assets, transfer USD back to spot.
-    /// @dev IMPORTANT: keeper should call ACTION_CANCEL_ALL for each asset BEFORE
-    ///      this is invoked. Resting GTC orders are NOT cancelled here — they could
-    ///      fill against the force-close orders. This matches the established
-    ///      HyperliquidPerpStrategy pattern (settle relies on caller to clean up).
+    /// @dev IMPORTANT — SETTLEMENT RUNBOOK:
+    ///      Before the vault calls this (via the governor's settle action), the
+    ///      keeper MUST call `updateParams(ACTION_CANCEL_ALL)` for each asset to
+    ///      cancel all resting GTC grid orders. Otherwise resting orders may
+    ///      fill against the IOC reduce-only force-close orders here, leaving
+    ///      net positions and stranded margin. The contract cannot self-cancel
+    ///      because it does not store CLOIDs (keeper provides them per-call).
     /// @dev USDC arrives async — call sweepToVault() in a separate tx after arrival.
     function _settle() internal override {
         for (uint256 i = 0; i < assetIndices.length; i++) {
@@ -202,10 +215,14 @@ contract HyperliquidGridStrategy is BaseStrategy {
         uint256 bal = IERC20(asset).balanceOf(address(this));
         if (bal == 0) revert InvalidAmount();
 
-        if (!swept && minReturnAmount > 0 && bal < minReturnAmount) {
-            revert InsufficientReturn(bal, minReturnAmount);
+        // Enforce minReturn cumulatively until threshold met. Prevents dust race
+        // where an attacker triggers the first sweep with 1 USDC of arrived
+        // funds and bypasses the LP minReturn guarantee for subsequent arrivals.
+        uint256 newTotal = cumulativeSwept + bal;
+        if (minReturnAmount > 0 && newTotal < minReturnAmount) {
+            revert InsufficientReturn(newTotal, minReturnAmount);
         }
-        swept = true;
+        cumulativeSwept = newTotal;
 
         uint256 vaultBefore = IERC20(asset).balanceOf(vault());
         _pushAllToVault(address(asset));

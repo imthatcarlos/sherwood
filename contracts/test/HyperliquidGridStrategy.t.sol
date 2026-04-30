@@ -181,7 +181,7 @@ contract HyperliquidGridStrategyTest is Test {
         uint256 vaultBefore = usdc.balanceOf(vault);
         strategy.sweepToVault();
         assertEq(usdc.balanceOf(vault), vaultBefore + DEPOSIT);
-        assertTrue(strategy.swept());
+        assertGt(strategy.cumulativeSwept(), 0);
     }
 
     function test_sweepToVault_revertsIfNotSettled() public {
@@ -221,12 +221,31 @@ contract HyperliquidGridStrategyTest is Test {
         strategy.settle();
         // First sweep: full balance (DEPOSIT)
         strategy.sweepToVault();
-        assertTrue(strategy.swept());
+        assertEq(strategy.cumulativeSwept(), DEPOSIT);
         // Simulate more USDC arriving from async transfer
         usdc.mint(address(strategy), 5_000e6);
         // Second sweep: should succeed without minReturn check
         uint256 vaultBefore = usdc.balanceOf(vault);
         strategy.sweepToVault();
         assertEq(usdc.balanceOf(vault), vaultBefore + 5_000e6);
+    }
+
+    function test_sweepToVault_dustRaceCannotBypassMinReturn() public {
+        _execAndPrep();
+        vm.prank(vault);
+        strategy.settle();
+        // Drain to dust
+        vm.prank(address(strategy));
+        usdc.transfer(attacker, DEPOSIT - 100e6); // leave 100 USDC
+
+        // Attacker tries to sweep dust (100 USDC < 9900 minReturn)
+        vm.expectRevert(abi.encodeWithSelector(HyperliquidGridStrategy.InsufficientReturn.selector, 100e6, MIN_RETURN));
+        strategy.sweepToVault();
+
+        // More USDC arrives bringing total to over minReturn
+        usdc.mint(address(strategy), 10_000e6); // total 10,100
+        // Now sweep succeeds — cumulativeSwept (0) + bal (10,100) >= 9,900
+        strategy.sweepToVault();
+        assertEq(strategy.cumulativeSwept(), 10_100e6);
     }
 }
