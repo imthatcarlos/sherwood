@@ -144,6 +144,9 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     ///         Paginated reads above this cap silently clamp to `MAX_PAGE_LIMIT`.
     uint256 public constant MAX_PAGE_LIMIT = 100;
 
+    /// @notice Maximum management fee a vault owner may charge (10% of post-strategy net).
+    uint256 public constant MAX_MANAGEMENT_FEE_BPS = 1000;
+
     /// @dev Reserved for future storage — reduced by 1 for `guardianRegistry`,
     ///      reduced by 1 for `_activeSyndicateIds` (EnumerableSet.UintSet uses
     ///      a single storage slot for the Set struct).
@@ -194,7 +197,7 @@ contract SyndicateFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         agentRegistry = IERC721(p.agentRegistry);
         governor = p.governor;
         guardianRegistry = p.guardianRegistry;
-        if (p.managementFeeBps > 1000) revert ManagementFeeTooHigh();
+        if (p.managementFeeBps > MAX_MANAGEMENT_FEE_BPS) revert ManagementFeeTooHigh();
         managementFeeBps = p.managementFeeBps;
     }
 
