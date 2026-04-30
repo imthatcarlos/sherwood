@@ -169,4 +169,16 @@ contract ExecuteByBoundaryTest is Test {
         vm.expectRevert(ISyndicateGovernor.ProposalNotApproved.selector);
         governor.executeProposal(proposalId);
     }
+
+    /// @notice G-H5 sanity: one second before `executeBy` execution is
+    ///         unambiguously inside the window and must succeed.
+    function test_executeProposal_oneSecondBeforeExecuteBy_succeeds() public {
+        (uint256 proposalId, uint256 executeBy) = _createApproved();
+
+        vm.warp(executeBy - 1);
+        governor.executeProposal(proposalId);
+
+        ISyndicateGovernor.StrategyProposal memory p = governor.getProposal(proposalId);
+        assertEq(uint256(p.state), uint256(ISyndicateGovernor.ProposalState.Executed));
+    }
 }

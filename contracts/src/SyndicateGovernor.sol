@@ -280,19 +280,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         if (isCollaborative) {
             p.state = ProposalState.Draft;
         } else {
-            // -1 closes the same-block flash-delegate window (G-C1).
-            p.snapshotTimestamp = block.timestamp - 1;
-            p.voteEnd = block.timestamp + _params.votingPeriod;
-            p.reviewEnd = p.voteEnd + reviewPeriod_;
-            p.executeBy = p.reviewEnd + _params.executionWindow;
-            p.state = ProposalState.Pending;
-            // G-H6: snapshot vetoThresholdBps so a mid-vote timelock finalize
-            // can't retroactively move the threshold for this proposal.
-            p.vetoThresholdBps = _params.vetoThresholdBps;
-            // Draft doesn't count (not binding on the vault); Pending does.
-            unchecked {
-                ++openProposalCount[vault];
-            }
+            _initPendingProposal(p, reviewPeriod_);
         }
 
         // Store calls separately
@@ -684,6 +672,26 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
 
     // ==================== INTERNAL ====================
 
+    /// @dev Hoisted out of `propose` to keep that function under Yul's
+    ///      stack budget when `forge coverage` runs (optimizer + viaIR off).
+    ///      Reads `vault` from storage (already written by caller) to keep
+    ///      the call-site arg count to two.
+    function _initPendingProposal(StrategyProposal storage p, uint256 reviewPeriod_) private {
+        // -1 closes the same-block flash-delegate window (G-C1).
+        p.snapshotTimestamp = block.timestamp - 1;
+        p.voteEnd = block.timestamp + _params.votingPeriod;
+        p.reviewEnd = p.voteEnd + reviewPeriod_;
+        p.executeBy = p.reviewEnd + _params.executionWindow;
+        p.state = ProposalState.Pending;
+        // G-H6: snapshot vetoThresholdBps so a mid-vote timelock finalize
+        // can't retroactively move the threshold for this proposal.
+        p.vetoThresholdBps = _params.vetoThresholdBps;
+        // Draft doesn't count (not binding on the vault); Pending does.
+        unchecked {
+            ++openProposalCount[p.vault];
+        }
+    }
+
     /// @dev Push calldata calls into a storage mapping slot
     function _storeCalls(
         mapping(uint256 => BatchExecutorLib.Call[]) storage target,
@@ -833,7 +841,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             // don't move the bar for in-flight proposals.
             uint256 pastTotalSupply = IVotes(proposal.vault).getPastTotalSupply(proposal.snapshotTimestamp);
             if (pastTotalSupply > 0) {
-                uint256 vetoThreshold = (pastTotalSupply * proposal.vetoThresholdBps) / 10000;
+                uint256 vetoThreshold = (pastTotalSupply * proposal.vetoThresholdBps) / BPS_DENOMINATOR;
                 if (proposal.votesAgainst >= vetoThreshold) {
                     return ProposalState.Rejected;
                 }
@@ -939,7 +947,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         // (initialize + setProtocolFeeBps); re-asserting here closes any path
         // that could bypass the bounds dispatcher.
         if (_protocolFeeBps > 0) {
-            protocolFee = (profit * _protocolFeeBps) / 10000;
+            protocolFee = (profit * _protocolFeeBps) / BPS_DENOMINATOR;
             if (protocolFee > 0) {
                 if (_protocolFeeRecipient == address(0)) revert InvalidProtocolFeeRecipient();
                 _payFee(vault, asset, _protocolFeeRecipient, protocolFee);
@@ -955,7 +963,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         // On fund-funding failure (post-transfer), the amount is in the
         // registry but unpooled; ops can recover via the registry owner.
         if (_guardianFeeBps > 0) {
-            uint256 fee = (profit * _guardianFeeBps) / 10000;
+            uint256 fee = (profit * _guardianFeeBps) / BPS_DENOMINATOR;
             address recipient = _guardianRegistry;
             if (fee > 0) {
                 try ISyndicateVault(vault).transferPerformanceFee(asset, recipient, fee) {
@@ -980,10 +988,10 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
         uint256 netProfit = profit - protocolFee - guardianFee;
 
         // Agent performance fee from net profit
-        agentFee = (netProfit * perfFeeBps) / 10000;
+        agentFee = (netProfit * perfFeeBps) / BPS_DENOMINATOR;
 
         // Management fee from remainder after agent fee
-        uint256 mgmtFee = ((netProfit - agentFee) * ISyndicateVault(vault).managementFeeBps()) / 10000;
+        uint256 mgmtFee = ((netProfit - agentFee) * ISyndicateVault(vault).managementFeeBps()) / BPS_DENOMINATOR;
 
         if (agentFee > 0) {
             _distributeAgentFee(proposalId, vault, asset, proposer, agentFee);
@@ -1013,7 +1021,7 @@ contract SyndicateGovernor is GovernorParameters, GovernorEmergency, UUPSUpgrade
             for (uint256 i = 0; i < coProps.length; i++) {
                 bool active = ISyndicateVault(vault).isAgent(coProps[i].agent);
                 if (!active) continue;
-                uint256 share = (agentFee * coProps[i].splitBps) / 10000;
+                uint256 share = (agentFee * coProps[i].splitBps) / BPS_DENOMINATOR;
                 if (share == 0) {
                     if (distributed >= agentFee) continue;
                     share = 1;
