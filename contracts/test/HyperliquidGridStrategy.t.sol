@@ -20,7 +20,7 @@ contract HyperliquidGridStrategyTest is Test {
     uint256 constant DEPOSIT = 10_000e6;
     uint256 constant MIN_RETURN = 9_900e6;
     uint32 constant LEVERAGE = 5;
-    uint256 constant MAX_POSITION = 100_000e6;
+    uint256 constant MAX_ORDER_SIZE = 100_000e6;
     uint32 constant MAX_ORDERS = 32;
     uint32 constant BTC_ASSET = 3;
     uint32 constant ETH_ASSET = 4;
@@ -42,7 +42,7 @@ contract HyperliquidGridStrategyTest is Test {
         assets[2] = SOL_ASSET;
 
         bytes memory initData =
-            abi.encode(address(usdc), DEPOSIT, MIN_RETURN, LEVERAGE, MAX_POSITION, MAX_ORDERS, assets);
+            abi.encode(address(usdc), DEPOSIT, MIN_RETURN, LEVERAGE, MAX_ORDER_SIZE, MAX_ORDERS, assets);
         strategy.initialize(vault, proposer, initData);
 
         usdc.mint(vault, 100_000e6);
@@ -57,7 +57,7 @@ contract HyperliquidGridStrategyTest is Test {
         assertEq(strategy.proposer(), proposer);
         assertEq(address(strategy.asset()), address(usdc));
         assertEq(strategy.leverage(), LEVERAGE);
-        assertEq(strategy.maxPositionSize(), MAX_POSITION);
+        assertEq(strategy.maxOrderSize(), MAX_ORDER_SIZE);
         assertEq(strategy.maxOrdersPerTick(), MAX_ORDERS);
         assertTrue(strategy.isAssetWhitelisted(BTC_ASSET));
         assertTrue(strategy.isAssetWhitelisted(ETH_ASSET));
@@ -199,5 +199,34 @@ contract HyperliquidGridStrategyTest is Test {
         usdc.transfer(attacker, DEPOSIT - 1000e6); // leave 1000e6 < 9900e6
         vm.expectRevert(abi.encodeWithSelector(HyperliquidGridStrategy.InsufficientReturn.selector, 1000e6, MIN_RETURN));
         strategy.sweepToVault();
+    }
+
+    function test_updateParams_placeGrid_revertsOnOrderTooLarge() public {
+        _execAndPrep();
+        HyperliquidGridStrategy.GridOrder[] memory orders = new HyperliquidGridStrategy.GridOrder[](1);
+        // Order notional = sz * limitPx / 1e6. MAX_ORDER_SIZE = 100_000e6 = 1e11.
+        // sz=1000, limitPx=2e14 → notional = 1000 * 2e14 / 1e6 = 2e11 (200k USD), exceeds 100k.
+        orders[0] = _gridOrder(BTC_ASSET, true, 200_000_000_000_000, 1000, 1);
+        bytes memory data = abi.encode(uint8(1), orders);
+        vm.prank(proposer);
+        vm.expectRevert(
+            abi.encodeWithSelector(HyperliquidGridStrategy.OrderTooLarge.selector, 200_000e6, MAX_ORDER_SIZE)
+        );
+        strategy.updateParams(data);
+    }
+
+    function test_sweepToVault_repeatableForPartialArrivals() public {
+        _execAndPrep();
+        vm.prank(vault);
+        strategy.settle();
+        // First sweep: full balance (DEPOSIT)
+        strategy.sweepToVault();
+        assertTrue(strategy.swept());
+        // Simulate more USDC arriving from async transfer
+        usdc.mint(address(strategy), 5_000e6);
+        // Second sweep: should succeed without minReturn check
+        uint256 vaultBefore = usdc.balanceOf(vault);
+        strategy.sweepToVault();
+        assertEq(usdc.balanceOf(vault), vaultBefore + 5_000e6);
     }
 }

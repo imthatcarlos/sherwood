@@ -43,7 +43,7 @@ contract HyperliquidGridStrategy is BaseStrategy {
     error NotSweepable();
     error InsufficientReturn(uint256 actual, uint256 minimum);
     error TooManyOrders(uint256 actual, uint256 max);
-    error PositionTooLarge(uint256 actual, uint256 max);
+    error OrderTooLarge(uint256 actual, uint256 max);
     error AssetNotWhitelisted(uint32 asset);
 
     // ── Action types ──
@@ -56,7 +56,13 @@ contract HyperliquidGridStrategy is BaseStrategy {
     uint256 public depositAmount;
     uint256 public minReturnAmount;
     uint32 public leverage;
-    uint256 public maxPositionSize;
+    /// @notice Per-order notional cap (USD, 6 decimals). Each individual GridOrder's
+    ///         notional (sz * limitPx / 1e6) must be <= this value. This is NOT a
+    ///         cumulative per-asset exposure cap — the keeper is trusted to compose
+    ///         grids correctly. Per-order bound limits blast radius of a single bad
+    ///         order (typo, fat-finger, compromised keeper) without constraining
+    ///         legitimate grid layouts.
+    uint256 public maxOrderSize;
     uint32 public maxOrdersPerTick;
     uint32[] public assetIndices;
     mapping(uint32 => bool) public isAssetWhitelisted;
@@ -82,7 +88,7 @@ contract HyperliquidGridStrategy is BaseStrategy {
             uint256 depositAmount_,
             uint256 minReturnAmount_,
             uint32 leverage_,
-            uint256 maxPositionSize_,
+            uint256 maxOrderSize_,
             uint32 maxOrdersPerTick_,
             uint32[] memory assetIndices_
         ) = abi.decode(data, (address, uint256, uint256, uint32, uint256, uint32, uint32[]));
@@ -90,7 +96,7 @@ contract HyperliquidGridStrategy is BaseStrategy {
         if (asset_ == address(0)) revert ZeroAddress();
         if (depositAmount_ > type(uint64).max) revert DepositAmountTooLarge();
         if (leverage_ == 0 || leverage_ > 50) revert InvalidAmount();
-        if (maxPositionSize_ == 0) revert InvalidAmount();
+        if (maxOrderSize_ == 0) revert InvalidAmount();
         if (maxOrdersPerTick_ == 0) revert InvalidAmount();
         if (assetIndices_.length == 0) revert InvalidAmount();
 
@@ -98,7 +104,7 @@ contract HyperliquidGridStrategy is BaseStrategy {
         depositAmount = depositAmount_;
         minReturnAmount = minReturnAmount_;
         leverage = leverage_;
-        maxPositionSize = maxPositionSize_;
+        maxOrderSize = maxOrderSize_;
         maxOrdersPerTick = maxOrdersPerTick_;
         for (uint256 i = 0; i < assetIndices_.length; i++) {
             assetIndices.push(assetIndices_[i]);
@@ -154,7 +160,7 @@ contract HyperliquidGridStrategy is BaseStrategy {
             GridOrder memory o = orders[i];
             if (!isAssetWhitelisted[o.assetIndex]) revert AssetNotWhitelisted(o.assetIndex);
             uint256 approxUsd = uint256(o.sz) * uint256(o.limitPx) / 1e6;
-            if (approxUsd > maxPositionSize) revert PositionTooLarge(approxUsd, maxPositionSize);
+            if (approxUsd > maxOrderSize) revert OrderTooLarge(approxUsd, maxOrderSize);
             L1Write.sendLimitOrder(o.assetIndex, o.isBuy, o.limitPx, o.sz, false, TimeInForce.Gtc, o.cloid);
             emit GridOrderPlaced(o.assetIndex, o.isBuy, o.limitPx, o.sz, o.cloid);
         }
@@ -168,6 +174,12 @@ contract HyperliquidGridStrategy is BaseStrategy {
         }
     }
 
+    /// @notice Force-close all positions on tracked assets, transfer USD back to spot.
+    /// @dev IMPORTANT: keeper should call ACTION_CANCEL_ALL for each asset BEFORE
+    ///      this is invoked. Resting GTC orders are NOT cancelled here — they could
+    ///      fill against the force-close orders. This matches the established
+    ///      HyperliquidPerpStrategy pattern (settle relies on caller to clean up).
+    /// @dev USDC arrives async — call sweepToVault() in a separate tx after arrival.
     function _settle() internal override {
         for (uint256 i = 0; i < assetIndices.length; i++) {
             uint32 ai = assetIndices[i];
