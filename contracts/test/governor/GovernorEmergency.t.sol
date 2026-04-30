@@ -126,7 +126,7 @@ contract GovernorEmergencyTest is Test {
         vm.prank(owner);
         governor.addVault(address(vault));
 
-        // Registry — governor is the real governor so `openEmergencyReview` passes
+        // Registry — governor is the real governor so `openEmergency` passes
         // the onlyGovernor check. The test contract acts as factory so we can bind
         // owner stake without standing up the full factory. Must land at
         // predictedRegistryProxy — `require` below catches nonce drift.
@@ -325,31 +325,32 @@ contract GovernorEmergencyTest is Test {
     // cancelEmergencySettle
     // ──────────────────────────────────────────────────────────────
 
-    function test_cancelEmergencySettle_clearsHash() public {
+    function test_cancelEmergencySettle_clearsState() public {
         uint256 pid = _createExecutedProposal(7 days);
         vm.warp(vm.getBlockTimestamp() + 7 days);
 
         vm.prank(owner);
         governor.emergencySettleWithCalls(pid, _customCalls());
 
-        // Cancel clears the hash so a later `finalizeEmergencySettle` with the
-        // same calls reverts with EmergencySettleMismatch (hash == 0).
+        // Cancel clears registry state so the emergency review is no longer open.
         vm.expectEmit(true, true, false, false, address(governor));
         emit ISyndicateGovernor.EmergencySettleCancelled(pid, owner);
         vm.prank(owner);
         governor.cancelEmergencySettle(pid);
 
+        assertFalse(registry.isEmergencyOpen(pid), "emergency review closed after cancel");
+
+        // finalizeEmergencySettle reverts because the review was resolved by cancel.
         vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
         vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.EmergencySettleMismatch.selector);
-        governor.finalizeEmergencySettle(pid, _customCalls());
+        vm.expectRevert(IGuardianRegistry.ReviewNotReadyForResolve.selector);
+        governor.finalizeEmergencySettle(pid);
     }
 
     /// @notice Regression for PR #229 critical fix: cancelling an emergency
-    ///         settle must also invalidate the registry-side review so a
-    ///         keeper can't call `resolveEmergencyReview` past `reviewEnd` and
-    ///         trigger `_slashOwner` based on stale round-1 block votes.
-    function test_cancelEmergencySettle_preventsResolveSlashingStaleVotes() public {
+    ///         settle must also invalidate the registry-side review so stale
+    ///         block votes cannot slash the owner.
+    function test_cancelEmergencySettle_preventsSlashingStaleVotes() public {
         uint256 pid = _createExecutedProposal(7 days);
         vm.warp(vm.getBlockTimestamp() + 7 days);
 
@@ -370,12 +371,8 @@ contract GovernorEmergencyTest is Test {
         uint256 stakeBefore = registry.ownerStake(address(vault));
         assertEq(stakeBefore, MIN_OWNER_STAKE);
 
-        // Warp past the original reviewEnd and attempt permissionless resolve.
-        // Must revert — cancelled review zeroes `reviewEnd` so resolve can't fire
-        // and slash the owner on stale round-1 block votes.
-        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
-        vm.expectRevert(IGuardianRegistry.ReviewNotReadyForResolve.selector);
-        registry.resolveEmergencyReview(pid);
+        // Emergency review is closed — no permissionless resolve possible.
+        assertFalse(registry.isEmergencyOpen(pid), "emergency closed after cancel");
 
         // Owner stake untouched.
         assertEq(registry.ownerStake(address(vault)), stakeBefore, "owner stake NOT slashed");
@@ -406,36 +403,16 @@ contract GovernorEmergencyTest is Test {
         registry.voteBlockEmergencySettle(pid); // must NOT revert AlreadyVoted
 
         // Only guardianA has voted this round → 30k/60k = 50% ≥ 30% block quorum.
-        // No stale weight from round 1 should be double-counted.
+        // Finalize via governor — blocked because guardianA voted block.
         vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
-        bool blocked = registry.resolveEmergencyReview(pid);
-        assertTrue(blocked, "fresh round resolves on its own votes");
+        vm.prank(owner);
+        vm.expectRevert(ISyndicateGovernor.EmergencySettleBlocked.selector);
+        governor.finalizeEmergencySettle(pid);
     }
 
     // ──────────────────────────────────────────────────────────────
     // finalizeEmergencySettle
     // ──────────────────────────────────────────────────────────────
-
-    function test_finalizeEmergencySettle_hashMismatch_reverts() public {
-        uint256 pid = _createExecutedProposal(7 days);
-        vm.warp(vm.getBlockTimestamp() + 7 days);
-
-        vm.prank(owner);
-        governor.emergencySettleWithCalls(pid, _customCalls());
-
-        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
-
-        // Submit a different call array → hash mismatch.
-        BatchExecutorLib.Call[] memory different = new BatchExecutorLib.Call[](1);
-        different[0] = BatchExecutorLib.Call({
-            target: address(usdc),
-            data: abi.encodeCall(usdc.approve, (address(targetToken), 1)), // different amount
-            value: 0
-        });
-        vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.EmergencySettleMismatch.selector);
-        governor.finalizeEmergencySettle(pid, different);
-    }
 
     function test_finalizeEmergencySettle_notBlocked_executes() public {
         uint256 pid = _createExecutedProposal(7 days);
@@ -450,7 +427,7 @@ contract GovernorEmergencyTest is Test {
         vm.expectEmit(true, false, false, false, address(governor));
         emit ISyndicateGovernor.EmergencySettleFinalized(pid, 0);
         vm.prank(owner);
-        governor.finalizeEmergencySettle(pid, _customCalls());
+        governor.finalizeEmergencySettle(pid);
 
         assertEq(uint256(governor.getProposal(pid).state), uint256(ISyndicateGovernor.ProposalState.Settled));
         assertFalse(vault.redemptionsLocked());
@@ -471,16 +448,9 @@ contract GovernorEmergencyTest is Test {
 
         vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
 
-        // Zero the owner's stake in the registry BEFORE finalize so the
-        // `_slashOwner` path inside resolveEmergencyReview is a no-op and
-        // no WOOD transfer is attempted against the garbage-decoded vault
-        // address. (Real registry expects IGovernorMinimal shape for vault
-        // lookup; here stake=0 short-circuits the transfer.)
-        _zeroOwnerStake(address(vault));
-
         vm.prank(owner);
         vm.expectRevert(ISyndicateGovernor.EmergencySettleBlocked.selector);
-        governor.finalizeEmergencySettle(pid, _customCalls());
+        governor.finalizeEmergencySettle(pid);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -489,18 +459,16 @@ contract GovernorEmergencyTest is Test {
     // ──────────────────────────────────────────────────────────────
 
     /// @notice Cross-contract: owner stakes a bad emergency-settle, guardians
-    ///         hit block quorum, finalize reverts, owner stake is slashed to
-    ///         zero, and the vault can no longer create proposals (hasOwnerStake == false).
-    ///         Uses the real governor (not a garbage-decoded address) so the
-    ///         `_slashOwner` path inside `resolveEmergencyReview` finds the
-    ///         real vault and burns the owner's bond.
-    function test_emergencySettle_blocked_revertsFinalize_ownerSlashed() public {
+    ///         hit block quorum, `finalizeEmergencySettle` reverts with
+    ///         `EmergencySettleBlocked`. Under V2, `finalizeEmergency` is
+    ///         `onlyGovernor` so the slash + revert happen atomically — the
+    ///         revert rolls back the slash. Owner stake is preserved.
+    function test_emergencySettle_blocked_revertsFinalize_ownerNotSlashed() public {
         uint256 pid = _createExecutedProposal(7 days);
         vm.warp(vm.getBlockTimestamp() + 7 days);
 
-        BatchExecutorLib.Call[] memory bad = _customCalls();
         vm.prank(owner);
-        governor.emergencySettleWithCalls(pid, bad);
+        governor.emergencySettleWithCalls(pid, _customCalls());
 
         // guardianA + guardianB both block — total 60k / 60k = 100% ≥ 30%.
         vm.prank(guardianA);
@@ -513,31 +481,21 @@ contract GovernorEmergencyTest is Test {
         uint256 ownerStakeBefore = registry.ownerStake(address(vault));
         assertEq(ownerStakeBefore, MIN_OWNER_STAKE, "owner bonded pre-finalize");
 
-        // Finalize reverts with EmergencySettleBlocked. Inside, the governor
-        // calls `resolveEmergencyReview` which commits the resolution,
-        // slashes the owner's stake, then reverts. Because the revert
-        // propagates, the slash is rolled back — so we drive the registry
-        // directly to commit the slash (permissionless path).
+        // Finalize reverts with EmergencySettleBlocked. The revert rolls back
+        // the slash that `finalizeEmergency` attempted inside the registry.
         vm.prank(owner);
         vm.expectRevert(ISyndicateGovernor.EmergencySettleBlocked.selector);
-        governor.finalizeEmergencySettle(pid, bad);
+        governor.finalizeEmergencySettle(pid);
 
-        // Permissionless resolve commits the slash outside the reverted tx.
-        bool blocked = registry.resolveEmergencyReview(pid);
-        assertTrue(blocked, "emergency review resolved as blocked");
+        // Owner stake is preserved — revert rolled back the slash.
+        assertEq(registry.ownerStake(address(vault)), ownerStakeBefore, "owner stake preserved");
+        assertTrue(registry.hasOwnerStake(address(vault)), "hasOwnerStake still true");
 
-        // Owner bond is zero → hasOwnerStake false → vault cannot propose.
-        assertEq(registry.ownerStake(address(vault)), 0, "owner stake slashed to zero");
-        assertFalse(registry.hasOwnerStake(address(vault)), "hasOwnerStake false post-slash");
-
-        // Re-finalize after resolve still reverts (review was already committed
-        // as blocked; the cached bool stays).
-        vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.EmergencySettleBlocked.selector);
-        governor.finalizeEmergencySettle(pid, bad);
+        // Proposal stays in Executed state (not settled).
+        assertEq(uint256(governor.getProposal(pid).state), uint256(ISyndicateGovernor.ProposalState.Executed));
     }
 
-    /// @notice No guardians block → `resolveEmergencyReview` returns false →
+    /// @notice No guardians block → `finalizeEmergency` returns false →
     ///         finalize executes the pre-committed bad calls → proposal Settled.
     function test_emergencySettle_notBlocked_finalizes() public {
         uint256 pid = _createExecutedProposal(7 days);
@@ -551,7 +509,7 @@ contract GovernorEmergencyTest is Test {
         vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
 
         vm.prank(owner);
-        governor.finalizeEmergencySettle(pid, customCalls);
+        governor.finalizeEmergencySettle(pid);
 
         assertEq(
             uint256(governor.getProposal(pid).state),
@@ -580,20 +538,14 @@ contract GovernorEmergencyTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(ISyndicateGovernor.ProposalNotExecuted.selector);
-        governor.finalizeEmergencySettle(pid, customCalls);
+        governor.finalizeEmergencySettle(pid);
 
         assertEq(governor.openProposalCount(address(vault)), 0);
     }
 
-    /// @notice Regression for PR #247 follow-up review:
-    ///         If `settleProposal` (or `unstick`) races ahead of an open
-    ///         emergency review, the H-G-01 hardening makes both
-    ///         `cancelEmergencySettle` and `finalizeEmergencySettle` revert with
-    ///         `ProposalNotExecuted`, so the owner can no longer invalidate the
-    ///         registry review. Without the `_finishSettlement` registry-side
-    ///         cleanup the permissionless `resolveEmergencyReview` would later
-    ///         slash the owner's WOOD bond despite normal settlement. This test
-    ///         pins down that `_finishSettlement` cancels the registry review.
+    /// @notice Regression: if `settleProposal` races ahead of an open
+    ///         emergency review, `_finishSettlement` must cancel the registry
+    ///         review so the owner's stake is not slashed on stale block votes.
     function test_settleProposal_cancelsOpenEmergencyReview() public {
         uint256 pid = _createExecutedProposal(7 days);
         vm.warp(vm.getBlockTimestamp() + 7 days);
@@ -612,16 +564,11 @@ contract GovernorEmergencyTest is Test {
         assertEq(stakeBefore, MIN_OWNER_STAKE, "precondition: owner stake bonded");
 
         // Race: standard settleProposal fires before reviewEnd.
-        // (proposer can settle anytime; here the test contract is the proposer)
         governor.settleProposal(pid);
         assertEq(uint256(governor.getProposal(pid).state), uint256(ISyndicateGovernor.ProposalState.Settled));
 
-        // Warp past the original reviewEnd and try to resolve permissionlessly.
-        // Must revert — _finishSettlement cancelled the review (zeroed reviewEnd
-        // + bumped nonce), so the keeper can't slash on stale block votes.
-        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
-        vm.expectRevert(IGuardianRegistry.ReviewNotReadyForResolve.selector);
-        registry.resolveEmergencyReview(pid);
+        // Emergency review must be closed — _finishSettlement cancelled it.
+        assertFalse(registry.isEmergencyOpen(pid), "emergency closed after standard settle");
 
         // Owner stake untouched.
         assertEq(registry.ownerStake(address(vault)), stakeBefore, "owner stake NOT slashed");
@@ -639,7 +586,7 @@ contract GovernorEmergencyTest is Test {
         }
 
         vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.TooManyCalls.selector);
+        vm.expectRevert(IGuardianRegistry.EmergencyTooManyCalls.selector);
         governor.emergencySettleWithCalls(pid, tooMany);
     }
 
@@ -651,7 +598,7 @@ contract GovernorEmergencyTest is Test {
         governor.emergencySettleWithCalls(pid, _customCalls());
 
         vm.prank(owner);
-        vm.expectRevert(ISyndicateGovernor.EmergencyAlreadyOpen.selector);
+        vm.expectRevert(IGuardianRegistry.EmergencyAlreadyOpen.selector);
         governor.emergencySettleWithCalls(pid, _customCalls());
     }
 
@@ -668,5 +615,102 @@ contract GovernorEmergencyTest is Test {
         vm.prank(owner);
         vm.expectRevert(ISyndicateGovernor.ProposalNotExecuted.selector);
         governor.cancelEmergencySettle(pid);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Task 7: New tests — registry-owned emergency state
+    // ──────────────────────────────────────────────────────────────
+
+    /// @notice Verify `isEmergencyOpen` tracks the full lifecycle:
+    ///         false → open → true → cancel → false → re-open → true → finalize → false.
+    function test_isEmergencyOpen_lifecycle() public {
+        uint256 pid = _createExecutedProposal(7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+
+        assertFalse(registry.isEmergencyOpen(pid), "before open");
+
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, _customCalls());
+        assertTrue(registry.isEmergencyOpen(pid), "after open");
+
+        vm.prank(owner);
+        governor.cancelEmergencySettle(pid);
+        assertFalse(registry.isEmergencyOpen(pid), "after cancel");
+
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, _customCalls());
+        assertTrue(registry.isEmergencyOpen(pid), "after re-open");
+
+        // Finalize (no blocks → not blocked → settles).
+        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
+        vm.prank(owner);
+        governor.finalizeEmergencySettle(pid);
+        assertFalse(registry.isEmergencyOpen(pid), "after finalize");
+    }
+
+    /// @notice Open emergency, cancel, verify state cleared, re-open with
+    ///         different calls, finalize successfully — proves registry clears
+    ///         stored calls on cancel and accepts new ones.
+    function test_registryClearsCallsOnCancel() public {
+        uint256 pid = _createExecutedProposal(7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, _customCalls());
+        assertFalse(!registry.isEmergencyOpen(pid));
+
+        vm.prank(owner);
+        governor.cancelEmergencySettle(pid);
+        assertFalse(registry.isEmergencyOpen(pid), "closed after cancel");
+
+        // Re-open with different calls.
+        BatchExecutorLib.Call[] memory newCalls = new BatchExecutorLib.Call[](1);
+        newCalls[0] = BatchExecutorLib.Call({
+            target: address(usdc), data: abi.encodeCall(usdc.approve, (address(targetToken), 42)), value: 0
+        });
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, newCalls);
+        assertTrue(registry.isEmergencyOpen(pid), "open after re-open");
+
+        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
+        vm.prank(owner);
+        governor.finalizeEmergencySettle(pid);
+        assertEq(uint256(governor.getProposal(pid).state), uint256(ISyndicateGovernor.ProposalState.Settled));
+    }
+
+    /// @notice Standard settle races ahead of emergency review — verify
+    ///         `isEmergencyOpen` is false after settle.
+    function test_standardSettleCancelsEmergencyViaRegistry() public {
+        uint256 pid = _createExecutedProposal(7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, _customCalls());
+        assertTrue(registry.isEmergencyOpen(pid));
+
+        governor.settleProposal(pid);
+        assertEq(uint256(governor.getProposal(pid).state), uint256(ISyndicateGovernor.ProposalState.Settled));
+        assertFalse(registry.isEmergencyOpen(pid), "emergency closed by standard settle");
+    }
+
+    /// @notice Open emergency with no blocks, finalize — calls returned from
+    ///         registry are executed and proposal settles.
+    function test_registryStoresAndReturnsCalls() public {
+        uint256 pid = _createExecutedProposal(7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+
+        vm.prank(owner);
+        governor.emergencySettleWithCalls(pid, _customCalls());
+
+        vm.warp(vm.getBlockTimestamp() + REVIEW_PERIOD + 1);
+        vm.prank(owner);
+        governor.finalizeEmergencySettle(pid);
+
+        assertEq(
+            uint256(governor.getProposal(pid).state),
+            uint256(ISyndicateGovernor.ProposalState.Settled),
+            "proposal settled via registry-returned calls"
+        );
+        assertFalse(vault.redemptionsLocked());
     }
 }

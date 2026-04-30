@@ -38,4 +38,15 @@ contract MockRegistryMinimal {
         // when reviewPeriod == 0. `blocked = false` so the vote outcome sticks.
         return (true, true, false, false);
     }
+
+    /// @dev V2: `_finishSettlement` calls `isEmergencyOpen` to decide whether
+    ///      to cancel a dangling emergency review. Returns false so the cancel
+    ///      branch is skipped in governor unit tests.
+    function isEmergencyOpen(uint256) external pure returns (bool) {
+        return false;
+    }
+
+    /// @dev V2: stub so governor unit tests compile. Never called when
+    ///      `isEmergencyOpen` returns false.
+    function cancelEmergency(uint256) external pure {}
 }

@@ -9,7 +9,7 @@ import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 
 /// @title GuardianRegistryDelegation — V1.5 Phase 2 tests
 /// @notice Covers delegateStake / unstake lifecycle + checkpoint attribution
-///         + vote-weight integration via getPastVoteWeight.
+///         + vote-weight integration via checkpoint views.
 contract GuardianRegistryDelegationTest is Test {
     GuardianRegistry registry;
     ERC20Mock wood;
@@ -185,57 +185,6 @@ contract GuardianRegistryDelegationTest is Test {
         assertEq(registry.delegationOf(alice, delegate_), 70e18);
     }
 
-    // ── historical views ──
-
-    function test_getPastDelegationTo_checkpointsByTimestamp() public {
-        vm.prank(alice);
-        registry.delegateStake(delegate_, 30e18);
-        uint256 t1 = vm.getBlockTimestamp();
-
-        vm.warp(vm.getBlockTimestamp() + 1 hours);
-        vm.prank(alice);
-        registry.delegateStake(delegate_, 20e18);
-        uint256 t2 = vm.getBlockTimestamp();
-
-        vm.warp(vm.getBlockTimestamp() + 1);
-
-        assertEq(registry.getPastDelegationTo(alice, delegate_, t1), 30e18);
-        assertEq(registry.getPastDelegationTo(alice, delegate_, t2), 50e18);
-    }
-
-    function test_getPastDelegated_tracksInbound() public {
-        vm.prank(alice);
-        registry.delegateStake(delegate_, 30e18);
-        uint256 t1 = vm.getBlockTimestamp();
-
-        vm.warp(vm.getBlockTimestamp() + 1 hours);
-        vm.prank(bob);
-        registry.delegateStake(delegate_, 70e18);
-        uint256 t2 = vm.getBlockTimestamp();
-
-        vm.warp(vm.getBlockTimestamp() + 1);
-
-        assertEq(registry.getPastDelegated(delegate_, t1), 30e18);
-        assertEq(registry.getPastDelegated(delegate_, t2), 100e18);
-    }
-
-    function test_getPastVoteWeight_combinesOwnAndDelegated() public {
-        // setUp stakes delegate_ with 20_000e18 own stake. Alice delegates 5k on top.
-        vm.prank(alice);
-        registry.delegateStake(delegate_, 5_000e18);
-
-        uint256 t1 = vm.getBlockTimestamp();
-        vm.warp(vm.getBlockTimestamp() + 1);
-
-        assertEq(registry.getPastVoteWeight(delegate_, t1), 25_000e18, "own 20k + delegated 5k");
-    }
-
-    function test_getPastTotalDelegated_tracksGlobal() public {
-        vm.prank(alice);
-        registry.delegateStake(delegate_, 30e18);
-        uint256 t1 = vm.getBlockTimestamp();
-
-        vm.warp(vm.getBlockTimestamp() + 1);
-        assertEq(registry.getPastTotalDelegated(t1), 30e18);
-    }
+    // V2: getPastDelegated / getPastTotalDelegated views removed to reclaim
+    // bytecode. Checkpoints still work internally for vote-weight snapshots.
 }

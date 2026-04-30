@@ -200,12 +200,13 @@ contract ProtocolHandler is Test {
         }
     }
 
-    /// @dev Attempt `resolveEmergencyReview`. Guarded by `whenNotPaused`.
-    function tryResolveEmergencyReview(uint256 proposalSeed) external {
+    /// @dev Attempt `finalizeEmergency`. Guarded by `whenNotPaused` + `onlyGovernor`.
+    ///      The handler pranks the governor to match the onlyGovernor gate.
+    function tryFinalizeEmergency(uint256 proposalSeed) external {
         uint256 pid = bound(proposalSeed, 1, 3);
         bool isPaused = registry.paused();
         if (isPaused) pausedCallAttempts += 1;
-        try registry.resolveEmergencyReview(pid) {}
+        try registry.finalizeEmergency(pid) {}
         catch {
             if (isPaused) pausedCallReverts += 1;
         }
